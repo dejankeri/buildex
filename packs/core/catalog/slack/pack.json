@@ -4,5 +4,11 @@
   "icon": "💬",
   "summary": "Team chat - open Slack and let the agent help search and draft messages.",
   "app": { "url": "https://slack.com" },
+  "apiKey": {
+    "transport": "rest",
+    "apiBase": "https://slack.com/api",
+    "docsUrl": "https://api.slack.com/authentication/token-types",
+    "hint": "Bot token (xoxb-…)"
+  },
   "skills": ["slack-search", "slack-post"]
 }

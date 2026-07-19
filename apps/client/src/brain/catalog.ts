@@ -36,6 +36,25 @@ export interface PackMcp {
    *  non-DCR providers that need a static OAuth client (e.g. Google Gmail/Calendar/Drive). */
   direct?: boolean;
 }
+/** The API-key connection face - the operator pastes a static key instead of running OAuth. Public
+ *  metadata only; the key itself is runtime-injected into the keychain (never a manifest). */
+export interface PackApiKey {
+  /** How a pasted key reaches the app.
+   *  "mcp-bearer": inject as `<header>: <prefix><key>` on the app's own remote MCP url - the dual-door
+   *                servers (Stripe, Protocol, Intercom) accept an API key where OAuth would go.
+   *  "rest":       the key authenticates a REST/GraphQL API a gateway connector wraps as tools. */
+  transport: "mcp-bearer" | "rest";
+  /** Header the key rides in. Default "Authorization". */
+  header?: string;
+  /** Value prefix. Default "Bearer ". */
+  prefix?: string;
+  /** REST base URL the gateway connector calls (transport "rest" only). */
+  apiBase?: string;
+  /** Public page where the operator generates the key. */
+  docsUrl: string;
+  /** Short hint shown in the store, e.g. "Restricted key (rk_…)". */
+  hint?: string;
+}
 export interface PackManifest {
   id: string;
   name: string;
@@ -43,6 +62,7 @@ export interface PackManifest {
   summary?: string;
   app?: { url: string; icon?: string };
   mcp?: PackMcp;
+  apiKey?: PackApiKey;
   skills?: string[];
   policy?: { allow?: string[]; ask?: string[]; deny?: string[] };
 }
@@ -50,7 +70,11 @@ export interface PackMeta extends PackManifest {
   installed: boolean;
   /** The writable root a pack is installed in (team|private), or undefined if not installed. */
   installedIn?: string;
-  faces: { app: boolean; mcp: boolean; skills: number };
+  faces: { app: boolean; mcp: boolean; apiKey: boolean; skills: number };
+  /** True when a static API key is stored for this pack (set by callers with keychain access, e.g.
+   *  the daemon packStore; the pure catalog reader leaves it undefined). Drives the store's
+   *  "connected via key" state. */
+  apiKeyConnected?: boolean;
 }
 
 /** How many of a pack's declared skills actually resolve to a SKILL.md dir in the pack. */
@@ -114,7 +138,7 @@ export function listPacks(source: CatalogSource, roots: Root[]): PackMeta[] {
       ...m,
       installed: !!inRoot,
       ...(inRoot ? { installedIn: inRoot } : {}),
-      faces: { app: !!m.app, mcp: !!m.mcp, skills: countSkills(dir, m.skills) },
+      faces: { app: !!m.app, mcp: !!m.mcp, apiKey: !!m.apiKey, skills: countSkills(dir, m.skills) },
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
@@ -165,6 +189,32 @@ export function packMcpProvider(m: PackManifest): PackProviderSpec | null {
   const mcp = m.mcp;
   if (!mcp || mcp.kind !== "http" || mcp.direct) return null;
   return { name: m.id, url: mcp.url!, ...(mcp.scopes ? { scopes: mcp.scopes } : {}) };
+}
+
+/** Keychain key holding a pack's static API key (the connector:<id>:apikey namespace, sibling to the
+ *  OAuth token namespace). Public convention - the value is never a manifest or repo secret. */
+export function apiKeyKeychainKey(id: string): string {
+  return `connector:${id}:apikey`;
+}
+
+/** A minimal secret reader - the client Keychain satisfies it structurally. */
+export interface KeyReader {
+  get(key: string): string | undefined;
+}
+
+/** The connection-mode signal for a `mcp-bearer` pack: when the operator has stored an API key for it,
+ *  that key OVERRIDES OAuth. The pack's own MCP url is direct-pinned with the key as a Bearer header
+ *  (and, by the same predicate, kept OFF the OAuth gateway). Returns the header-injected direct-pin
+ *  config, or null when the pack is not in API-key mode (no `mcp-bearer` face, or no key stored).
+ *  Presence of the stored key is the whole mode state - there is no separate mode store. */
+export function packApiKeyPin(m: PackManifest, keys: KeyReader | undefined): McpServerConfig | null {
+  const ak = m.apiKey;
+  if (!ak || ak.transport !== "mcp-bearer" || m.mcp?.kind !== "http" || !m.mcp.url) return null;
+  const key = keys?.get(apiKeyKeychainKey(m.id));
+  if (!key) return null;
+  const header = ak.header ?? "Authorization";
+  const prefix = ak.prefix ?? "Bearer ";
+  return { type: "http", url: m.mcp.url, headers: { [header]: `${prefix}${key}` } };
 }
 
 /** Install a pack into a writable root by composing the injected face-writers. Definitions (manifest +

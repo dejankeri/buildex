@@ -73,7 +73,7 @@ const EXPOSE = [
   "refreshPending", "refreshProjects", "refreshUsage", "removeProjectItem", "renderAgentHealth", "renderBrain",
   "renderBrainRail", "renderConnectorEditor", "renderHistory", "renderMcpEditor", "renderPending",
   "renderTabbar", "renderTree", "reorderTab", "resolveCard", "runSkill", "sendPrompt", "setMsg", "setSync",
-  "showProjectStart", "startAppHost", "startBrainFlow", "startInstall", "startUninstall", "storeNotice",
+  "showProjectStart", "startApiKey", "clearApiKey", "startAppHost", "startBrainFlow", "startInstall", "startUninstall", "storeNotice",
   "stripFrontmatter", "switchRight", "switchToProject", "wireAppBridge", "wysiInline", "wysiToMd",
 ];
 const SHIM = ";globalThis.__c = { " + EXPOSE.join(", ") + " };";

@@ -61,16 +61,37 @@ async function loadStorePane(tab) {
     const card = elt("div", "storecard");
     // Face badges: an "App" chip, a "Tools" (MCP) chip, and a "Skills ×N" chip, in that order,
     // dropping any face the pack doesn't expose.
-    const badges = [p.faces && p.faces.app ? "App" : "", p.faces && p.faces.mcp ? "Tools" : "", p.faces && p.faces.skills ? ("Skills ×" + p.faces.skills) : ""]
+    const badges = [p.faces && p.faces.app ? "App" : "", p.faces && p.faces.mcp ? "Tools" : "", p.faces && p.faces.apiKey ? "Key" : "", p.faces && p.faces.skills ? ("Skills ×" + p.faces.skills) : ""]
       .filter(Boolean).map((b) => '<span class="sbadge">' + esc(b) + '</span>').join("");
+    // API-key affordance for an installed pack that declares an apiKey face: "Key ✓" (a key is stored -
+    // tap to clear) or "Use API key" (paste one). For key-only packs (no mcp face) this is the ONLY
+    // way to connect; for dual-door packs it sits alongside the OAuth Connect offer.
+    const keyBtn = p.installed && p.faces && p.faces.apiKey
+      ? (p.apiKeyConnected ? '<button class="mini ghost skeyclear">Key ✓</button>' : '<button class="mini skey">Use API key</button>')
+      : "";
     const action = p.installed
-      ? '<div class="srow"><span class="sinstalled">✓ Installed' + (p.installedIn ? (" · " + esc(p.installedIn)) : "") + '</span><button class="mini ghost suninstall">Uninstall</button></div>'
+      ? '<div class="srow"><span class="sinstalled">✓ Installed' + (p.installedIn ? (" · " + esc(p.installedIn)) : "") + '</span>' + keyBtn + '<button class="mini ghost suninstall">Uninstall</button></div>'
       : '<button class="sinstall">Install</button>';
     card.innerHTML = '<div class="scardh"><span class="sicon">' + esc(p.icon || "◈") + '</span><span class="sname">' + esc(p.name) + '</span></div>'
       + '<div class="ssum">' + esc(p.summary || "") + '</div>'
       + '<div class="sbadges">' + badges + '</div>' + action;
-    if (p.installed) $(".suninstall", card).onclick = () => startUninstall(p, tab);
-    else $(".sinstall", card).onclick = () => startInstall(p, tab);
+    if (p.installed) {
+      $(".suninstall", card).onclick = () => startUninstall(p, tab);
+      if ($(".skey", card)) $(".skey", card).onclick = () => startApiKey(p, tab);
+      if ($(".skeyclear", card)) $(".skeyclear", card).onclick = () => clearApiKey(p, tab);
+    } else {
+      $(".sinstall", card).onclick = () => startInstall(p, tab);
+    }
+    // Progressive logo: swap the emoji for the pack's served logo if one exists. jsdom never fires
+    // onload, so renderer tests keep seeing the emoji - the image is pure enhancement.
+    const iconEl = $(".sicon", card);
+    if (iconEl && typeof Image !== "undefined") {
+      const img = new Image();
+      img.className = "slogo";
+      img.alt = "";
+      img.onload = () => { iconEl.textContent = ""; iconEl.appendChild(img); };
+      img.src = "/logos/" + encodeURIComponent(p.id) + ".png";
+    }
     grid.appendChild(card);
   });
 }
@@ -154,6 +175,62 @@ async function offerConnect(pack) {
     }
     await new Promise((r) => setTimeout(r, 400));
   }
+}
+
+/**
+ * Overlay to connect an installed pack with a pasted API key: a masked input, a link to where the
+ * operator generates the key, and Save/Cancel. Save POSTs to /api/catalog/apikey (key → keychain,
+ * never the repo), then repaints the store + apps rail. Mirrors offerConnect so the OAuth and key
+ * paths feel the same. For key-only packs this is the only way to connect; for dual-door packs it
+ * sits beside the OAuth Connect offer.
+ * @param {object} pack - the installed pack being connected via key.
+ * @param {object} tab - the store tab to repaint on success.
+ */
+async function startApiKey(pack, tab) {
+  const ak = pack.apiKey || {};
+  const bd = elt("div", "ovbackdrop");
+  bd.innerHTML = '<div class="ovcard"><h3 class="ovh">Connect ' + esc(pack.name) + ' with an API key</h3>'
+    + '<p class="ovp">Paste a key and the agent can use ' + esc(pack.name) + ' right away - no sign-in.'
+    + (ak.docsUrl ? ' <a class="ovlink" href="' + escAttr(ak.docsUrl) + '" target="_blank" rel="noopener">Where do I find this?</a>' : '')
+    + '</p><input class="ovinput skeyinput" type="password" autocomplete="off" spellcheck="false" placeholder="' + escAttr(ak.hint || "API key") + '" />'
+    + '<div class="ovrow"><button class="mini ovsave">Save key</button><button class="mini ghost ovcancel">Cancel</button></div></div>';
+  document.body.appendChild(bd);
+  const close = () => bd.remove();
+  bd.onclick = (e) => { if (e.target === bd) close(); };
+  $(".ovcancel", bd).onclick = close;
+  const input = $(".skeyinput", bd);
+  if (input) input.focus();
+  $(".ovsave", bd).onclick = async () => {
+    const key = input && input.value ? input.value.trim() : "";
+    if (!key) { if (input) input.focus(); return; }
+    try {
+      await postJSON("/api/catalog/apikey", { id: pack.id, key: key });
+    } catch (e) {
+      close();
+      storeNotice(tab, "Couldn’t save the key - try again.");
+      return;
+    }
+    close();
+    await loadStorePane(tab);
+    if (typeof refreshApps === "function") await refreshApps();
+  };
+}
+
+/**
+ * Clear an installed pack's stored API key (POST an empty key): reverts a dual-door pack to OAuth and
+ * disconnects a key-only pack. Repaints on success.
+ * @param {object} pack - the pack whose key is being cleared.
+ * @param {object} tab - the store tab to repaint.
+ */
+async function clearApiKey(pack, tab) {
+  try {
+    await postJSON("/api/catalog/apikey", { id: pack.id, key: "" });
+  } catch (e) {
+    storeNotice(tab, "Couldn’t clear the key - try again.");
+    return;
+  }
+  await loadStorePane(tab);
+  if (typeof refreshApps === "function") await refreshApps();
 }
 
 /**

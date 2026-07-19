@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { existsSync as ex, cpSync } from "node:fs";
-import { listPacks, readPack, installPack, uninstallPack, packMcpProvider, type InstallDeps } from "./catalog.js";
+import { listPacks, readPack, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, type InstallDeps } from "./catalog.js";
 import { bundleCatalogSource, type CatalogSource } from "./catalog-source.js";
 import type { Root } from "./graph.js";
 
@@ -48,7 +48,7 @@ describe("listPacks", () => {
     const packs = listPacks(source, roots);
     expect(packs).toHaveLength(1);
     expect(packs[0]!.id).toBe("notion");
-    expect(packs[0]!.faces).toEqual({ app: true, mcp: true, skills: 1 });
+    expect(packs[0]!.faces).toEqual({ app: true, mcp: true, apiKey: false, skills: 1 });
     expect(packs[0]!.installed).toBe(false);
   });
 
@@ -184,6 +184,25 @@ describe("packMcpProvider", () => {
   it("returns null for a stdio (local) mcp or no mcp face", () => {
     expect(packMcpProvider({ id: "loc", name: "Loc", mcp: { kind: "stdio", command: "npx" } })).toBeNull();
     expect(packMcpProvider({ id: "appless", name: "Appless", app: { url: "https://a" } })).toBeNull();
+  });
+});
+
+// API-key mode: a stored `mcp-bearer` key overrides OAuth by header-injecting the pack's own MCP url.
+describe("packApiKeyPin", () => {
+  const reader = (m: Record<string, string>) => ({ get: (k: string) => m[k] });
+  const stripe = { id: "stripe", name: "Stripe", mcp: { kind: "http" as const, url: "https://mcp.stripe.com" }, apiKey: { transport: "mcp-bearer" as const, docsUrl: "https://x" } };
+
+  it("injects the stored key as a Bearer header on the mcp url", () => {
+    expect(packApiKeyPin(stripe, reader({ [apiKeyKeychainKey("stripe")]: "rk_1" })))
+      .toEqual({ type: "http", url: "https://mcp.stripe.com", headers: { Authorization: "Bearer rk_1" } });
+  });
+  it("is null with no key stored, no reader, or a rest transport", () => {
+    expect(packApiKeyPin(stripe, reader({}))).toBeNull();
+    expect(packApiKeyPin(stripe, undefined)).toBeNull();
+    expect(packApiKeyPin({ id: "hub", name: "Hub", apiKey: { transport: "rest", apiBase: "https://api", docsUrl: "https://x" } }, reader({ [apiKeyKeychainKey("hub")]: "k" }))).toBeNull();
+  });
+  it("is null when a mcp-bearer face has no http mcp to pin", () => {
+    expect(packApiKeyPin({ id: "x", name: "X", apiKey: { transport: "mcp-bearer", docsUrl: "https://x" } }, reader({ [apiKeyKeychainKey("x")]: "k" }))).toBeNull();
   });
 });
 

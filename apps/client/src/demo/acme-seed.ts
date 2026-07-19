@@ -530,7 +530,7 @@ export function writeAcmeContent(dir: string, opts: { corePackDir: string }): vo
   ].join("\n"));
 
   // --- installed apps: the stack a B2B SaaS operator would actually run on ---
-  for (const id of ["gmail", "slack", "notion", "linear", "stripe", "hubspot", "google-calendar"]) installApp(dir, opts.corePackDir, id);
+  for (const id of ["slack", "notion", "linear", "stripe", "hubspot", "intercom"]) installApp(dir, opts.corePackDir, id);
 }
 
 // --- Workspace extras: daemon-owned files that make the left rail feel lived-in (automations,

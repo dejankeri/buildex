@@ -50,7 +50,7 @@ describe("seedAcmeWorkspace - the non-syncable demo sandbox", () => {
     expect(existsSync(join(ws, "private-you", "notes.md"))).toBe(true);
     // installed apps: the external-app manifest + policy marker + linked skills
     expect(existsSync(join(ws, "team-acme", "apps", "slack", "app.json"))).toBe(true);
-    expect(existsSync(join(ws, "team-acme", "policy", "packs", "gmail.json"))).toBe(true);
+    expect(existsSync(join(ws, "team-acme", "policy", "packs", "stripe.json"))).toBe(true);
   });
 
   it("seeds the daemon-owned left rail (sessions, projects, automations)", () => {

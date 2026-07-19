@@ -57,6 +57,38 @@ it("direct-pins an app-less local (stdio) pack once its install marker exists", 
   expect(entries["buildex-pack:toolonly"]).toEqual({ type: "stdio", command: "npx", args: ["-y", "@x/mcp"] });
 });
 
+// A minimal KeyReader over a plain map (the real Keychain satisfies the same shape).
+const keyReader = (m: Record<string, string>) => ({ get: (k: string): string | undefined => m[k] });
+
+it("API-key mode: a stored mcp-bearer key direct-pins the app's own MCP url with a Bearer header", () => {
+  corePack("stripe", { id: "stripe", name: "Stripe", app: { url: "https://x.co" }, mcp: { kind: "http", url: "https://mcp.stripe.com" }, apiKey: { transport: "mcp-bearer", docsUrl: "https://x" } });
+  installApp("team", "stripe");
+  const entries = installedPackMcpEntries(source, roots, keyReader({ "connector:stripe:apikey": "rk_live_123" }));
+  expect(entries["buildex-pack:stripe"]).toEqual({
+    type: "http",
+    url: "https://mcp.stripe.com",
+    headers: { Authorization: "Bearer rk_live_123" },
+  });
+});
+
+it("no stored key: a mcp-bearer pack stays gateway-routed (no direct pin)", () => {
+  corePack("stripe", { id: "stripe", name: "Stripe", app: { url: "https://x.co" }, mcp: { kind: "http", url: "https://mcp.stripe.com" }, apiKey: { transport: "mcp-bearer", docsUrl: "https://x" } });
+  installApp("team", "stripe");
+  expect(installedPackMcpEntries(source, roots, keyReader({}))["buildex-pack:stripe"]).toBeUndefined();
+  // ...and omitting the reader entirely (tests/embedders) is the same as no key.
+  expect(installedPackMcpEntries(source, roots)["buildex-pack:stripe"]).toBeUndefined();
+});
+
+it("API-key mode honours a custom header/prefix", () => {
+  corePack("acme", { id: "acme", name: "Acme", app: { url: "https://x.co" }, mcp: { kind: "http", url: "https://mcp.acme.com" }, apiKey: { transport: "mcp-bearer", header: "X-Api-Key", prefix: "", docsUrl: "https://x" } });
+  installApp("team", "acme");
+  expect(installedPackMcpEntries(source, roots, keyReader({ "connector:acme:apikey": "abc" }))["buildex-pack:acme"]).toEqual({
+    type: "http",
+    url: "https://mcp.acme.com",
+    headers: { "X-Api-Key": "abc" },
+  });
+});
+
 it("composePreset unions base rules with installed-pack policy fragments", () => {
   const base: PolicyPreset = { allow: ["Read"], ask: ["Bash"], deny: [], default: "ask" };
   frag("team", "notion", { allow: ["mcp__notion__search"], ask: ["mcp__notion__create_page"] });

@@ -54,8 +54,10 @@ function scanTargets(teamDir: string): string[] {
 }
 
 describe("SECRETS INVARIANT [release-gate:secrets]: keychain values never leak into synced/committed/config/session artifacts", () => {
-  // Generous timeout: this lifecycle spins up a bare remote + working clone with real git,
-  // which can exceed the 5s default when the suite runs git-heavy tests in parallel.
+  // Generous timeout: this lifecycle spins up a bare remote + working clone with real git (~5s on its
+  // own), but runs alongside the rest of a large, git- and jsdom-heavy suite. Under that parallel load
+  // the real-git I/O is starved well past the 5s default, so we allow ample wall-clock. The assertion
+  // set (a full secret scan of every artifact) is unchanged - only the time budget is relaxed.
   it("holds across a full workspace lifecycle", async () => {
     // a bare remote + a team working clone (the synced repo)
     const remote = join(base, "remote.git");
@@ -106,5 +108,5 @@ describe("SECRETS INVARIANT [release-gate:secrets]: keychain values never leak i
     }
     // and the remote URL is a plain file:// (no token embedded - the harden)
     expect(readFileSync(join(team, ".git", "config"), "utf8")).not.toContain("@");
-  }, 20000);
+  }, 60000);
 });

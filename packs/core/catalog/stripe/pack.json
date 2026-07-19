@@ -5,5 +5,10 @@
   "summary": "Payments & subscriptions - look up customers and invoices, draft payment links, from the agent.",
   "app": { "url": "https://dashboard.stripe.com" },
   "mcp": { "kind": "http", "url": "https://mcp.stripe.com" },
+  "apiKey": {
+    "transport": "mcp-bearer",
+    "docsUrl": "https://docs.stripe.com/keys/restricted-api-keys",
+    "hint": "Restricted key (rk_…)"
+  },
   "skills": ["stripe-lookup", "stripe-billing"]
 }

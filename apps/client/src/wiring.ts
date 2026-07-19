@@ -12,7 +12,7 @@ import { ConnectorGatewayHub } from "./brain/connector-gateway.js";
 import { readSkill, writeSkillFile, composeSkill, validateSkill, skillTemplate } from "./brain/skills.js";
 import { listApps, writeAppManifest, type AppManifest } from "./brain/apps.js";
 import { reconciledPackMcpEntries, composePreset } from "./brain/pack-config.js";
-import { listPacks, installPack, uninstallPack, packMcpProvider, type InstallDeps } from "./brain/catalog.js";
+import { listPacks, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, type InstallDeps } from "./brain/catalog.js";
 import { emptyCatalogSource, type CatalogSource } from "./brain/catalog-source.js";
 import { buildAgentView } from "./brain/agent-view.js";
 import { serveApp, brokerData } from "./server/app-serve.js";
@@ -210,6 +210,11 @@ export function buildClientHandler(config: ClientConfig): Handler {
     routines: () => [], // local routines are a v1 seam - none configured yet
   };
 
+  // Keychain (created before regenConfig so pack MCP re-pinning can read stored API keys). Persistence
+  // is opt-in via config so tests/embedders never touch the real OS keychain; the demo sets
+  // keychainMode:"auto" so a real authorization survives a daemon restart.
+  const keychain = createKeychain({ mode: config.keychainMode ?? "memory", workspace: config.workspace });
+
   // Regenerate the native agent config, threading the (optional) gate-hook command. Used after a
   // skill is authored and by the sync route, so the workspace's .claude stays consistent.
   const regenConfig = () => {
@@ -222,7 +227,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
     });
     // Re-pin every installed pack's MCP entry, removing stale pins, and keep the
     // runtime gate's policy in step with the settings.json we just wrote.
-    writeMcpEntries(config.workspace, reconciledPackMcpEntries(catalogSource, config.workspace, config.roots));
+    writeMcpEntries(config.workspace, reconciledPackMcpEntries(catalogSource, config.workspace, config.roots, keychain));
     gate.setPreset(preset);
   };
   // Reconcile the derived agent config against installed state at boot (idempotent): re-links skills,
@@ -305,7 +310,8 @@ export function buildClientHandler(config: ClientConfig): Handler {
   // to the direct pin, unchanged.
   let syncGatewayProviders: (() => void | Promise<void>) | undefined;
   const packStore = {
-    list: () => listPacks(catalogSource, config.roots),
+    list: () => listPacks(catalogSource, config.roots).map((p) =>
+      p.apiKey && keychain.get(apiKeyKeychainKey(p.id)) ? { ...p, apiKeyConnected: true } : p),
     install: (id: string, target: string) => {
       const res = installPack(catalogSource, config.roots, { id, target }, installDeps);
       const root = config.roots.find((r) => r.name === target);
@@ -322,14 +328,20 @@ export function buildClientHandler(config: ClientConfig): Handler {
       if (root) scheduler.touch(root.dir);
       return res;
     },
+    setApiKey: (id: string, key: string | null) => {
+      // The stored key IS the connection mode. Setting it flips a mcp-bearer pack from OAuth to the
+      // direct pasted-key pin; clearing it reverts to OAuth. regenConfig re-pins .mcp.json from that
+      // state; syncGatewayProviders adds/removes the OAuth gateway provider to match.
+      if (key) keychain.set(apiKeyKeychainKey(id), key);
+      else keychain.delete(apiKeyKeychainKey(id));
+      regenConfig();
+      void syncGatewayProviders?.();
+    },
   };
 
   // Connectors: connect a source (credential → keychain, never the repo) and sync it (files under
   // sources/<name>/ via the read-only-by-construction runner, then commit). sources/ lives in the
-  // team brain - the first writable (non-core) root.
-  // Persistence is opt-in via config so tests/embedders never touch the real OS keychain; the demo
-  // sets keychainMode:"auto" so a real authorization survives a daemon restart.
-  const keychain = createKeychain({ mode: config.keychainMode ?? "memory", workspace: config.workspace });
+  // team brain - the first writable (non-core) root. (`keychain` is created above, before regenConfig.)
   const sourcesRepo = config.roots.find((r) => r.name !== "core") ?? config.roots[0];
   const connectorHub: ConnectorControl | undefined = sourcesRepo
     ? (() => {
@@ -437,6 +449,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
       const want = new Map<string, ReturnType<typeof packMcpProvider>>();
       for (const p of listPacks(catalogSource, config.roots)) {
         if (!p.installed) continue;
+        if (packApiKeyPin(p, keychain)) continue; // API-key mode: direct-pinned with a Bearer header, not OAuth-routed
         const prov = packMcpProvider(p);
         if (prov) want.set(prov.name, prov);
       }

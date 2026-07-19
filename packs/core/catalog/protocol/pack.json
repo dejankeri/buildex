@@ -8,8 +8,12 @@
   },
   "mcp": {
     "kind": "http",
-    "url": "https://app.protocolcrm.com/mcp",
-    "direct": true
+    "url": "https://app.protocolcrm.com/mcp"
+  },
+  "apiKey": {
+    "transport": "mcp-bearer",
+    "docsUrl": "https://app.protocolcrm.com",
+    "hint": "Agent key from Settings → Developers"
   },
   "skills": [
     "protocol-client-lookup",

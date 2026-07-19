@@ -6,10 +6,11 @@
   "app": {
     "url": "https://app.hubspot.com"
   },
-  "mcp": {
-    "kind": "http",
-    "url": "https://mcp.hubspot.com",
-    "direct": true
+  "apiKey": {
+    "transport": "rest",
+    "apiBase": "https://api.hubapi.com",
+    "docsUrl": "https://developers.hubspot.com/docs/guides/apps/private-apps/overview",
+    "hint": "Private-app token"
   },
   "skills": [
     "hubspot-crm-lookup",

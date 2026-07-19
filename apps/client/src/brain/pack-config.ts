@@ -6,18 +6,23 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Root } from "./graph.js";
 import type { PolicyPreset } from "../gate/policy.js";
-import { listPacks, packMcpConfig, packMcpProvider } from "./catalog.js";
+import { listPacks, packMcpConfig, packMcpProvider, packApiKeyPin, type KeyReader } from "./catalog.js";
 import type { CatalogSource } from "./catalog-source.js";
 import { PACK_KEY_PREFIX, type McpServerConfig } from "@buildex/connectors";
 
 /** Direct `.mcp.json` pins for installed packs, keyed `buildex-pack:<id>`. Packs whose mcp face routes
  *  through the connector gateway (DCR-capable remote MCPs) are intentionally excluded: their
- *  tools reach the agent via the loopback gateway, not a direct remote pin. Only `stdio` (local) and
- *  `direct` (non-DCR, e.g. Google) packs remain direct-pinned. */
-export function installedPackMcpEntries(source: CatalogSource, roots: Root[]): Record<string, McpServerConfig> {
+ *  tools reach the agent via the loopback gateway, not a direct remote pin. Only `stdio` (local),
+ *  `direct` (non-DCR) packs, and packs in API-key mode (a stored `mcp-bearer` key) are direct-pinned -
+ *  the last with the key injected as a Bearer header (see `packApiKeyPin`). `keys` is the keychain
+ *  reader; omit it (tests/embedders) and no pack is treated as keyed. */
+export function installedPackMcpEntries(source: CatalogSource, roots: Root[], keys?: KeyReader): Record<string, McpServerConfig> {
   const out: Record<string, McpServerConfig> = {};
   for (const p of listPacks(source, roots)) {
-    if (!p.installed || !p.mcp) continue;
+    if (!p.installed) continue;
+    const keyed = packApiKeyPin(p, keys);
+    if (keyed) { out[`${PACK_KEY_PREFIX}${p.id}`] = keyed; continue; } // API-key mode overrides OAuth
+    if (!p.mcp) continue;
     if (packMcpProvider(p)) continue; // gateway-routed → not direct-pinned
     out[`${PACK_KEY_PREFIX}${p.id}`] = packMcpConfig(p.mcp);
   }
@@ -27,8 +32,8 @@ export function installedPackMcpEntries(source: CatalogSource, roots: Root[]): R
 /** Desired pack pins PLUS explicit `null`s for any `buildex-pack:*` key still in .mcp.json that is no
  *  longer installed - so `writeMcpEntries` removes stale pins on uninstall (it only deletes keys set
  *  to null). Non-pack keys (the gateway, operator servers) are never touched. */
-export function reconciledPackMcpEntries(source: CatalogSource, workspaceDir: string, roots: Root[]): Record<string, McpServerConfig | null> {
-  const desired = installedPackMcpEntries(source, roots);
+export function reconciledPackMcpEntries(source: CatalogSource, workspaceDir: string, roots: Root[], keys?: KeyReader): Record<string, McpServerConfig | null> {
+  const desired = installedPackMcpEntries(source, roots, keys);
   const entries: Record<string, McpServerConfig | null> = { ...desired };
   const mcpPath = join(workspaceDir, ".mcp.json");
   if (existsSync(mcpPath)) {

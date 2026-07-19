@@ -156,6 +156,9 @@ export interface DaemonDeps {
     list(): PackMeta[];
     install(id: string, target: string): InstallResult;
     uninstall(id: string, target: string): InstallResult;
+    /** Save (key set) or clear (key null) a pack's API key in the keychain and re-pin its MCP entry.
+     *  For a `mcp-bearer` pack this switches it between OAuth (gateway) and the pasted-key direct pin. */
+    setApiKey(id: string, key: string | null): void;
   };
   /** The workspace catalog (verbs, connectors, routines). */
   catalog?: Catalog;
@@ -331,6 +334,16 @@ export function createDaemon(deps: DaemonDeps): Handler {
         const msg = e instanceof Error ? e.message : "install failed";
         return json({ error: msg }, /^unknown pack:/.test(msg) ? 404 : 400);
       }
+    }
+    // Save (non-empty key) or clear (empty/absent key) a pack's API key. Local credential storage in
+    // the keychain - not an outward/irreversible action, so no approval gate (like OAuth connect, the
+    // operator is authorizing their own workspace). The key never touches the repo or a response body.
+    if (method === "POST" && deps.packStore && path === "/api/catalog/apikey") {
+      const b = await body<{ id?: string; key?: unknown }>(req, { id: "string" });
+      if (!b.id) return json({ error: "id required" }, 400);
+      const key = typeof b.key === "string" && b.key.trim().length > 0 ? b.key.trim() : null;
+      deps.packStore.setApiKey(b.id, key);
+      return json({ ok: true, connected: key !== null });
     }
     if (deps.gatewayView) {
       const gw = deps.gatewayView;
@@ -607,6 +620,7 @@ const CONTENT_TYPES: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".png": "image/png",
   ".json": "application/json",
 };
 
