@@ -77,7 +77,10 @@
   .storenote{color:var(--brand);}
   .storecard{border:1px solid var(--line-2);border-radius:11px;background:var(--panel-2);padding:14px 15px;display:flex;flex-direction:column;gap:8px;}
   .scardh{display:flex;align-items:center;gap:9px;}
-  .scardh .sicon{font-size:19px;line-height:1;}
+  .scardh .sicon{font-size:19px;line-height:1;display:inline-flex;align-items:center;}
+  /* Every app logo renders at the SAME height; width follows the aspect ratio (no stretch), and a
+     wide mark is letterboxed by object-fit:contain (never cropped) within the max-width cap. */
+  .scardh .slogo{height:20px;width:auto;max-width:104px;object-fit:contain;display:block;}
   .scardh .sname{font-size:14px;font-weight:650;color:var(--ink);}
   .ssum{font-size:12.5px;color:var(--muted);line-height:1.5;min-height:1.5em;}
   .sbadges{display:flex;flex-wrap:wrap;gap:6px;}
