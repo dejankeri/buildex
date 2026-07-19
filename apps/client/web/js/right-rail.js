@@ -158,6 +158,7 @@ function renderTree() {
         const kids = (n.children || []);
         const row = elt("div", "trow", '<span class="caret">▼</span><span class="tg">' + (n.agent ? "⚙" : "▸") + '</span><span>' + esc(n.name) + '</span>' + note(n));
         row.onclick = () => node.classList.toggle("closed");
+        if (n.collapsed) node.classList.add("closed"); // start folded (e.g. a skill folder)
         node.appendChild(row);
         const ch = elt("div", "tchildren");
         node.appendChild(ch);

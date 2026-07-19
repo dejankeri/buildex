@@ -5,7 +5,7 @@
 // This module turns those files into a health summary + a tree fragment for the Files panel's
 // "Agent (.claude)" reveal - so an operator can confirm every skill (incl. app-pack skills) and every
 // pinned tool actually landed where the agent looks, and the workspace stays tidy.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 import type { TreeNode } from "../daemon/daemon.js";
 
@@ -41,13 +41,16 @@ export function buildAgentView(workspace: string, packSkills: Set<string> = new 
     byRoot[root] = (byRoot[root] ?? 0) + 1;
     const isPack = packSkills.has(name);
     if (isPack) fromPacks++;
+    // A skill is a FOLDER of its actual source files (SKILL.md + any scripts/references), each openable
+    // by the root-confined doc reader - so the operator can read them, not stare at an empty folder.
+    // Collapsed by default to keep a long skills list tidy.
     skillNodes.push({
       name,
       type: "dir",
-      // Point at the source SKILL.md in its origin root, so the existing (root-confined) doc reader
-      // can open it - the `.claude/skills/<name>` link itself is not under a repo root.
-      path: `${root}/skills/${name}/SKILL.md`,
+      path: `${root}/skills/${name}`,
       note: isPack ? `${root} · app` : root,
+      collapsed: true,
+      children: skillChildren(workspace, root, name),
     });
   }
 
@@ -73,6 +76,38 @@ export function buildAgentView(workspace: string, packSkills: Set<string> = new 
 
   const tree: TreeNode[] = [{ name: "Agent (.claude)", type: "dir", path: ".claude", children }];
   return { summary, tree };
+}
+
+/** List a skill's SOURCE directory (`<workspace>/<root>/skills/<name>/`) as readable tree nodes with
+ *  root-relative paths, so the existing root-confined doc reader can open each file. Depth-limited,
+ *  hidden entries skipped, entries sorted. Guarantees a SKILL.md node even if the directory can't be
+ *  walked (a stale link), so a skill is never an empty, unreadable folder. */
+function skillChildren(workspace: string, root: string, name: string): TreeNode[] {
+  const rel = `${root}/skills/${name}`;
+  const walk = (absDir: string, relDir: string, depth: number): TreeNode[] => {
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(absDir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    const out: TreeNode[] = [];
+    for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (e.name.startsWith(".")) continue;
+      const childRel = `${relDir}/${e.name}`;
+      if (e.isDirectory()) {
+        out.push({ name: e.name, type: "dir", path: childRel, collapsed: true, children: depth > 0 ? walk(join(absDir, e.name), childRel, depth - 1) : [] });
+      } else if (e.isFile()) {
+        out.push({ name: e.name, type: "file", path: childRel });
+      }
+    }
+    return out;
+  };
+  const kids = walk(join(workspace, root, "skills", name), rel, 2);
+  if (!kids.some((k) => k.type === "file" && k.name === "SKILL.md")) {
+    kids.unshift({ name: "SKILL.md", type: "file", path: `${rel}/SKILL.md` });
+  }
+  return kids;
 }
 
 function readOrigins(file: string): Record<string, string> {

@@ -59,12 +59,39 @@ describe("buildAgentView", () => {
     expect(childNames).toContain(".mcp.json");
     expect(childNames.some((n) => n.startsWith("skills"))).toBe(true);
 
-    // a linked skill points at its source SKILL.md in the origin root (openable by the doc reader),
-    // and is badged as coming from an app pack.
+    // a linked skill is a COLLAPSED folder badged with its origin; even with no source dir on disk it
+    // still exposes a readable SKILL.md child pointing at the origin root (openable by the doc reader).
     const skillsNode = (root.children ?? []).find((c) => c.name.startsWith("skills"))!;
     const gmail = (skillsNode.children ?? []).find((c) => c.name === "gmail-triage")!;
-    expect(gmail.path).toBe("team-acme/skills/gmail-triage/SKILL.md");
+    expect(gmail.type).toBe("dir");
+    expect(gmail.path).toBe("team-acme/skills/gmail-triage");
+    expect(gmail.collapsed).toBe(true);
     expect(gmail.note).toMatch(/app/);
+    const skillMd = (gmail.children ?? []).find((c) => c.name === "SKILL.md")!;
+    expect(skillMd.type).toBe("file");
+    expect(skillMd.path).toBe("team-acme/skills/gmail-triage/SKILL.md");
+  });
+
+  it("lists a skill's REAL source files (SKILL.md + extras) as readable children", () => {
+    write(".claude/skill-origins.json", JSON.stringify({ "notion-search": "team-acme" }));
+    // A skill folder with more than just SKILL.md - a helper script under a subdir.
+    write("team-acme/skills/notion-search/SKILL.md", "# Notion search\n");
+    write("team-acme/skills/notion-search/scripts/run.py", "print('hi')\n");
+
+    const { tree } = buildAgentView(ws, new Set());
+    const skillsNode = (tree[0]!.children ?? []).find((c) => c.name.startsWith("skills"))!;
+    const skill = (skillsNode.children ?? []).find((c) => c.name === "notion-search")!;
+    const names = (skill.children ?? []).map((c) => c.name);
+    expect(names).toContain("SKILL.md");
+    expect(names).toContain("scripts");
+    // the SKILL.md is a readable file node with a root-relative path
+    const md = (skill.children ?? []).find((c) => c.name === "SKILL.md")!;
+    expect(md.type).toBe("file");
+    expect(md.path).toBe("team-acme/skills/notion-search/SKILL.md");
+    // the subdir is a nested folder whose file is also openable
+    const scripts = (skill.children ?? []).find((c) => c.name === "scripts")!;
+    expect(scripts.type).toBe("dir");
+    expect((scripts.children ?? [])[0]!.path).toBe("team-acme/skills/notion-search/scripts/run.py");
   });
 
   it("degrades cleanly when the workspace has no generated agent config", () => {

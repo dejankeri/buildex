@@ -192,6 +192,8 @@ export interface TreeNode {
   children?: TreeNode[];
   /** Optional badge (e.g. a skill's origin root, or "N MCP servers") for derived/agent-surface nodes. */
   note?: string;
+  /** Render this directory collapsed by default (e.g. a skill folder, so a long list stays tidy). */
+  collapsed?: boolean;
 }
 
 export interface OnboardingControl {
