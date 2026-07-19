@@ -39,7 +39,7 @@ function tourStepDefs() {
       sel: "#tabAdd",
       place: "bottom",
       title: "Open different screens",
-      body: "Inside a session, the <b>＋</b> opens different screens: a <b>chat</b> with your agent, a <b>document</b>, a <b>web browser</b>, or your <b>workspace map</b>.",
+      body: "Inside a session, the <b>＋</b> opens different screens: a <b>chat</b> with your agent, a <b>document</b>, or a <b>web browser</b>.",
     },
     {
       sel: "#rtabs",

@@ -32,4 +32,14 @@
   .empty{margin:auto;text-align:center;color:var(--faint);font-size:13.5px;padding:40px;} .empty .big{font-size:30px;margin-bottom:10px;}
   /* empty-project start screen */
   .startscreen{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;} .ss-card{max-width:460px;width:100%;text-align:center;} .ss-emoji{font-size:32px;color:var(--brand);margin-bottom:8px;} .ss-card h2{margin:0 0 6px;font-size:20px;} .ss-card p{color:var(--muted);font-size:13.5px;margin:0 0 22px;} .ss-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;} .ss-actions button{display:flex;align-items:center;gap:11px;padding:14px 16px;border:1px solid var(--line-2);border-radius:11px;background:var(--panel);color:var(--ink);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;text-align:left;} .ss-actions button span{font-size:15px;color:var(--brand);} .ss-actions button:hover{border-color:var(--brand-dim);background:var(--panel-2);}
+  /* "Work with your apps & tools" section on the empty session screen. */
+  .ss-tools{margin-top:22px;text-align:left;}
+  .ss-tools-h{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:700;margin-bottom:10px;}
+  .ss-tools-row{display:flex;flex-wrap:wrap;gap:8px;}
+  .ss-tool{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line-2);border-radius:9px;background:var(--panel);color:var(--ink);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;}
+  .ss-tool span{font-size:14px;}
+  .ss-tool:hover{border-color:var(--brand-dim);background:var(--panel-2);}
+  .ss-store{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px dashed color-mix(in srgb,var(--brand) 45%,var(--line-2));border-radius:9px;background:none;color:var(--brand);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer;}
+  .ss-store span{font-size:14px;}
+  .ss-store:hover{background:color-mix(in srgb,var(--brand) 12%,transparent);}
 

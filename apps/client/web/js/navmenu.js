@@ -51,21 +51,37 @@ async function switchToProject(pid, focusIdx) {
   refreshProjects();
 }
 
-/** Render the empty-project start screen (session title + quick-start action buttons) into the tab body. */
+/** Render the empty-project start screen into the tab body: the two primitives (chat + document),
+ *  then a "work with your apps & tools" section - each installed app opens an AI chat focused on it,
+ *  and an always-present CTA opens the Store to add more (the on-ramp for a new operator). */
 function showProjectStart() {
   hideProjectStart();
   const p = (S.projects || []).find((x) => x.id === S.activeProject);
+  const apps = S.apps || [];
+  // One launcher per installed app: clicking it starts an AI chat oriented to that app's tools.
+  const appBtns = apps.map((a) => {
+    const glyph = a.icon && a.icon.length <= 3 ? esc(a.icon) : (a.kind === "external" ? "🌐" : "◈");
+    return '<button class="ss-tool" data-app="' + escAttr(a.name) + '"><span>' + glyph + "</span>" + esc(a.title) + "</button>";
+  }).join("");
   const el = elt("div", "startscreen");
   el.id = "startScreen";
-  el.innerHTML = '<div class="ss-card"><div class="ss-emoji">✦</div><h2>' + esc((p && p.name) || "Session") + '</h2><p>Start working - everything you open stays in this session.</p><div class="ss-actions">'
-    + '<button data-a="chat"><span>◈</span>Start a chat</button><button data-a="doc"><span>✎</span>New document</button><button data-a="browser"><span>◉</span>Open a browser</button><button data-a="map"><span>◇</span>Workspace map</button></div></div>';
+  el.innerHTML = '<div class="ss-card"><div class="ss-emoji">✦</div><h2>' + esc((p && p.name) || "Session") + "</h2>"
+    + "<p>Start working - everything you open stays in this session.</p>"
+    + '<div class="ss-actions"><button data-a="chat"><span>◈</span>Start a chat</button><button data-a="doc"><span>✎</span>New document</button></div>'
+    + '<div class="ss-tools"><div class="ss-tools-h">Work with your apps &amp; tools</div>'
+    + '<div class="ss-tools-row">' + appBtns
+    + '<button class="ss-store" data-a="store"><span>⊕</span>' + (apps.length ? "Add apps &amp; tools" : "Add apps &amp; tools you work with") + "</button></div></div>"
+    + "</div>";
   $("#tabbody").appendChild(el);
-  el.querySelectorAll("button").forEach((b) => b.onclick = () => {
+  el.querySelectorAll("[data-a]").forEach((b) => b.onclick = () => {
     const a = b.dataset.a;
     if (a === "chat") newConversation();
     else if (a === "doc") openMarkdownEditor(null, "");
-    else if (a === "browser") openBrowserTab();
-    else openMapTab();
+    else if (a === "store") openStoreTab();
+  });
+  el.querySelectorAll("[data-app]").forEach((b) => b.onclick = () => {
+    const app = (S.apps || []).find((x) => x.name === b.dataset.app);
+    if (app) openAppChat(app);
   });
 }
 
@@ -95,7 +111,6 @@ const ADD_ACTIONS=[
   {icon:"✎",label:"New document",   key:"n",shift:true, run:()=>openMarkdownEditor(null,"")},
   {icon:"▤",label:"Open a document",key:"o",shift:false,run:()=>switchRight("files")},
   {icon:"◉",label:"Web browser",    key:"b",shift:true, run:()=>openBrowserTab()},
-  {icon:"◇",label:"Workspace map",  key:"m",shift:true, run:()=>openMapTab()},
 ];
 
 /**
