@@ -100,6 +100,32 @@ describe("/api/prompt - SSE stream survives a mid-turn gap", () => {
       .map((f) => JSON.parse(f.slice(f.indexOf("{"))));
     expect(events.map((e) => e.kind)).toEqual(["text", "tool", "done"]);
   });
+
+  it("forwards a client-supplied systemPromptAppend to runPrompt (invisible orienting context)", async () => {
+    let seen: { systemPromptAppend?: string } | undefined;
+    const { app } = makeDaemon({
+      // eslint-disable-next-line require-yield
+      async *runPrompt(o: { systemPromptAppend?: string }) {
+        seen = o;
+        return; // no events - we only care what runPrompt was called with
+      },
+    });
+    await (await app(post("/api/prompt", { prompt: "hi", systemPromptAppend: "You're working with the Protocol app." }))).text();
+    expect(seen?.systemPromptAppend).toBe("You're working with the Protocol app.");
+  });
+
+  it("omits systemPromptAppend when the client doesn't send one", async () => {
+    let seen: { systemPromptAppend?: string } | undefined;
+    const { app } = makeDaemon({
+      // eslint-disable-next-line require-yield
+      async *runPrompt(o: { systemPromptAppend?: string }) {
+        seen = o;
+        return;
+      },
+    });
+    await (await app(post("/api/prompt", { prompt: "hi" }))).text();
+    expect(seen && "systemPromptAppend" in seen ? seen.systemPromptAppend : undefined).toBeUndefined();
+  });
 });
 
 describe("/api/prompt - a client disconnect cancels the turn (no orphan, no false 'error')", () => {

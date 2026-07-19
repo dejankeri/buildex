@@ -74,6 +74,18 @@ export async function startPackagedDaemon(opts: PackagedDaemonOpts = {}): Promis
       schedulerIntervalMs: 60000,
       keychainMode: "auto",
       webRoot,
+      // Per-org connector gateway: hosts BuildEx's OAuth+MCP gateway on a loopback port so an installed
+      // pack's tools (e.g. HeyGen, Linear) surface to the agent and show live Connect/connected status.
+      // No founder providers in the shipped build (providers:[]); installed packs auto-register. The
+      // router tears this down + rebinds on org switch (the port is fixed). `localhost` (not the IP
+      // literal) for the OAuth redirect - some providers reject 127.0.0.1; the daemon also listens ::1.
+      connectorsMcp: {
+        providers: [],
+        // Console+1 in production; when the console port is ephemeral (0, as in tests) the gateway is
+        // ephemeral too, so we never derive a privileged port 1.
+        gatewayPort: Number(process.env["BUILDEX_DEMO_GATEWAY_PORT"] ?? (port > 0 ? port + 1 : 0)),
+        redirectBase: `http://localhost:${port}`,
+      },
     },
     seedReal: (workspace: string): Root[] => provisionLocalWorkspace({ workspace, corePackDir, actor: "operator" }),
     seedDemo: (workspace: string): Root[] => seedAcmeWorkspace({ workspace, corePackDir }),

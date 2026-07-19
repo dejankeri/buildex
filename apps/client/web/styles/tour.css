@@ -1,0 +1,35 @@
+/* Quick guided tour — anchored coach-marks that spotlight a real UI region and explain it.
+   Part of the operator console design system (web/index.html). Shares the wizard's tokens/aesthetic
+   (see welcome.css). Shown once on a fresh install (after the welcome wizard) and replayable from the
+   title-bar "?" button. */
+
+/* Transparent click-catcher: keeps the tour focused (clicks on the dimmed UI do nothing) without
+   trapping the operator — Esc or Skip always exits. */
+.tour-back{position:fixed;inset:0;z-index:209;-webkit-app-region:no-drag;cursor:default;}
+
+/* The spotlight "hole": positioned exactly over the anchored element; its huge box-shadow dims the
+   rest of the screen, leaving the anchor bright with a soft brand ring. pointer-events:none so it's
+   purely visual. */
+.tour-hole{position:fixed;z-index:210;border-radius:10px;pointer-events:none;
+  box-shadow:0 0 0 9999px rgba(0,0,0,.58), 0 0 0 2px var(--brand), 0 0 22px 4px rgba(0,0,0,.35) inset;
+  transition:top .22s ease, left .22s ease, width .22s ease, height .22s ease;}
+
+/* The coach-mark card. */
+.tour-card{position:fixed;z-index:211;width:312px;max-width:calc(100vw - 24px);
+  background:var(--elevate);border:1px solid var(--line-2);border-radius:12px;padding:16px 16px 13px;
+  box-shadow:0 24px 60px rgba(0,0,0,.5);-webkit-app-region:no-drag;
+  transition:top .22s ease, left .22s ease;}
+.tour-step{font-size:11px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:var(--brand);margin-bottom:7px;}
+.tour-t{font-size:16px;font-weight:750;letter-spacing:-.02em;margin:0 0 7px;color:var(--ink);}
+.tour-body{font-size:13px;line-height:1.55;color:var(--muted);margin:0;}
+.tour-body b{color:var(--ink);font-weight:650;}
+.tour-actions{display:flex;align-items:center;margin-top:15px;gap:8px;}
+.tour-dots{display:flex;gap:5px;margin-right:auto;}
+.tour-dots span{width:6px;height:6px;border-radius:50%;background:var(--line-2);transition:background .2s;}
+.tour-dots span.on{background:var(--brand);}
+.tour-primary{background:var(--brand);color:#04211d;border:0;border-radius:8px;padding:7px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;}
+.tour-primary:hover{filter:brightness(1.08);}
+.tour-ghost{background:none;border:1px solid var(--line-2);color:var(--muted);border-radius:8px;padding:7px 12px;font:inherit;font-size:12.5px;cursor:pointer;}
+.tour-ghost:hover{color:var(--ink);background:var(--panel-2);}
+
+/* The title-bar "?" replay button matches the other .ico controls (theme, toggles). */

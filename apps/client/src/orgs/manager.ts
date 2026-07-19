@@ -146,6 +146,23 @@ export class OrgManager {
     return this.resolve(meta);
   }
 
+  /** First-boot bootstrap, idempotent. On the VERY first launch (no active-org pointer yet) it stands
+   *  up BOTH the operator's own empty org ("My Organization") AND the Acme sandbox, and lands the
+   *  operator in their OWN org - the sandbox sits alongside to explore, but leading with a demo full of
+   *  fake data overwhelms a fresh operator. Every later boot just resolves the persisted active org
+   *  (respecting a switch the operator made). Returns the org to activate. */
+  bootstrap(opts?: { firstRealName?: string }): Org {
+    const firstRun = !existsSync(this.activePointer);
+    this.ensureDemo(); // the Acme sandbox is always present alongside
+    if (firstRun) {
+      // create() seeds the empty real org and makes it active, so the operator starts in their own org.
+      return this.create({ name: opts?.firstRealName ?? "My Organization" });
+    }
+    const active = this.active() ?? this.ensureDemo();
+    this.setActive(active.id); // persist the resolved choice so it's stable next boot
+    return active;
+  }
+
   /** Create a real (syncable-later) local org and make it active. */
   create(opts: { name: string }): Org {
     const name = opts.name.trim();

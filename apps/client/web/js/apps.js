@@ -14,8 +14,10 @@
 /* ---------- left: apps ---------- */
 
 /**
- * Reload the installed apps and repaint the left rail: a Store row, then one row per app with its
- * glyph, title, repo, and a live connection badge (Connect / connected dot) from the gateway.
+ * Reload the installed apps and repaint the left rail: one row per app with its glyph, title, a live
+ * connection badge (Connect / connected dot) from the gateway, and a hover "open interface" icon.
+ * A row's DEFAULT click starts a new AI chat focused on that app (its MCP tools + skills); the 🌐 icon
+ * opens the app's own interface in a tab. (The Store now lives in the section header, not a list row.)
  */
 async function refreshApps() {
   let apps;
@@ -36,35 +38,75 @@ async function refreshApps() {
   }
   const host = $("#applist");
   host.innerHTML = "";
-  const storeRow = elt("div", "aitem astore");
-  storeRow.innerHTML = '<span class="aemoji">⊕</span><span class="albl">Store</span>';
-  storeRow.onclick = () => openStoreTab();
-  host.appendChild(storeRow);
   if (!apps.length) {
-    host.insertAdjacentHTML("beforeend", '<div class="appempty">No apps yet - add one with ＋ above.</div>');
+    const empty = elt("div", "appempty");
+    empty.innerHTML = 'No apps yet - open the <b>⊕ Store</b> above to add one.';
+    host.appendChild(empty);
     return;
   }
   apps.forEach((a) => {
-    const active = S.active && S.tabs.find((t) => t.id === S.active && t.type === "app" && t.app && t.app.repo === a.repo && t.app.name === a.name);
-    const row = elt("div", "aitem" + (active ? " active" : ""));
+    const row = elt("div", "aitem");
     // short custom icon (≤3 chars) as-is, else a kind glyph: 🌐 external / ◈ local.
     const glyph = a.icon && a.icon.length <= 3 ? esc(a.icon) : (a.kind === "external" ? "🌐" : "◈");
     const c = appConn(a.name);
-    const badge = c && c.needsAuth
-      ? '<span class="aconn" title="Not connected - click to authorize">Connect</span>'
-      : (c && c.connected ? '<span class="acdot" title="Connected - the agent can use its tools"></span>' : "");
-    row.innerHTML = '<span class="aemoji">' + glyph + '</span><span class="albl">' + esc(a.title) + "</span>" + badge + '<span class="arepo">' + esc(a.repo) + "</span>";
-    row.onclick = () => openAppTab(a);
-    if (c && c.needsAuth) {
-      const b = $(".aconn", row);
-      if (b)
-        b.onclick = (e) => {
-          e.stopPropagation();
-          connectApp(a, c);
-        };
-    }
+    const needsAuth = !!(c && c.needsAuth); // gateway-routed app whose tools aren't authorized yet
+    // Two explicit actions per row (the row itself isn't clickable): the AI button starts an agent
+    // chat to work WITH the app; the 🌐 button opens the app's own interface. The AI button doubles as
+    // the connection indicator - "AI chat" when the tools are ready, "AI · not connected" otherwise
+    // (it still opens the chat, where a discrete chip offers to connect).
+    row.innerHTML = '<span class="aemoji">' + glyph + '</span><span class="albl">' + esc(a.title) + "</span>"
+      + '<button class="aiapp' + (needsAuth ? " off" : "") + '" title="' + (needsAuth ? "Tools not connected - open a chat to connect and work with " : "Start an AI chat to work with ") + escAttr(a.title) + '">'
+      + (needsAuth ? "AI · not connected" : "AI chat") + "</button>"
+      + '<button class="aweb" title="Open ' + escAttr(a.title) + '’s interface">🌐</button>';
+    // Not connected → open the Connect dialog first (never drop into a chat with dead tools).
+    // Connected / no-auth-needed → straight into the AI chat.
+    $(".aiapp", row).onclick = () => (needsAuth ? openConnectDialog(a) : openAppChat(a));
+    $(".aweb", row).onclick = () => openAppTab(a);
     host.appendChild(row);
   });
+}
+
+/** The App Store catalog, cached after first fetch (used to look up an app's MCP + skills to orient a
+ *  chat). Returns [] if the store is unavailable. */
+async function appCatalog() {
+  if (S.catalog) return S.catalog;
+  try {
+    S.catalog = (await getJSON("/api/catalog")).packs || [];
+  } catch (e) {
+    S.catalog = [];
+  }
+  return S.catalog;
+}
+
+/**
+ * The AI action for an app row: open a NEW chat tab to work with `app` through the agent. The composer
+ * stays EMPTY - the orienting context (the app's MCP tools + bundled skills) is INJECTED invisibly as a
+ * system-prompt append on every turn (`tab.systemAppend`), not typed into the box. A discrete context
+ * chip above the composer shows it's active and, if the tools aren't connected yet, offers to connect.
+ * Every click opens a fresh tab.
+ * @param {object} app - the installed app record (name === catalog pack id).
+ */
+async function openAppChat(app) {
+  // Look up the app's catalog pack (id === app.name) for its MCP + skills, so the agent is oriented.
+  const pack = (await appCatalog()).find((p) => p.id === app.name);
+  const skills = (pack && pack.skills) || [];
+  const hasMcp = !!(pack && pack.mcp) || (pack && pack.faces && pack.faces.mcp);
+  // The invisible orienting append (system-prompt scope, never shown as a user message).
+  const bits = ["The operator is working with the " + app.title + " app."];
+  if (hasMcp) bits.push("Use its connector tools (" + app.name + ") to read and, with approval, act.");
+  if (skills.length) bits.push("Its skills are available: " + skills.join(", ") + ".");
+  if (app.kind === "external" && app.url) bits.push("Its web interface is at " + app.url + ".");
+  const systemAppend = bits.join(" ");
+  const conn = appConn(app.name);
+
+  const proj = S.projects && S.projects.find((p) => p.id === S.activeProject);
+  const folder = (proj && proj.name) || (S.config.company && S.config.company.name) || "Conversations";
+  const { id } = await postJSON("/api/sessions", { folder, title: app.title });
+  if (S.activeProject) await postJSON("/api/projects/" + S.activeProject + "/items", { item: { type: "chat", sessionId: id, title: app.title } });
+  await refreshProjects();
+  const tab = addTab({ type: "chat", title: app.title, sessionId: id, status: "idle", systemAppend, app: app, appConn: conn });
+  buildChatPane(tab);
+  loadSession(tab);
 }
 
 /** Real gateway status for an app by name (= pack id), or undefined for direct-pinned/unrouted apps. */
@@ -79,6 +121,74 @@ function connectApp(app, conn) {
   const url = conn && conn.authUrl;
   if (!url) return; // still registering with the gateway - the badge stays until authUrl lands
   window.open(url, "_blank"); // setWindowOpenHandler → shell.openExternal in the desktop app
+}
+
+/**
+ * The ways this app can be connected for the agent, in preference order. Today apps declare an MCP
+ * face (sign-in / OAuth); a pack MAY also declare an `api` face (an API-key alternative). The Connect
+ * dialog shows a picker when there's more than one, and goes straight via the single route otherwise.
+ * @returns {Array<{key:string,label:string,desc:string,run:Function}>}
+ */
+function appConnectRoutes(app, pack, conn) {
+  const routes = [];
+  if ((pack && pack.mcp) || (conn && conn.needsAuth)) {
+    routes.push({
+      key: "mcp",
+      label: "Connect with sign-in",
+      desc: "Authorize " + app.title + " on its own page so the agent can use its tools directly.",
+      run: () => connectApp(app, conn || appConn(app.name)),
+    });
+  }
+  if (pack && pack.api) {
+    // Present only when a pack declares an API face; the picker then lets the operator choose it.
+    routes.push({
+      key: "api",
+      label: "Use an API key",
+      desc: "Connect " + app.title + " with an API key instead of signing in.",
+      run: () => connectAppApi(app, pack.api),
+    });
+  }
+  return routes;
+}
+
+/**
+ * Ask how to connect an app before doing anything else - never drop the operator into a chat whose
+ * tools are dead. One route → a simple confirm; two+ (MCP and API) → a picker. Cancelling leaves the
+ * app unconnected. On MCP connect the OAuth page opens (external); the row flips to "AI chat" on the
+ * next status poll.
+ * @param {object} app - the app row that was clicked while "not connected".
+ */
+async function openConnectDialog(app) {
+  const conn = appConn(app.name);
+  const pack = (await appCatalog()).find((p) => p.id === app.name);
+  const routes = appConnectRoutes(app, pack, conn);
+  if (!routes.length) { openAppChat(app); return; } // nothing to connect → just open the chat
+
+  const single = routes.length === 1;
+  const bd = elt("div", "ovbackdrop");
+  const btns = routes.map((r, i) => '<button class="mini' + (i > 0 ? " ghost" : "") + ' cxroute" data-i="' + i + '">' + esc(r.label) + "</button>").join("");
+  bd.innerHTML = '<div class="ovcard"><h3 class="ovh">Connect ' + esc(app.title) + "</h3>"
+    + '<p class="ovp">' + esc(single ? routes[0].desc : "Choose how to connect " + app.title + " so the agent can work with it:") + "</p>"
+    + (single ? "" : '<ul class="ovlines">' + routes.map((r) => "<li><b>" + esc(r.label) + "</b> — " + esc(r.desc) + "</li>").join("") + "</ul>")
+    + '<div class="ovrow">' + btns + '<button class="mini ghost cxcancel">Cancel</button></div></div>';
+  document.body.appendChild(bd);
+  const close = () => bd.remove();
+  bd.onclick = (e) => { if (e.target === bd) close(); };
+  $(".cxcancel", bd).onclick = close;
+  bd.querySelectorAll(".cxroute").forEach((b) => (b.onclick = () => { routes[+b.dataset.i].run(); close(); }));
+}
+
+/** API-key connection route (shown only when a pack declares an `api` face). The backing store isn't
+ *  wired yet, so surface a clear note rather than a dead form - keeps the picker honest. */
+function connectAppApi(app, api) {
+  const bd = elt("div", "ovbackdrop");
+  bd.innerHTML = '<div class="ovcard"><h3 class="ovh">API key — ' + esc(app.title) + "</h3>"
+    + '<p class="ovp">API-key connection isn’t available yet' + (api && api.docs ? " (see the app’s API docs)" : "") + '. For now, use <b>Connect with sign-in</b>.</p>'
+    + '<div class="ovrow"><button class="mini ovok">OK</button></div></div>';
+  document.body.appendChild(bd);
+  const close = () => bd.remove();
+  bd.onclick = (e) => { if (e.target === bd) close(); };
+  $(".ovok", bd).onclick = close;
 }
 
 /**

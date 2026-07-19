@@ -4,18 +4,20 @@
 // (buildClientHandler is a pure function of config), so no daemon subsystem has to learn about
 // multiple orgs - the whole existing single-workspace stack is reused unchanged.
 //
-// v1 limitation (documented): the base config passed here must NOT include `connectorsMcp`. The
-// connector gateway binds a fixed loopback port and exposes no teardown, so rebuilding on switch would
-// leak/conflict it. File connectors (sources/) work per-org regardless. Per-org live gateways are a
-// follow-up that needs buildClientHandler to return a disposable.
+// The connector gateway IS per-org: the base config may include `connectorsMcp`, and each org gets its
+// own live gateway (its own OAuth/MCP status). Because the gateway binds a FIXED loopback port, a
+// switch must fully tear down the previous org's gateway before rebinding for the next - so the router
+// captures each org's gateway host (via the onGatewayHost hook) and awaits its close() before building
+// the next org's handler. File connectors (sources/) work per-org regardless.
 import { buildClientHandler, type ClientConfig } from "../wiring.js";
 import type { Handler } from "../daemon/daemon.js";
 import { OrgManager, type Org } from "./manager.js";
 import type { SyncScheduler } from "../sync/scheduler.js";
 
 /** Everything the daemon handler needs EXCEPT what varies per org (workspace/roots/company) and the
- *  scheduler hook (the router owns lifecycle). Deliberately excludes connectorsMcp for v1. */
-export type OrgBaseConfig = Omit<ClientConfig, "workspace" | "roots" | "company" | "onScheduler" | "connectorsMcp">;
+ *  lifecycle hooks the router owns (scheduler + gateway host). `connectorsMcp` IS allowed - it's shared
+ *  by every org, and the router manages the per-org gateway lifecycle around it. */
+export type OrgBaseConfig = Omit<ClientConfig, "workspace" | "roots" | "company" | "onScheduler" | "onGatewayHost">;
 
 export interface OrgRouterDeps {
   manager: OrgManager;
@@ -26,19 +28,47 @@ export interface OrgRouterDeps {
 
 export interface OrgRouter {
   handler: Handler;
-  /** Stop the active org's background sync loop (called on daemon shutdown). */
-  close: () => void;
+  /** Release the active org's background resources - sync loop + connector-gateway host (called on
+   *  daemon shutdown). Async: awaits the gateway host's close so the port is freed. */
+  close: () => Promise<void>;
   /** The currently-active org id (for tests / diagnostics). */
   activeId: () => string;
 }
 
+type GatewayHost = { close: () => Promise<void> };
+
 export function createOrgRouter(deps: OrgRouterDeps): OrgRouter {
   const build = deps.buildHandler ?? buildClientHandler;
-  let current: { org: Org; handler: Handler; scheduler: SyncScheduler | null } | null = null;
+  let current: {
+    org: Org;
+    handler: Handler;
+    scheduler: SyncScheduler | null;
+    gatewayHostP: Promise<GatewayHost> | null;
+  } | null = null;
 
+  // Tear down the currently-active org's background resources: stop its sync loop and CLOSE its
+  // connector-gateway HTTP host, awaiting the close so the fixed gateway port is free before the next
+  // org rebinds it. Safe to call with no active org. A gateway that failed to bind (rejected promise)
+  // is swallowed - there is nothing to close.
+  async function teardownCurrent(): Promise<void> {
+    if (!current) return;
+    current.scheduler?.stop();
+    if (current.gatewayHostP) {
+      try {
+        const host = await current.gatewayHostP;
+        await host.close();
+      } catch {
+        /* host never bound (or already gone) - nothing to close */
+      }
+    }
+  }
+
+  // Build + install the handler for `org` and record its lifecycle handles. SYNCHRONOUS: it must not
+  // await, so the boot path can return a ready router. Any teardown of a PREVIOUS org happens before
+  // this is called (see teardownCurrent) - here `current` is always either null or already torn down.
   function activate(org: Org): void {
-    current?.scheduler?.stop(); // tear down the previous org's sync loop before rebuilding
     let scheduler: SyncScheduler | null = null;
+    let gatewayHostP: Promise<GatewayHost> | null = null;
     const config: ClientConfig = {
       ...deps.baseConfig,
       workspace: org.workspace,
@@ -48,16 +78,29 @@ export function createOrgRouter(deps: OrgRouterDeps): OrgRouter {
         scheduler = s;
         s.start();
       },
+      onGatewayHost: (hostP) => {
+        gatewayHostP = hostP;
+        // Own the promise's rejection now: if the host never binds, teardownCurrent's later await is
+        // the only other consumer, and until then this keeps a bind failure from surfacing as an
+        // unhandled rejection.
+        hostP.catch(() => {});
+      },
     };
     const handler = build(config);
-    current = { org, handler, scheduler };
+    current = { org, handler, scheduler, gatewayHostP };
   }
 
-  // Boot: guarantee the demo sandbox exists, then activate the persisted (or fallback) active org.
-  deps.manager.ensureDemo();
-  const active = deps.manager.active() ?? deps.manager.ensureDemo();
-  deps.manager.setActive(active.id); // persist the resolved choice so it's stable next boot
-  activate(active);
+  // Switch the active org: fully release the previous org's gateway/sync BEFORE building the next
+  // (the gateway port is fixed, so the close must complete first), then activate the new one.
+  async function switchTo(org: Org): Promise<void> {
+    await teardownCurrent();
+    activate(org);
+  }
+
+  // Boot: on first run this stands up the operator's own empty org (active) alongside the Acme
+  // sandbox; on later boots it resolves the persisted active org. First activation has nothing to tear
+  // down, so it's a plain synchronous activate - the router is returned ready.
+  activate(deps.manager.bootstrap());
 
   const view = (org: Org) => ({ id: org.id, name: org.name, sandbox: org.sandbox });
 
@@ -76,7 +119,7 @@ export function createOrgRouter(deps: OrgRouterDeps): OrgRouter {
       const org = deps.manager.get(id);
       if (!org) return json({ error: "unknown org" }, 404);
       deps.manager.setActive(id);
-      activate(org);
+      await switchTo(org);
       return json({ ok: true, activeId: id });
     }
 
@@ -85,7 +128,7 @@ export function createOrgRouter(deps: OrgRouterDeps): OrgRouter {
       const name = typeof body?.name === "string" ? body.name.trim() : "";
       if (!name) return json({ error: "name required" }, 400);
       const org = deps.manager.create({ name }); // seeds + sets active
-      activate(org);
+      await switchTo(org);
       return json({ id: org.id, name: org.name }, 201);
     }
 
@@ -94,7 +137,7 @@ export function createOrgRouter(deps: OrgRouterDeps): OrgRouter {
 
   return {
     handler,
-    close: () => current?.scheduler?.stop(),
+    close: () => teardownCurrent(),
     activeId: () => current!.org.id,
   };
 }

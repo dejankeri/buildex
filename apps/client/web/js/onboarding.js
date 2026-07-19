@@ -17,8 +17,10 @@
  * @returns {Promise<void>}
  */
 async function checkOnboarding(){
-  let o; try{o=await getJSON("/api/onboarding");}catch(e){return;}
-  if(!o||!o.firstRun)return;
+  let o; try{o=await getJSON("/api/onboarding");}catch(e){maybeAutoTour();return;}
+  // Not a fresh install: the wizard stays hidden, but new UI regions still deserve a one-time tour
+  // (this also catches installs that predate the tour). maybeAutoTour no-ops if it's already been seen.
+  if(!o||!o.firstRun){maybeAutoTour();return;}
   // The "connect your agent" step's body depends on whether Claude Code was detected on the machine.
   const agentStep=(o.agent&&o.agent.available)
     ?'<div class="wz-ok">✓ Claude Code detected'+(o.agent.version?' · <span class="wz-mono">'+esc(o.agent.version)+'</span>':'')+'</div><p>BuildEx drives <b>your own</b> Claude Code. The driver seam is open - other agents welcome as contributions. It requires a Claude Pro subscription or higher. We never read your keys.</p>'
@@ -32,8 +34,9 @@ async function checkOnboarding(){
   ];
   let i=0;
   const back=elt("div","wz-backdrop"), card=elt("div","wz-card"); back.appendChild(card); document.body.appendChild(back);
-  // Mark onboarding complete (best-effort) and tear down the modal.
-  const finish=()=>{postJSON("/api/onboarding/complete",{}).catch(()=>{});back.remove();};
+  // Mark onboarding complete (best-effort), tear down the modal, then run the guided UI tour so a fresh
+  // operator goes straight from "why" (the wizard) to "where" (the tour) without stacking the two.
+  const finish=()=>{postJSON("/api/onboarding/complete",{}).catch(()=>{});back.remove();startTour(true);};
   // Render the current step `i` into the card: progress dots, title, body, and back/skip/primary actions.
   const draw=()=>{
     const s=steps[i];

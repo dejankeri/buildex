@@ -15,7 +15,9 @@
  */
 function buildChatPane(tab){
   tab.pane.classList.add("on");
-  tab.pane.innerHTML='<div class="thread"></div><div class="composer"><div class="box">'
+  tab.pane.innerHTML='<div class="thread"></div><div class="composer">'
+    +(tab.systemAppend?'<div class="ctxchip"></div>':'')
+    +'<div class="box">'
     +'<textarea rows="1" aria-label="Message your company brain" placeholder="Ask your company brain…"></textarea>'
     +'<div class="crow">'
     +'<button class="ctool attach" title="Attach a workspace file" aria-label="Attach a workspace file">📎</button>'
@@ -39,8 +41,33 @@ function buildChatPane(tab){
   send.onclick=go;
   ta.addEventListener("input",grow);
   ta.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();go();}}; // Enter sends, Shift+Enter newlines
-  // Optional prefill (e.g. from a "start a chat about X" action): fill, focus, caret to end, grow.
+  // Optional prefill (e.g. the "Run skill" action): fill, focus, caret to end, grow.
   if(tab.prefill){ta.value=tab.prefill;setTimeout(()=>{ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);grow();},0);}
+  // Discrete context chip (e.g. opened from an app): shows the injected orienting context - the
+  // composer stays empty, the context rides along invisibly as a system append on each turn.
+  if(tab.systemAppend)renderCtxChip(tab);
+}
+
+/**
+ * Render the app-context chip above the composer. It shows which app the chat is oriented to, offers
+ * a Connect action when the app's tools aren't authorized yet, and an × that removes the injected
+ * context (clears tab.systemAppend so later turns carry no app append).
+ * @param {object} tab - the chat tab holding `systemAppend` (+ optional `app`/`appConn`).
+ */
+function renderCtxChip(tab){
+  const chip=$(".ctxchip",tab.pane);if(!chip)return;
+  const needsAuth=!!(tab.appConn&&tab.appConn.needsAuth);
+  const title=(tab.app&&tab.app.title)||"this app";
+  chip.className="ctxchip"+(needsAuth?" warn":"");
+  chip.innerHTML='<span class="cx-ic">'+(needsAuth?"⚠":"✦")+'</span>'
+    +'<span class="cx-tx">'+(needsAuth
+        ?'<b>'+esc(title)+'</b> tools aren’t connected yet'
+        :'Working with <b>'+esc(title)+'</b> · tools &amp; skills loaded')+'</span>'
+    +(needsAuth?'<button class="cx-connect">Connect</button>':'')
+    +'<button class="cx-x" title="Remove this context" aria-label="Remove context">×</button>';
+  const con=$(".cx-connect",chip);
+  if(con&&typeof connectApp==="function")con.onclick=()=>connectApp(tab.app,tab.appConn);
+  $(".cx-x",chip).onclick=()=>{tab.systemAppend=null;chip.remove();};
 }
 
 /**
@@ -169,7 +196,7 @@ async function sendPrompt(tab,prompt){
   const turn=agentTurn(tab);const sc=()=>tab.thread.scrollTop=tab.thread.scrollHeight;sc();
   let text="",think="";
   try{
-    const res=await fetch("/api/prompt",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({prompt,sessionId:tab.sessionId,...(tab.model?{model:tab.model}:{}),...(tab.effort?{effort:tab.effort}:{})})});
+    const res=await fetch("/api/prompt",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({prompt,sessionId:tab.sessionId,...(tab.model?{model:tab.model}:{}),...(tab.effort?{effort:tab.effort}:{}),...(tab.systemAppend?{systemPromptAppend:tab.systemAppend}:{})})});
     // Stream the response body: decode chunks, split on blank lines into frames, JSON-parse the
     // object starting at the first "{" in each frame. `buf` holds the trailing partial frame.
     const rd=res.body.getReader(),dec=new TextDecoder();let buf="";

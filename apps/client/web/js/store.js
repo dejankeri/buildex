@@ -29,7 +29,11 @@ function openStoreTab() {
  */
 function buildStorePane(tab) {
   tab.pane.className = "pane storepane on";
-  tab.pane.innerHTML = '<h2 class="storeh">App Store</h2><div class="storegrid">Loading…</div>';
+  tab.pane.innerHTML = '<div class="storehd"><h2 class="storeh">App Store</h2>'
+    + '<button class="mini ghost addcustom" title="Add your own external or local app">＋ Add a custom app</button></div>'
+    + '<div class="storegrid">Loading…</div>';
+  const add = $(".addcustom", tab.pane);
+  if (add) add.onclick = () => openAddAppForm();
   loadStorePane(tab);
 }
 

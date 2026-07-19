@@ -25,14 +25,22 @@ async function boot() {
     const dark = c ? c === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
     document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
   };
-  $("#tgLeft").onclick = () => $(".app").classList.toggle("lc"); // toggle the left column collapse
-  $("#tgRight").onclick = () => $(".app").classList.toggle("rc"); // toggle the right column collapse
+  // Column collapse is remembered across launches (localStorage - a per-profile local file Electron
+  // persists under userData). On the VERY first launch nothing is stored, so both columns start open
+  // (see the default applied after the initial render below); afterwards we honor the operator's choice.
+  const savePanels = () => {
+    const a = $(".app").classList;
+    try { localStorage.setItem("buildex.panels", JSON.stringify({ lc: a.contains("lc"), rc: a.contains("rc") })); } catch (e) {}
+  };
+  $("#tgLeft").onclick = () => { $(".app").classList.toggle("lc"); savePanels(); }; // toggle + remember the left column
+  $("#tgRight").onclick = () => { $(".app").classList.toggle("rc"); savePanels(); }; // toggle + remember the right column
+  $("#helpBtn").onclick = () => startTour(true); // replay the guided tour any time
   $("#brandBtn").onclick = () => openBrainTab();
   $("#navBack").onclick = () => navGo(-1);
   $("#navFwd").onclick = () => navGo(1);
   $("#newProject").onclick = () => newProject();
   $("#newSessionTop").onclick = () => newProject();
-  $("#newAppTop").onclick = () => openAddAppForm();
+  $("#storeTop").onclick = () => openStoreTab();
   $("#tabAdd").onclick = (e) => openAddMenu(e.currentTarget);
   document.addEventListener("keydown", onAddShortcut); // ⌘/Ctrl shortcuts for the ＋ add-menu
   $$("#rtabs button[data-r]").forEach((b) => b.onclick = () => switchRight(b.dataset.r));
@@ -45,8 +53,13 @@ async function boot() {
   await refreshProjects();
   await refreshApps();
   await loadTree();
-  switchRight("pending");
-  $(".app").classList.add("rc"); /* Pending is the default tab; panel starts collapsed */
+  switchRight("pending"); // Pending is the default right-panel tab
+  // Restore the remembered column state; on the first-ever launch (nothing stored) leave BOTH columns
+  // open so a new operator sees the whole workspace - left rail AND right panel - before collapsing.
+  let panels = null;
+  try { panels = JSON.parse(localStorage.getItem("buildex.panels") || "null"); } catch (e) {}
+  $(".app").classList.toggle("lc", !!(panels && panels.lc));
+  $(".app").classList.toggle("rc", !!(panels && panels.rc));
   refreshPending();
   refreshUsage();
   startAppHost(); // fire-and-forget - loops forever for the page session

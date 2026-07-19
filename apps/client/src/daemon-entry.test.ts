@@ -21,7 +21,7 @@ afterEach(async () => {
 });
 
 describe("startPackagedDaemon - the shipped app's boot", () => {
-  it("binds loopback, serves /healthz, and first-run offers the demo sandbox as the active org", async () => {
+  it("binds loopback, serves /healthz, and first-run lands in the operator's own org with the Acme sandbox alongside", async () => {
     // appDataDir stands in for Electron's userData; the org registry lands under <tmp>/orgs.
     daemon = await startPackagedDaemon({ port: 0, appDataDir: tmp });
 
@@ -33,8 +33,9 @@ describe("startPackagedDaemon - the shipped app's boot", () => {
       activeId: string;
     };
     const demo = orgs.orgs.find((o) => o.id === "demo");
-    expect(demo).toMatchObject({ name: "Acme Labs", sandbox: true });
-    expect(orgs.activeId).toBe("demo"); // a fresh install lands in the play-now sandbox
+    expect(demo).toMatchObject({ name: "Acme Labs", sandbox: true }); // the sandbox exists to explore...
+    const active = orgs.orgs.find((o) => o.id === orgs.activeId);
+    expect(active).toMatchObject({ name: "My Organization", sandbox: false }); // ...but a fresh install lands in the operator's own empty org, not the demo
   });
 
   it("widens PATH on boot so a Finder-launched app can still find the agent CLI", async () => {

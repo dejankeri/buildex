@@ -24,6 +24,7 @@
 <link rel="stylesheet" href="styles/right-rail.css">
 <link rel="stylesheet" href="styles/focus.css">
 <link rel="stylesheet" href="styles/welcome.css">
+<link rel="stylesheet" href="styles/tour.css">
 </head>
 <body>
 <div class="app">
@@ -52,6 +53,7 @@
       </div>
       <div class="rgroup">
         <div class="sync ok" id="sync" role="status" aria-label="Sync status: Synced" title="Synced"><span class="d"></span></div>
+        <button class="ico" id="helpBtn" title="Quick tour">?</button>
         <button class="ico" id="themeBtn" title="Theme">◐</button>
         <button class="ico" id="tgRight" title="Toggle panel">⇥</button>
       </div>
@@ -67,7 +69,7 @@
       <div class="hd"><h3>Sessions</h3><button id="newSessionTop" title="New session">＋</button></div>
       <div class="convos" id="convos"></div>
       <button class="newchat" id="newProject">＋ New session</button>
-      <div class="hd apps-hd"><h3>Apps</h3><button id="newAppTop" title="Add an app">＋</button></div>
+      <div class="hd apps-hd"><h3>Apps</h3><button id="storeTop" class="hdstore" title="Browse the App Store - install apps &amp; connectors">⊕ Store</button></div>
       <div class="applist" id="applist"></div>
     </aside>
 
@@ -99,6 +101,7 @@
 <script src="js/state.js"></script>
 <script src="js/boot.js"></script>
 <script src="js/onboarding.js"></script>
+<script src="js/tour.js"></script>
 <script src="js/orgs.js"></script>
 <script src="js/projects.js"></script>
 <script src="js/tabs.js"></script>

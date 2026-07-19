@@ -59,6 +59,13 @@ const daemon = await startOrgDaemon({
     schedulerIntervalMs: 60000,
     keychainMode: (process.env["BUILDEX_KEYCHAIN"] as "auto" | "system" | "memory") || "auto",
     webRoot: join(REPO, "apps", "client", "web"),
+    // Per-org connector gateway (see daemon-entry.ts for the rationale). Gateway on console+1 by
+    // default (env-overridable so worktrees don't collide); the router rebinds it on org switch.
+    connectorsMcp: {
+      providers: [],
+      gatewayPort: Number(process.env["BUILDEX_DEMO_GATEWAY_PORT"] ?? (port > 0 ? port + 1 : 0)),
+      redirectBase: `http://localhost:${port}`,
+    },
   },
   seedReal,
   seedDemo,

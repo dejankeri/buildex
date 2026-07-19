@@ -23,7 +23,7 @@ function routeFetch(w: any, routes: Array<[string, unknown]>): void {
 const XSS = "<img src=x onerror=alert(1)>";
 
 describe("console renderers (jsdom) — apps left rail (refreshApps)", () => {
-  it("paints a Store row plus one row per app, with connect/connected badges from the gateway", async () => {
+  it("paints one row per app (Store lives in the header now) with an AI button + open-interface button", async () => {
     const { doc, w, c } = loadConsole();
     routeFetch(w, [
       ["/api/apps", { apps: [
@@ -36,21 +36,39 @@ describe("console renderers (jsdom) — apps left rail (refreshApps)", () => {
       ] }],
     ]);
     await c.refreshApps();
-    // Store row + 2 app rows.
-    expect(doc.querySelectorAll("#applist .aitem")).toHaveLength(3);
-    expect(doc.querySelector("#applist .astore")).not.toBeNull();
-    // needsAuth app → "Connect" affordance; connected app → the live dot.
-    expect(doc.querySelector("#applist .aconn")).not.toBeNull();
-    expect(doc.querySelector("#applist .acdot")).not.toBeNull();
-    expect(doc.querySelectorAll("#applist .albl")[1]!.textContent).toBe("Protocol");
+    // Two app rows, NO Store row (Store moved into the section header).
+    expect(doc.querySelectorAll("#applist .aitem")).toHaveLength(2);
+    expect(doc.querySelector("#applist .astore")).toBeNull();
+    // Each row has an AI button and a 🌐 open-interface button (the row itself isn't clickable).
+    expect(doc.querySelectorAll("#applist .aiapp")).toHaveLength(2);
+    expect(doc.querySelectorAll("#applist .aweb")).toHaveLength(2);
+    // needsAuth app → AI button in the "off" (not-connected) state; connected app → a plain AI button.
+    const off = doc.querySelector("#applist .aiapp.off");
+    expect(off).not.toBeNull();
+    expect(off!.textContent).toContain("not connected");
+    expect(doc.querySelectorAll("#applist .aiapp:not(.off)")).toHaveLength(1); // notion (connected)
+    expect(doc.querySelectorAll("#applist .albl")[0]!.textContent).toBe("Protocol");
   });
 
-  it("shows the empty affordance when no apps are installed", async () => {
+  it("an app whose tools need no gateway auth shows a ready AI button, not 'not connected'", async () => {
+    const { doc, w, c } = loadConsole();
+    routeFetch(w, [
+      ["/api/apps", { apps: [{ repo: "team", name: "gmail", title: "Gmail", kind: "local" }] }],
+      ["/api/connectors/gateway", { status: [] }], // no gateway entry - direct MCP is pinned, ready
+    ]);
+    await c.refreshApps();
+    const ai = doc.querySelector("#applist .aiapp");
+    expect(ai).not.toBeNull();
+    expect(ai!.className).not.toContain("off"); // ready - no sign-in needed
+    expect(ai!.textContent).toContain("AI chat");
+  });
+
+  it("shows the empty affordance (pointing at the Store) when no apps are installed", async () => {
     const { doc, w, c } = loadConsole();
     routeFetch(w, [["/api/apps", { apps: [] }], ["/api/connectors/gateway", { status: [] }]]);
     await c.refreshApps();
-    expect(doc.querySelectorAll("#applist .aitem")).toHaveLength(1); // just the Store row
-    expect(doc.querySelector("#applist .appempty")!.textContent).toContain("No apps yet");
+    expect(doc.querySelectorAll("#applist .aitem")).toHaveLength(0); // no rows at all
+    expect(doc.querySelector("#applist .appempty")!.textContent).toContain("Store");
   });
 
   it("ESCAPES an XSS-y app title — the payload is inert text, never a live element", async () => {
@@ -58,8 +76,8 @@ describe("console renderers (jsdom) — apps left rail (refreshApps)", () => {
     routeFetch(w, [["/api/apps", { apps: [{ repo: "team", name: "x", title: XSS, kind: "local" }] }], ["/api/connectors/gateway", { status: [] }]]);
     await c.refreshApps();
     expect(doc.querySelector("#applist img")).toBeNull();
-    // [0] is the Store row's label; [1] is the app row carrying the payload.
-    expect(doc.querySelectorAll("#applist .albl")[1]!.textContent).toContain("<img");
+    // [0] is the (only) app row carrying the payload - no Store row ahead of it anymore.
+    expect(doc.querySelectorAll("#applist .albl")[0]!.textContent).toContain("<img");
   });
 });
 

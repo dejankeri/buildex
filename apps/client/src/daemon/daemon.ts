@@ -126,7 +126,7 @@ export interface DaemonDeps {
   roots: Root[];
   gate: Gate;
   broker: ApprovalBroker;
-  runPrompt: (opts: { prompt: string; workspace: string; resume?: string; model?: string; effort?: string; signal?: AbortSignal }) => AsyncIterable<UiEvent>;
+  runPrompt: (opts: { prompt: string; workspace: string; resume?: string; model?: string; effort?: string; systemPromptAppend?: string; signal?: AbortSignal }) => AsyncIterable<UiEvent>;
   buildMap: () => Graph;
   /** Recent repo-wide commits (newest first) - powers the Brain view's "Learning" surface. Read-only. */
   recentChanges?: () => ChangeEntry[];
@@ -492,10 +492,10 @@ export function createDaemon(deps: DaemonDeps): Handler {
     }
 
     if (method === "POST" && path === "/api/prompt") {
-      const { prompt, resume, sessionId, model, effort } = await body<{ prompt: string; resume?: string; sessionId?: string; model?: string; effort?: string }>(req, {
-        prompt: "string!", resume: "string", sessionId: "string", model: "string", effort: "string",
+      const { prompt, resume, sessionId, model, effort, systemPromptAppend } = await body<{ prompt: string; resume?: string; sessionId?: string; model?: string; effort?: string; systemPromptAppend?: string }>(req, {
+        prompt: "string!", resume: "string", sessionId: "string", model: "string", effort: "string", systemPromptAppend: "string",
       });
-      return streamPrompt(deps, prompt, resume, sessionId, model, effort);
+      return streamPrompt(deps, prompt, resume, sessionId, model, effort, systemPromptAppend);
     }
     if (method === "POST" && path === "/api/gate") {
       const b = await body<{ name: string; input?: Record<string, unknown> }>(req, { name: "string!", input: "object" });
@@ -625,7 +625,7 @@ function serveStatic(webRoot: string, urlPath: string): Response | null {
   });
 }
 
-function streamPrompt(deps: DaemonDeps, prompt: string, resume: string | undefined, sessionId?: string, model?: string, effort?: string): Response {
+function streamPrompt(deps: DaemonDeps, prompt: string, resume: string | undefined, sessionId?: string, model?: string, effort?: string, systemPromptAppend?: string): Response {
   const enc = new TextEncoder();
   const store = deps.sessions;
   // Resume the underlying claude session if we have one for this conversation.
@@ -659,7 +659,7 @@ function streamPrompt(deps: DaemonDeps, prompt: string, resume: string | undefin
         }
       };
       try {
-        for await (const e of deps.runPrompt({ prompt, workspace: deps.workspace, signal: ac.signal, ...(claudeResume ? { resume: claudeResume } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}) })) {
+        for await (const e of deps.runPrompt({ prompt, workspace: deps.workspace, signal: ac.signal, ...(claudeResume ? { resume: claudeResume } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(systemPromptAppend ? { systemPromptAppend } : {}) })) {
           send(e);
           if (store && sessionId) {
             if (e.kind === "done" && e.sessionId) store.setClaudeSessionId(sessionId, e.sessionId);

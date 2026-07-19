@@ -93,6 +93,11 @@ export interface ClientConfig {
    *  `stop()` (a final flush) on shutdown. Omit in tests - the scheduler still coalesces writes, it
    *  just never runs the idle pull tick. */
   onScheduler?: (s: SyncScheduler) => void;
+  /** Lifecycle hook for the connector-gateway HTTP host: called (once, synchronously) with a promise
+   *  for the running host as soon as it's launched, so a multi-org runner can await `close()` before
+   *  rebinding the fixed gateway port on the next org (see orgs/router.ts). The promise rejects if the
+   *  host fails to bind; the caller catches. Only fires when `connectorsMcp` is set. */
+  onGatewayHost?: (host: Promise<{ close: () => Promise<void> }>) => void;
   /** Per-connector OAuth client credentials for the FILE connectors, runtime-injected from env
    *  (e.g. BUILDEX_GMAIL_CLIENT_ID) and NEVER committed. Absent → that connector stays fixture/apikey. */
   connectorsOAuth?: Record<string, { clientId: string; clientSecret?: string }>;
@@ -448,10 +453,14 @@ export function buildClientHandler(config: ClientConfig): Handler {
       }
     };
 
-    // Fire-and-forget: host the gateway (token-authenticated, loopback-validated), refresh the
-    // agent's registration with THIS boot's token up front (so a stale entry never lingers even
-    // with zero providers), reconnect keychain-persisted providers, then reconcile pack providers.
-    startGatewayHttp(hub.connectorGateway, { port: gwPort, token: gatewayToken })
+    // Host the gateway (token-authenticated, loopback-validated). Hand the host promise to the
+    // lifecycle hook up front so a multi-org runner can await close() before rebinding this fixed
+    // port on the next org. Then (fire-and-forget) refresh the agent's registration with THIS boot's
+    // token (so a stale entry never lingers even with zero providers), reconnect keychain-persisted
+    // providers, and reconcile pack providers.
+    const gatewayHostP = startGatewayHttp(hub.connectorGateway, { port: gwPort, token: gatewayToken });
+    config.onGatewayHost?.(gatewayHostP);
+    gatewayHostP
       .then(async () => {
         writeGatewayRegistration(config.workspace, { url: gatewayUrl, headers: gatewayHeaders });
         await hub.restore(config.connectorsMcp!.providers);
@@ -652,7 +661,10 @@ export function buildClientHandler(config: ClientConfig): Handler {
         driver.runPrompt({
           prompt: applyEffort(opts.prompt, opts.effort),
           workspace: config.workspace,
-          systemPromptAppend: workspaceHint(),
+          // The workspace map is always appended; a client-supplied append (e.g. "you're working with
+          // the Protocol app - its tools + skills are loaded") is added after it, invisibly - it steers
+          // the turn without appearing as a user message in the transcript.
+          systemPromptAppend: [workspaceHint(), opts.systemPromptAppend].filter(Boolean).join("\n\n"),
           ...(opts.resume ? { resume: opts.resume } : {}),
           ...(opts.model ? { model: opts.model } : {}),
           ...(opts.signal ? { signal: opts.signal } : {}),

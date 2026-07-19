@@ -89,8 +89,9 @@ export async function startOrgDaemon(opts: StartOrgOpts): Promise<RunningDaemon>
       new Promise<void>((resolve) => {
         try { server6.close(); } catch { /* may not have bound */ }
         server.close(() => {
-          router.close();
-          resolve();
+          // Await the router teardown (stops sync + closes the active org's gateway host) before
+          // resolving, so the fixed gateway port is released by the time close() resolves.
+          void router.close().finally(() => resolve());
         });
       }),
   };

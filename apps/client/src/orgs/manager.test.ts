@@ -66,6 +66,33 @@ describe("OrgManager", () => {
     expect(mgr.active()?.id).toBe(real.id);
   });
 
+  it("bootstrap() on first run creates the operator's own org (active) plus the demo sandbox", () => {
+    const mgr = make();
+    const active = mgr.bootstrap();
+    // Lands in the operator's OWN empty org, not the demo.
+    expect(active.sandbox).toBe(false);
+    expect(active.name).toBe("My Organization");
+    expect(mgr.active()?.id).toBe(active.id);
+    // Both orgs exist: the real one leads, the sandbox sits alongside.
+    const list = mgr.list();
+    expect(list.map((o) => o.sandbox)).toEqual([false, true]);
+    expect(list.find((o) => o.sandbox)?.id).toBe(DEMO_ORG_ID);
+    expect(realSeeds).toBe(1);
+    expect(demoSeeds).toBe(1);
+  });
+
+  it("bootstrap() is idempotent - a later boot respects the persisted active org, never re-creates", () => {
+    const mgr = make();
+    const first = mgr.bootstrap(); // My Organization
+    // operator switches to the demo, then the app reboots
+    mgr.setActive(DEMO_ORG_ID);
+    const active = mgr.bootstrap();
+    expect(active.id).toBe(DEMO_ORG_ID); // honored the switch, did not force back to the real org
+    expect(realSeeds).toBe(1); // no second "My Organization"
+    expect(mgr.list().filter((o) => !o.sandbox)).toHaveLength(1);
+    expect(first.name).toBe("My Organization");
+  });
+
   it("create() rejects an empty name", () => {
     const mgr = make();
     expect(() => mgr.create({ name: "   " })).toThrow();
