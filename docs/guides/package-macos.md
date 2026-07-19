@@ -89,15 +89,24 @@ loopback, and open onto the org switcher with the **Acme Labs** demo sandbox rea
    `version` to the release version (e.g. `0.1.0`); electron-builder names the artifact from it, so
    the DMG is `BuildEx-<version>-arm64.dmg` and it must line up with the git tag `v<version>`. Keep
    the root `package.json` and the other apps' versions in sync. Then run the Build steps above.
-1. Create a GitHub release on `dejankeri/buildex` (tag e.g. `v0.1.0`) and upload the notarized `.dmg`
-   (and its `.blockmap` if present) as release assets.
+1. Create a GitHub release on `dejankeri/buildex` (tag e.g. `v0.1.0`) and upload the notarized
+   `BuildEx-<version>-arm64.dmg` (and its `.blockmap` if present) as release assets. **Also upload a
+   version-less copy named `BuildEx-macos-arm64.dmg`** — the download page links to the always-latest
+   URL `releases/latest/download/BuildEx-macos-arm64.dmg`, which needs a stable asset name that doesn't
+   change per version:
+   ```sh
+   cp apps/client/dist/BuildEx-<version>-arm64.dmg apps/client/dist/BuildEx-macos-arm64.dmg
+   gh release create v<version> apps/client/dist/BuildEx-<version>-arm64.dmg apps/client/dist/BuildEx-macos-arm64.dmg --title "BuildEx <version>" --latest
+   ```
+   (The versioned asset stays for provenance; the stable-named copy keeps the site's one-click link
+   working across releases.)
 2. Flip the download page live: in `apps/site/public/download.html`, enable **only the Apple Silicon**
    macOS card — remove its `aria-disabled="true"` and its `<span class="soon">soon</span>`. **Leave the
    Intel card as "soon"**: the build produces an arm64-only DMG (`electron-builder.yml` has
    `mac.target: dmg` with no arch list), so there is no x64 artifact to link yet. The Apple Silicon
-   card's `href` already points at `https://github.com/dejankeri/buildex/releases/latest`, so it
-   resolves to the newest build with no per-version edit. Commit + redeploy the site.
-3. Sanity-check the link from an incognito window: it should land on the release with the `.dmg` visible.
+   card's `href` points straight at `releases/latest/download/BuildEx-macos-arm64.dmg` (a one-click
+   direct download of the newest build, no per-version edit). Commit + redeploy the site.
+3. Sanity-check the link from an incognito window: it should download the `.dmg` directly.
 
 > **Adding Intel later:** produce an x64 build by setting `arch: [arm64, x64]` under `mac.target` in
 > `electron-builder.yml` — electron-builder then emits a second DMG (`BuildEx-<version>-x64.dmg`) and
