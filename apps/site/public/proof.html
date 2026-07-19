@@ -1,0 +1,58 @@
+---
+layout: layout.njk
+title: "Proof - BuildExponential.Org runs on BuildEx"
+---
+<section class="phead">
+    <div class="wrap">
+      <div class="eyebrow rv">Proof, not promises</div>
+      <h1 class="rv">BuildExponential.Org runs on BuildEx&nbsp;OS.</h1>
+      <p class="sub rv d1">The fastest way to trust an operating system is to watch its makers run their
+        own company on it. We do. The platform that would run your company already runs ours - and it's
+        open source, so none of this is a claim you have to take on faith.</p>
+    </div>
+  </section>
+
+  <section style="padding-top:16px">
+    <div class="wrap">
+      <div class="beats">
+        <div class="beat rv d1"><div class="n">Company #0</div><h3>Our company runs on it</h3><p>Charter, decisions, pipeline, and the content engine all live as markdown in a BuildEx workspace on our own machine - the same product we ship. The guarantees below aren't slogans; they're <a href="https://github.com/dejankeri/buildex/tree/main/apps/client/src/invariants" target="_blank" rel="noopener" style="color:var(--brand)">invariant tests in this repo</a>.</p></div>
+        <div class="beat rv d2"><div class="n">Open</div><h3>MIT, top to bottom</h3><p>The kernel, the sync service, the connectors, the toolkit - all readable, forkable, auditable. The invariants are in the tests.</p></div>
+        <div class="beat rv d3"><div class="n">Portfolio</div><h3>One operator, many ventures</h3><p>The same operator runs several ventures from the same cockpit. Honest states included - a killed venture stays on the map as killed.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="divide">
+    <div class="wrap">
+      <div class="eyebrow rv">The invariants - enforced, not promised</div>
+      <h2 class="rv lead-h">The safety story is in the code.</h2>
+      <p class="sub rv d1" style="margin-top:14px">Five things about BuildEx aren't marketing lines - they're
+        release-gate test suites that must stay green for the build to ship.</p>
+      <div class="tiles" style="margin-top:30px">
+        <div class="tile wide rv d1"><div class="th"><span class="k">We never touch your model keys</span></div><h3>Credentials stay in the keychain seam</h3><p>Your agent authenticates with your own subscription - BuildEx never sets a provider key or reads your credentials to run it. No secret reaches a repo, a log, a synced file, or a config artifact.</p><a class="tile-src" href="https://github.com/dejankeri/buildex/blob/main/apps/client/src/invariants/secrets.test.ts" target="_blank" rel="noopener">secrets suite ↗</a></div>
+        <div class="tile wide rv d2"><div class="th"><span class="k" style="color:var(--gate)">The gate holds</span></div><h3>Nothing outward without a human</h3><p>Connectors are read-only by construction; every outward or irreversible action waits in Pending until you tap. Both are enforced by the gates suite.</p><a class="tile-src" href="https://github.com/dejankeri/buildex/blob/main/apps/connectors/src/framework.test.ts" target="_blank" rel="noopener">gates suite ↗</a></div>
+        <div class="tile wide rv d1"><div class="th"><span class="k">Never lose work</span></div><h3>A conflict is always recoverable</h3><p>The sync engine backs up conflicting work byte-for-byte before it does anything else. Losing an operator's edit is a test failure.</p><a class="tile-src" href="https://github.com/dejankeri/buildex/blob/main/apps/client/src/sync/engine.test.ts" target="_blank" rel="noopener">sync-safety suite ↗</a></div>
+        <div class="tile wide rv d2"><div class="th"><span class="k">Companies stay isolated</span></div><h3>One company can never read another</h3><p>Every company is its own repo behind a server-side permission matrix and per-machine tokens. No cross-company read is possible - the suite asserts it.</p><a class="tile-src" href="https://github.com/dejankeri/buildex/blob/main/apps/sync/src/sync-acceptance.test.ts" target="_blank" rel="noopener">permission-matrix suite ↗</a></div>
+        <div class="tile wide rv d1" style="grid-column:span 6"><div class="th"><span class="k">Trust surfaces don't guess</span></div><h3>The map is rendered, not hallucinated</h3><p>The org map, history, and admin views are derived from repo state with zero LLM in the path - same repo, same bytes, every render. What you're trusting is deterministic, not a model's summary.</p><a class="tile-src" href="https://github.com/dejankeri/buildex/blob/main/apps/client/src/invariants/determinism.test.ts" target="_blank" rel="noopener">determinism suite ↗</a></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="divide">
+    <div class="wrap proof-band">
+      <h2 class="rv" style="margin:0 auto">The map is the pitch.</h2>
+      <p class="sub rv d1" style="margin:14px auto 0">Every completed transformation slots into the same
+        public shape - problem, the loops we installed, the artifacts, and the numbers. Watch us build in
+        the open, then decide.</p>
+      <div class="chips rv d2">
+        <span class="chip"><b>charter</b> - the thesis</span>
+        <span class="chip"><b>decisions/log.md</b> - every call, superseding</span>
+        <span class="chip"><b>pipeline</b> - the funnel as files</span>
+        <span class="chip"><b>sources/</b> - the senses</span>
+      </div>
+      <p style="margin-top:30px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+        <a class="btn lg" href="/download.html">Download BuildEx <span class="ar">→</span></a>
+
+      </p>
+    </div>
+  </section>

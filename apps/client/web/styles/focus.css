@@ -1,0 +1,4 @@
+/* Global focus ring.
+   Part of the operator console design system (web/index.html). */
+  :focus-visible{outline:2px solid var(--brand);outline-offset:1px;}
+

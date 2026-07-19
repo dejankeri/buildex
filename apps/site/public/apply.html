@@ -1,0 +1,82 @@
+---
+layout: layout.njk
+title: "Enterprise - we install it with you - BuildEx"
+---
+<section class="phead">
+    <div class="wrap">
+      <div class="eyebrow rv">Enterprise</div>
+      <h1 class="rv">We install the company that runs on it.</h1>
+      <p class="sub rv d1">The app is <a href="/download.html" style="color:var(--brand)">free to download</a>
+        and run yourself. Enterprise is us embedding with your team to stand up your brain, wire your
+        tools, and gate the risky edges - then hand you the keys.</p>
+    </div>
+  </section>
+
+  <section style="padding:40px 0 8px">
+    <div class="wrap">
+      <div class="phases">
+        <div class="phase rv d1"><div class="step">Phase 01</div><h3>Audit</h3><div class="dur">~1 week</div><p>We map your loops, your data, and the one that hurts most. You get the org map whether or not you continue.</p></div>
+        <div class="phase rv d2"><div class="step">Phase 02</div><h3>Transform</h3><div class="dur">2–4 weeks</div><p>We stand up your brain, wire your tools, teach the agent your verbs, and gate the risky edges. On your machine, your subscriptions.</p></div>
+        <div class="phase rv d3"><div class="step">Phase 03</div><h3>Operate</h3><div class="dur">ongoing → yours</div><p>We run it with you until the loops are yours. Then we hand you the keys - a plain git repo you fully own.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="divide" style="padding-top:52px">
+    <div class="wrap">
+      <div class="eyebrow rv">Talk to us</div>
+      <h2 class="rv lead-h" style="margin-bottom:6px">Tell us about your company.</h2>
+      <p class="frm rv d1">A few honest answers, not a sales form. It lands as a
+        file in our own BuildEx workspace - the funnel is itself a loop - and we read every one.</p>
+      <div class="form-grid">
+        <div class="form-card rv">
+          <form id="applyForm" novalidate>
+            <!-- honeypot: real people never fill this -->
+            <div class="hp" aria-hidden="true"><label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
+
+            <div class="form-row">
+              <div class="field"><label for="name">Your name <span class="req">*</span></label><input id="name" name="name" type="text" required autocomplete="name"></div>
+              <div class="field"><label for="company">Company <span class="req">*</span></label><input id="company" name="company" type="text" required autocomplete="organization"></div>
+            </div>
+            <div class="field"><label for="email">Work email <span class="req">*</span></label><input id="email" name="email" type="email" required autocomplete="email"></div>
+            <div class="form-row">
+              <div class="field"><label for="size">Company size</label>
+                <select id="size" name="size">
+                  <option value="">Select…</option>
+                  <option>Just me / &lt;10</option>
+                  <option>10–50</option>
+                  <option>50–200</option>
+                  <option>200+</option>
+                </select>
+              </div>
+              <div class="field"><label for="timeline">Timeline</label>
+                <select id="timeline" name="timeline">
+                  <option value="">Select…</option>
+                  <option>Exploring</option>
+                  <option>This quarter</option>
+                  <option>As soon as possible</option>
+                </select>
+              </div>
+            </div>
+            <div class="field"><label for="loop">Which loop hurts most?</label><input id="loop" name="loop" type="text" placeholder="e.g. client onboarding, weekly reporting, the sales follow-up"></div>
+            <div class="field"><label for="stack">What AI / tools do you run today?</label><input id="stack" name="stack" type="text" placeholder="e.g. Claude + Gmail + Notion + a spreadsheet held together with hope"></div>
+            <div class="field"><label for="notes">Anything else</label><textarea id="notes" name="notes" placeholder="What would 'it just runs' look like for you?"></textarea></div>
+
+            <div class="row r"><button type="submit" class="btn lg" id="sbtn">Join waitlist</button></div>
+            <div class="form-status" id="formStatus" role="status" aria-live="polite"></div>
+            <p class="form-note">We never touch your model credentials. No spam, no broker pipelines.</p>
+          </form>
+        </div>
+
+        <div class="aside rv d1">
+          <div class="eyebrow" style="color:var(--faint)">What happens next</div>
+          <ul>
+            <li><b>We read it - a human</b><span>Your application files itself into our own workspace and pings us. No CRM auto-drip.</span></li>
+            <li><b>We map your loops</b><span>A short call, then the audit: we chart your data and the loop that hurts most.</span></li>
+            <li><b>You get the org map either way</b><span>Whether or not you continue, you leave with a clear picture of your company as loops.</span></li>
+            <li><b>You own everything</b><span>If we build, it's a git repo of markdown you can clone and run without us - any day.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>

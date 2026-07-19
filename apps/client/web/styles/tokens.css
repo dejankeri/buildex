@@ -1,0 +1,19 @@
+/* Design tokens — the colour + type system for the whole operator console. Every other
+   stylesheet references these variables and never hard-codes a colour, so re-theming the app is a
+   matter of changing values here. The dark palette is the default (:root); the light palette
+   overrides the same names under :root[data-theme="light"], which the theme toggle stamps on.
+   Part of the operator console design system (web/index.html). */
+  :root {
+    /* Surfaces, back-to-front: page background → panels → elevated cards/menus. */
+    --bg:#0e1213; --panel:#151a1c; --panel-2:#1a2124; --elevate:#1f272a;
+    /* Text, high-to-low emphasis. */
+    --ink:#e8eef0; --muted:#93a3a8; --faint:#5f7076;
+    /* Hairlines/borders, and the brand teal (+ dim/tint variants for fills and hovers). */
+    --line:#232c30; --line-2:#2d383c; --brand:#2dd4bf; --brand-dim:#155e56; --brand-tint:#12312d;
+    /* Semantic status colours: gate=amber "needs approval", good=green, run=working, crit=red. */
+    --gate:#f0a94b; --gate-tint:#2a1f0d; --good:#4ade80; --run:#f5b544; --crit:#f87171;
+    /* Type families. */
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace; --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  /* Light theme: same token names, lighter values (applied when the root carries data-theme="light"). */
+  :root[data-theme="light"]{--bg:#f5f7f8;--panel:#fff;--panel-2:#f0f3f4;--elevate:#e9edee;--ink:#16201f;--muted:#586065;--faint:#8b989c;--line:#e2e7e9;--line-2:#d3dadd;--brand:#0f766e;--brand-dim:#9dd5cd;--brand-tint:#e6f4f1;--gate:#b45309;--gate-tint:#faf0df;--good:#15803d;--run:#b45309;--crit:#b42318;}

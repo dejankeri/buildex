@@ -1,0 +1,18 @@
+{
+  "id": "google-drive",
+  "name": "Google Drive",
+  "icon": "📁",
+  "summary": "Files - search and read documents, and draft or share files, drivable by the agent.",
+  "app": {
+    "url": "https://drive.google.com"
+  },
+  "mcp": {
+    "kind": "http",
+    "url": "https://drivemcp.googleapis.com/mcp/v1",
+    "direct": true
+  },
+  "skills": [
+    "gdrive-find",
+    "gdrive-file"
+  ]
+}

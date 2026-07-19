@@ -1,0 +1,17 @@
+{
+  "id": "notion",
+  "name": "Notion",
+  "icon": "🗒️",
+  "summary": "Docs & databases - search, read, and create pages from the agent.",
+  "app": {
+    "url": "https://www.notion.so"
+  },
+  "mcp": {
+    "kind": "http",
+    "url": "https://mcp.notion.com/mcp"
+  },
+  "skills": [
+    "notion-search",
+    "notion-write-page"
+  ]
+}

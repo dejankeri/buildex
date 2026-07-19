@@ -1,0 +1,17 @@
+{
+  "id": "linear",
+  "name": "Linear",
+  "icon": "🔷",
+  "summary": "Issues & roadmap - search work, read project status, and draft issues from the agent.",
+  "app": {
+    "url": "https://linear.app"
+  },
+  "mcp": {
+    "kind": "http",
+    "url": "https://mcp.linear.app/mcp"
+  },
+  "skills": [
+    "linear-search",
+    "linear-issue"
+  ]
+}

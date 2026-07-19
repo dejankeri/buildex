@@ -1,0 +1,12 @@
+# Litestream - continuous replication of the sync control database to object storage.
+# Pairs with an hourly restic snapshot of /srv/buildex/repos (see infra/backup-repos.sh). The bucket
+# and endpoint are supplied via infra/.env at deploy time (public repo - placeholders only).
+dbs:
+  - path: /srv/buildex/control.db
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET:-buildex-backups-REPLACE}
+        path: control.db
+        endpoint: ${LITESTREAM_ENDPOINT:-https://object-storage.example.com}
+        # Restore on a clean VM with:  litestream restore -o /srv/buildex/control.db s3://<bucket>/control.db
+        # then run the rehearsed restore drill (apps/sync restore-drill) before serving traffic.

@@ -1,0 +1,17 @@
+{
+  "id": "intercom",
+  "name": "Intercom",
+  "icon": "🎧",
+  "summary": "Support inbox - search conversations and contacts, and draft replies, drivable by the agent.",
+  "app": {
+    "url": "https://app.intercom.com"
+  },
+  "mcp": {
+    "kind": "http",
+    "url": "https://mcp.intercom.com/mcp"
+  },
+  "skills": [
+    "intercom-inbox",
+    "intercom-reply"
+  ]
+}

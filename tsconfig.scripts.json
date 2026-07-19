@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.base.json",
+  "//": "Typechecks the repo-root scripts (smokes, demo runner) and apps/client/scripts, which live outside every workspace tsconfig and would otherwise escape `task ci`. Run via `task typecheck:scripts`.",
+  "include": ["scripts/**/*.ts", "apps/client/scripts/**/*.ts"]
+}

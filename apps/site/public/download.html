@@ -1,0 +1,70 @@
+---
+layout: layout.njk
+title: "Download - BuildEx"
+---
+<section class="phead">
+    <div class="wrap">
+      <div class="eyebrow rv">Get the app</div>
+      <h1 class="rv">Download BuildEx.</h1>
+      <p class="sub rv d1">Free and open source. It runs on your machine, operated by the AI you already
+        pay for - your whole company as one git repo you own. Bring your own agent.</p>
+    </div>
+  </section>
+
+  <section style="padding-top:16px">
+    <div class="wrap">
+      <div class="dl-note rv">
+        <b>macOS ships first.</b> The signed, notarized Mac build lands on our
+        <a href="https://github.com/dejankeri/buildex/releases/latest" target="_blank" rel="noopener" style="color:var(--brand)">GitHub releases</a>
+        page - the button below points there and goes live the moment the first build is posted. Linux and
+        Windows are on the roadmap; it's all open source now, so you can clone and build from source today.
+      </div>
+      <!-- Go-live for the Apple Silicon card is ONE attribute: remove `aria-disabled="true"` (and the
+           `tabindex="-1"`) from its button. The CSS then auto-hides that card's "soon" badge. Leave the
+           Intel / Linux / Windows cards disabled - those builds don't exist yet. -->
+      <div class="dl-grid rv d1">
+        <div class="dl-card primary">
+          <div class="os-name">macOS <span class="soon">soon</span></div>
+          <div class="os-meta">Apple Silicon · .dmg</div>
+          <a class="btn lg" href="https://github.com/dejankeri/buildex/releases/latest" target="_blank" rel="noopener" aria-disabled="true" tabindex="-1">Download for Mac <span class="ar">→</span></a>
+        </div>
+        <div class="dl-card">
+          <div class="os-name">macOS (Intel) <span class="soon">soon</span></div>
+          <div class="os-meta">x86_64 · .dmg</div>
+          <a class="btn ghost lg" href="https://github.com/dejankeri/buildex/releases/latest" target="_blank" rel="noopener" aria-disabled="true" tabindex="-1">Download</a>
+        </div>
+        <div class="dl-card">
+          <div class="os-name">Linux <span class="soon">roadmap</span></div>
+          <div class="os-meta">AppImage · .deb</div>
+          <a class="btn ghost lg" href="#" aria-disabled="true" tabindex="-1">Download</a>
+        </div>
+        <div class="dl-card">
+          <div class="os-name">Windows <span class="soon">roadmap</span></div>
+          <div class="os-meta">x64 · .exe</div>
+          <a class="btn ghost lg" href="#" aria-disabled="true" tabindex="-1">Download</a>
+        </div>
+      </div>
+
+      <div class="src-run rv d2">
+        <div class="eyebrow" style="margin-top:22px">Runs today from source - 3 commands</div>
+        <p class="src-lede">No wait for the release. It's all open source now - clone it, install, and the
+          operator console opens in your browser.</p>
+        <pre class="src-block"><span class="c"># macOS, with Node 20+ and git</span>
+git clone https://github.com/dejankeri/buildex.git
+cd buildex && npm install
+npm run demo</pre>
+        <p class="src-note">Full walkthrough in the <a href="https://github.com/dejankeri/buildex#quickstart--run-the-demo" target="_blank" rel="noopener" style="color:var(--brand)">GitHub quickstart ↗</a>.</p>
+      </div>
+
+      <div class="dl-req rv d2">
+        <div class="eyebrow" style="margin-top:14px">Before you run it</div>
+        <div class="prose">
+          <ul>
+            <li>Bring your own coding-agent CLI and <b>subscription</b> - BuildEx never sets or reads your model keys. Claude Code today; the driver seam is open - other agents welcome as contributions. It requires a Claude Pro subscription or higher.</li>
+            <li><b>git</b> under the hood: your brain is a repo of plain markdown you fully own.</li>
+            <li>Prefer to build from source? It's all open - <a href="https://github.com/dejankeri/buildex" target="_blank" rel="noopener" style="color:var(--brand)">view on GitHub ↗</a>.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>

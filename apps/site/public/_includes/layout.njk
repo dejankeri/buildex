@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title | default("BuildEx - run your company from one place, with your AI") }}</title>
+<meta name="description" content="The operating system for AI-native companies. Every decision, client, and piece of knowledge in one versioned brain - operated by the AI you already pay for, gated by you. Free and open source: download it and run it yourself.">
+<meta name="theme-color" content="#0a1211">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{ title | default('BuildEx - run your company from one place, with your AI') }}">
+<meta property="og:description" content="Your whole company as plain files in git. Your own AI agent operates on them. Anything outward waits for a human tap.">
+<meta property="og:url" content="https://buildexponential.org/">
+<meta property="og:image" content="https://buildexponential.org/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/site.css">
+<script>document.documentElement.className+=" js";</script>
+</head>
+<body>
+<div class="site">
+
+  <!-- header -->
+  <header class="hdr">
+    <div class="wrap row">
+      <a class="brand" href="/">
+        <span class="mk"><svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><g stroke="#2dd4bf" stroke-opacity=".6" stroke-width="1.4" stroke-linecap="round"><path d="M24 8 Q29.48 16.46 39.22 19.06"/><path d="M39.22 19.06 Q32.86 26.88 33.40 36.94"/><path d="M33.40 36.94 Q24 33.32 14.60 36.94"/><path d="M14.60 36.94 Q15.14 26.88 8.78 19.06"/><path d="M8.78 19.06 Q18.52 16.46 24 8"/></g><g stroke="#2dd4bf" stroke-opacity=".32" stroke-width="1" stroke-dasharray="1.5 2.5" stroke-linecap="round"><line x1="24" y1="18.6" x2="24" y2="8"/><line x1="29.14" y1="22.33" x2="39.22" y2="19.06"/><line x1="27.18" y1="28.37" x2="33.40" y2="36.94"/><line x1="20.83" y1="28.37" x2="14.60" y2="36.94"/><line x1="18.87" y1="22.33" x2="8.78" y2="19.06"/></g><g fill="#2dd4bf"><circle cx="24" cy="8" r="2.5"/><circle cx="39.22" cy="19.06" r="2.5"/><circle cx="33.40" cy="36.94" r="2.5"/><circle cx="8.78" cy="19.06" r="2.5"/></g><circle cx="14.60" cy="36.94" r="6" stroke="#f0a94b" stroke-width="1.4" opacity=".6"/><circle cx="14.60" cy="36.94" r="3.7" fill="#f0a94b"/><circle cx="24" cy="24" r="5" stroke="#2dd4bf" stroke-width="1.7"/><circle cx="24" cy="24" r="2.1" fill="#2dd4bf"/></svg></span>
+        <span class="wm">BuildExponential<span class="tld">.Org</span></span>
+      </a>
+      <span class="sp"></span>
+      <nav>
+        <a class="nl" href="/method.html">Exponential Organization</a>
+        <a class="nl" href="/proof.html">Proof</a>
+        <a class="nl gh" href="https://github.com/dejankeri/buildex" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+      </nav>
+      <a class="btn" href="/download.html">Download <span class="ar">→</span></a>
+    </div>
+  </header>
+
+{{ content | safe }}
+
+  <!-- footer -->
+  <footer class="ft">
+    <div class="wrap">
+      <div class="cols">
+        <div>
+          <a class="brand" href="/">
+            <span class="mk"><svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><g stroke="#2dd4bf" stroke-opacity=".6" stroke-width="1.4" stroke-linecap="round"><path d="M24 8 Q29.48 16.46 39.22 19.06"/><path d="M39.22 19.06 Q32.86 26.88 33.40 36.94"/><path d="M33.40 36.94 Q24 33.32 14.60 36.94"/><path d="M14.60 36.94 Q15.14 26.88 8.78 19.06"/><path d="M8.78 19.06 Q18.52 16.46 24 8"/></g><g stroke="#2dd4bf" stroke-opacity=".32" stroke-width="1" stroke-dasharray="1.5 2.5" stroke-linecap="round"><line x1="24" y1="18.6" x2="24" y2="8"/><line x1="29.14" y1="22.33" x2="39.22" y2="19.06"/><line x1="27.18" y1="28.37" x2="33.40" y2="36.94"/><line x1="20.83" y1="28.37" x2="14.60" y2="36.94"/><line x1="18.87" y1="22.33" x2="8.78" y2="19.06"/></g><g fill="#2dd4bf"><circle cx="24" cy="8" r="2.5"/><circle cx="39.22" cy="19.06" r="2.5"/><circle cx="33.40" cy="36.94" r="2.5"/><circle cx="8.78" cy="19.06" r="2.5"/></g><circle cx="14.60" cy="36.94" r="6" stroke="#f0a94b" stroke-width="1.4" opacity=".6"/><circle cx="14.60" cy="36.94" r="3.7" fill="#f0a94b"/><circle cx="24" cy="24" r="5" stroke="#2dd4bf" stroke-width="1.7"/><circle cx="24" cy="24" r="2.1" fill="#2dd4bf"/></svg></span>
+            <span class="wm">BuildExponential<span class="tld">.Org</span></span>
+          </a>
+          <p class="about">The operating system for AI-native companies. Your company as one brain your AI operates - free, open source, on your machine.</p>
+        </div>
+        <span class="sp"></span>
+        <div class="fcol"><span class="h">Product</span><a href="/download.html">Download</a><a href="/method.html">Exponential Organization</a><a href="/proof.html">Proof</a></div>
+        <div class="fcol"><span class="h">Open source</span><a href="https://github.com/dejankeri/buildex" target="_blank" rel="noopener">GitHub</a><a href="/method.html">The playbook</a><a href="https://github.com/dejankeri/buildex/blob/main/LICENSE">MIT license</a></div>
+        <div class="fcol"><span class="h">Company</span><a href="/apply.html">Enterprise &amp; waitlist</a><a href="https://github.com/dejankeri/buildex/blob/main/SECURITY.md">Security</a><a href="mailto:hello@buildexponential.org">Contact</a></div>
+      </div>
+      <div class="base">
+        <span>© 2026 BuildEx</span>
+        <span class="mono">buildexponential.org</span>
+        <span class="sp"></span>
+        <button class="theme" data-theme-toggle aria-label="Toggle light / dark">◐</button>
+      </div>
+    </div>
+  </footer>
+
+</div>
+<script src="/js/site.js?v=6"></script>
+</body>
+</html>

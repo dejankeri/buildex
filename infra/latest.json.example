@@ -1,0 +1,11 @@
+{
+  "$comment": "Example client update manifest. The desktop app reads a manifest of this shape to learn whether a newer version exists (the update CHECK is passive — it surfaces a newer release, it never downloads or installs on its own). The release channel is GitHub Releases at github.com/dejankeri/buildex/releases: each release is tagged v<version> and carries the notarized DMG named BuildEx-<version>-arm64.dmg (electron-builder's artifact name). Only Apple Silicon (arm64) ships today; Intel (darwin-x64) is on the roadmap and has no artifact yet. Real version/URL/sha256 are stamped by the release pipeline — this is the shape, not a live manifest.",
+  "version": "0.1.0",
+  "notes": "https://github.com/dejankeri/buildex/releases/tag/v0.1.0",
+  "platforms": {
+    "darwin-arm64": {
+      "url": "https://github.com/dejankeri/buildex/releases/download/v0.1.0/BuildEx-0.1.0-arm64.dmg",
+      "sha256": "REPLACE_AT_RELEASE"
+    }
+  }
+}

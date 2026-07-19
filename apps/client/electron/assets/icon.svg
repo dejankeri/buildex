@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#12211f"/>
+      <stop offset="1" stop-color="#0a1211"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.46" r="0.42">
+      <stop offset="0" stop-color="#2dd4bf" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#2dd4bf" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- squircle canvas — fill ~90% of the tile (smaller margin than the strict Apple template so it
+       doesn't read small next to full-bleed dock icons like Chrome/Slack/VS Code) -->
+  <rect x="48" y="48" width="928" height="928" rx="208" ry="208" fill="url(#bg)"/>
+  <rect x="52" y="52" width="920" height="920" rx="204" ry="204" fill="none" stroke="#1d423d" stroke-width="5"/>
+  <rect x="48" y="48" width="928" height="928" rx="208" ry="208" fill="url(#glow)"/>
+  <!-- BuildExponential node-graph mark, centered & enlarged to ~75% of the squircle -->
+  <g transform="translate(66,66) scale(18.6)">
+    <g stroke="#2dd4bf" stroke-opacity=".6" stroke-width="1.4" stroke-linecap="round">
+      <path d="M24 8 Q29.48 16.46 39.22 19.06"/>
+      <path d="M39.22 19.06 Q32.86 26.88 33.40 36.94"/>
+      <path d="M33.40 36.94 Q24 33.32 14.60 36.94"/>
+      <path d="M14.60 36.94 Q15.14 26.88 8.78 19.06"/>
+      <path d="M8.78 19.06 Q18.52 16.46 24 8"/>
+    </g>
+    <g stroke="#2dd4bf" stroke-opacity=".32" stroke-width="1" stroke-dasharray="1.5 2.5" stroke-linecap="round">
+      <line x1="24" y1="18.6" x2="24" y2="8"/>
+      <line x1="29.14" y1="22.33" x2="39.22" y2="19.06"/>
+      <line x1="27.18" y1="28.37" x2="33.40" y2="36.94"/>
+      <line x1="20.83" y1="28.37" x2="14.60" y2="36.94"/>
+      <line x1="18.87" y1="22.33" x2="8.78" y2="19.06"/>
+    </g>
+    <g fill="#2dd4bf">
+      <circle cx="24" cy="8" r="2.5"/>
+      <circle cx="39.22" cy="19.06" r="2.5"/>
+      <circle cx="33.40" cy="36.94" r="2.5"/>
+      <circle cx="8.78" cy="19.06" r="2.5"/>
+    </g>
+    <circle cx="14.60" cy="36.94" r="6" stroke="#f0a94b" stroke-width="1.4" opacity=".6"/>
+    <circle cx="14.60" cy="36.94" r="3.7" fill="#f0a94b"/>
+    <circle cx="24" cy="24" r="5" stroke="#2dd4bf" stroke-width="1.7"/>
+    <circle cx="24" cy="24" r="2.1" fill="#2dd4bf"/>
+  </g>
+</svg>

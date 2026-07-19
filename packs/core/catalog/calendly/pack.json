@@ -1,0 +1,21 @@
+{
+  "id": "calendly",
+  "name": "Calendly",
+  "icon": "📅",
+  "summary": "Scheduling - read your availability and booked events, and draft scheduling links, from the agent.",
+  "app": {
+    "url": "https://calendly.com/app"
+  },
+  "mcp": {
+    "kind": "http",
+    "url": "https://mcp.calendly.com",
+    "scopes": [
+      "mcp:scheduling:read",
+      "mcp:scheduling:write"
+    ]
+  },
+  "skills": [
+    "calendly-availability",
+    "calendly-schedule"
+  ]
+}

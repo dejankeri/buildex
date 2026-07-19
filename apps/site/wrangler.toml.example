@@ -1,0 +1,12 @@
+name = "buildex"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-07-01"
+
+# Cloudflare Pages config for the marketing site. Copy this to wrangler.toml (gitignored) and fill in
+# your own KV namespace id before `wrangler pages deploy`:
+#   wrangler kv namespace create WAITLIST   # prints the id
+# The WAITLIST namespace backs the launch-phase /apply waitlist capture (functions/apply.js). No live
+# infra ids live in this public repo — the real wrangler.toml stays local.
+[[kv_namespaces]]
+binding = "WAITLIST"
+id = "<your-waitlist-kv-namespace-id>"

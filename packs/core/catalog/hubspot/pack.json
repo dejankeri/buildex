@@ -1,0 +1,18 @@
+{
+  "id": "hubspot",
+  "name": "HubSpot",
+  "icon": "🧲",
+  "summary": "CRM - find contacts, companies, and deals, and log activity, drivable by the agent.",
+  "app": {
+    "url": "https://app.hubspot.com"
+  },
+  "mcp": {
+    "kind": "http",
+    "url": "https://mcp.hubspot.com",
+    "direct": true
+  },
+  "skills": [
+    "hubspot-crm-lookup",
+    "hubspot-crm-update"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "google-calendar",
+  "name": "Google Calendar",
+  "icon": "🗓️",
+  "summary": "Calendar - read your agenda and free/busy, and draft events, drivable by the agent.",
+  "app": {
+    "url": "https://calendar.google.com"
+  },
+  "mcp": {
+    "kind": "http",
+    "url": "https://calendarmcp.googleapis.com/mcp/v1",
+    "direct": true
+  },
+  "skills": [
+    "gcal-agenda",
+    "gcal-event"
+  ]
+}

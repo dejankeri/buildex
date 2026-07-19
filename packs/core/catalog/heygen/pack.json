@@ -1,0 +1,17 @@
+{
+  "id": "heygen",
+  "name": "HeyGen",
+  "icon": "🎬",
+  "summary": "AI avatar video - browse avatars and templates, and generate videos, from the agent.",
+  "app": {
+    "url": "https://app.heygen.com"
+  },
+  "mcp": {
+    "kind": "http",
+    "url": "https://mcp.heygen.com/mcp/v1/"
+  },
+  "skills": [
+    "heygen-list",
+    "heygen-video"
+  ]
+}

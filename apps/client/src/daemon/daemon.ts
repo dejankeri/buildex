@@ -1,0 +1,779 @@
+// The headless daemon (the client's separable core). A web-standard
+// (Request → Response) handler wiring the driver, gate, sync, and renderers. The /api/prompt route
+// streams the agent turn as SSE and must survive multi-minute silent gaps - the Node adapter
+// (node-adapter.ts) disables request/idle timeouts (the forced-60s-gap verification item).
+import { readFileSync, existsSync } from "node:fs";
+import { join, normalize, sep } from "node:path";
+import type { Gate } from "../gate/gate.js";
+import type { ApprovalBroker } from "../gate/approval.js";
+import type { ToolInvocation } from "../gate/policy.js";
+import type { UiEvent } from "../agent/types.js";
+import type { Graph, Root } from "../brain/graph.js";
+import type { AppMeta } from "../brain/apps.js";
+import type { PackMeta, InstallResult } from "../brain/catalog.js";
+import type { UsageReport } from "../brain/usage.js";
+import type { HistoryEntry, ChangeEntry } from "../brain/history.js";
+import type { AppBus, AppCommand } from "../miniapp/app-bus.js";
+import type { SessionMeta, SessionStatus } from "./sessions.js";
+import type { Project, ProjectItem } from "./projects.js";
+
+/** Task containers holding a mix of tabs (chats, browsers, docs) - the console's left rail. */
+export interface ProjectStore {
+  list(): Project[];
+  create(name: string): Project;
+  addItem(id: string, item: ProjectItem): Project;
+  removeItem(id: string, index: number): Project;
+  rename(id: string, name: string): Project;
+  remove(id: string): void;
+}
+
+/** The console's conversation store (left-rail projects panel + persisted chat). */
+export interface SessionStore {
+  list(): SessionMeta[];
+  create(meta?: { folder?: string; title?: string }): string;
+  read(id: string): SessionMeta & { events: UiEvent[] };
+  append(id: string, e: UiEvent): void;
+  setStatus(id: string, s: SessionStatus): void;
+  setTitle(id: string, title: string): void;
+  getClaudeSessionId(id: string): string | undefined;
+  setClaudeSessionId(id: string, sid: string): void;
+}
+
+/** Read-only vault surface (deterministic - trust surfaces render from repo state). */
+export interface VaultReader {
+  listDocs(): string[];
+  readDoc(path: string): string;
+  history(path: string): HistoryEntry[];
+  /** The document's content at a specific commit - powers one-tap history restore (POST
+   *  /api/doc/restore). Optional so lightweight vault mocks need not implement it. */
+  readDocAt?(path: string, sha: string): string;
+}
+
+/** The workspace catalog - the verbs, connectors, and routines the operator surfaces render. */
+export interface Catalog {
+  skills(): { name: string; description: string }[];
+  connectors(): { name: string; status: string; lastSync?: string }[];
+  routines(): { name: string; cadence: string }[];
+}
+
+/** A connector as the console renders it - catalog metadata + whether it's connected/last synced. */
+export interface ConnectorInfo {
+  name: string;
+  auth: string;
+  cadence: string;
+  description: string;
+  connected: boolean;
+  /** OAuth connector configured but not yet authorized - the operator must sign in. */
+  needsAuth?: boolean;
+  lastSync?: string;
+}
+
+/** Connect a source (credential → keychain) and sync it (files under sources/<name>/ + commits). */
+export interface ConnectorControl {
+  catalog(): ConnectorInfo[];
+  connect(name: string, credential: string): void;
+  disconnect(name: string): void;
+  sync(name: string): Promise<{ wrote: number }>;
+  /** Start OAuth for a file connector - returns the provider authorize URL. Optional: only
+   *  present when OAuth clients are configured; absent → the connector is apikey-only. */
+  beginAuth?(name: string): { authorizeUrl: string };
+  /** Finish OAuth from the loopback callback (validate one-time state, exchange code, store token). */
+  finishAuth?(name: string, code: string, state: string): Promise<void>;
+}
+
+/** Control surface for the OAuth+MCP connector gateway - add/remove providers, finish OAuth. */
+export interface ConnectorGatewayView {
+  status(): { name: string; connected: boolean; needsAuth: boolean; tools: number; authUrl?: string; url?: string; scopes?: string[] }[];
+  /** The operator's trust surface: every tool incl. hidden, with effective state + intrinsic baseline. */
+  tools(): { name: string; kind: string; description?: string; baseline?: string }[];
+  add(spec: { name: string; url: string; scopes?: string[] }): Promise<{ name: string; connected: boolean; needsAuth: boolean; tools: number; authUrl?: string }>;
+  remove(name: string): void;
+  /** Reclassify a tool (tighten-only - the engine refuses to un-gate an outward tool). */
+  setPolicy(name: string, tool: string, kind: "read" | "gated" | "hidden"): { ok: boolean; reason?: string };
+  /** Finish OAuth from the loopback callback (validate one-time state, exchange code - invariant 7). */
+  finishAuth(name: string, code: string, state: string): Promise<{ connected: boolean; tools: number }>;
+}
+
+/** A scheduled verb, as the console renders it (nextRun is a computed ms timestamp). */
+export interface RoutineRecord {
+  name: string;
+  verb: string;
+  cadence: string;
+  enabled: boolean;
+  lastRun?: string;
+  nextRun?: number;
+}
+
+/** Create, schedule, toggle, and run verbs on a cadence. runNow/runDue drive the real agent. */
+export interface AutomationEngine {
+  list(): RoutineRecord[];
+  add(input: { name: string; verb: string; cadence: string; catchUp?: string }): RoutineRecord;
+  toggle(name: string): RoutineRecord;
+  remove(name: string): void;
+  runNow(name: string): Promise<{ sessionId: string }>;
+}
+
+/** Read + author verbs from the console (teach-a-verb). Writing validates, links, and commits. */
+export interface SkillEditor {
+  read(name: string): { name: string; description: string; content: string; origin: string };
+  write(input: { name: string; description: string; instructions: string; repo: string }): { ok: boolean; issues: string[]; path: string };
+  /** A blank starter body for a fresh verb of the given name (passes the quality check as-is). */
+  template(name: string): string;
+}
+
+export interface DaemonDeps {
+  workspace: string;
+  roots: Root[];
+  gate: Gate;
+  broker: ApprovalBroker;
+  runPrompt: (opts: { prompt: string; workspace: string; resume?: string; model?: string; effort?: string; signal?: AbortSignal }) => AsyncIterable<UiEvent>;
+  buildMap: () => Graph;
+  /** Recent repo-wide commits (newest first) - powers the Brain view's "Learning" surface. Read-only. */
+  recentChanges?: () => ChangeEntry[];
+  syncFn: () => Promise<string>;
+  /** Current background-sync status for the header dot: "ok" | "busy" | "queued" | "needs-help". */
+  syncStatus?: () => string;
+  /** Directory of the built operator console (index.html + assets). Served at `/` when set. */
+  webRoot?: string;
+  /** The read-only vault surface (documents + per-file history). */
+  vault?: VaultReader;
+  /** Write a markdown doc into the brain (path-guarded) and commit it. Powers the markdown editor. */
+  saveDoc?: (path: string, content: string) => void;
+  /** The mini-app bridge - relays agent commands to an open mini-app window. */
+  appBus?: AppBus;
+  /** The Apps surface catalog - deterministic list rendered from repo state (invariant 9). */
+  appCatalog?: { list(): AppMeta[] };
+  /** Create an app (writes app.json + a starter for local apps) - powers the "Add app" flow. */
+  appStore?: {
+    create(input: { repo: string; name: string; kind: "local" | "external"; title?: string; icon?: string; url?: string }): { name: string };
+  };
+  /** Serve a local app's files (bridge injected into HTML), path-confined. */
+  appServe?: (urlPath: string) => { body: Buffer | string; contentType: string } | null;
+  /** Broker a local app's data op (read/list ok; write refused in v1). */
+  appData?: (req: { op: "read" | "list" | "write"; path?: string; glob?: string }) => { ok: boolean; result?: unknown; error?: string; status: number };
+  /** The App Store - the capability-pack catalog + one-click install (composes app/skill/mcp/policy). */
+  packStore?: {
+    list(): PackMeta[];
+    install(id: string, target: string): InstallResult;
+    uninstall(id: string, target: string): InstallResult;
+  };
+  /** The workspace catalog (verbs, connectors, routines). */
+  catalog?: Catalog;
+  /** Author + read verbs from the console. */
+  skillEditor?: SkillEditor;
+  /** Schedule + run verbs on a cadence (the Automations panel). */
+  automations?: AutomationEngine;
+  /** Connect + sync sources (the Connectors panel). */
+  connectorHub?: ConnectorControl;
+  gatewayView?: ConnectorGatewayView;
+  /** Display info for the console (company name shown in the top bar). */
+  company?: { name: string };
+  /** First-run welcome wizard: whether to show it, plus agent detection for the "connect your agent"
+   *  step, and a way to mark it finished/skipped. */
+  onboarding?: OnboardingControl;
+  /** Conversation store - persists chats and powers the left rail. */
+  sessions?: SessionStore;
+  /** Project store - task containers grouping chats/browsers/docs on the left rail. */
+  projects?: ProjectStore;
+  /** The workspace file tree (for the right-rail file explorer). */
+  fileTree?: () => TreeNode[];
+  /** The derived agent surface (.claude/skills, .mcp.json, policy, assembled CLAUDE.md) - a health
+   *  summary + tree fragment revealed by the Files panel's "Show agent files" toggle. Zero LLM. */
+  agentView?: () => { summary: unknown; tree: TreeNode[] };
+  /** Live Claude subscription usage for the bottom status strip. `force` bypasses the cache
+   *  (the manual-refresh affordance). */
+  usageFn?: (force?: boolean) => Promise<UsageReport> | UsageReport;
+}
+
+export interface TreeNode {
+  name: string;
+  path: string;
+  type: "dir" | "file";
+  children?: TreeNode[];
+  /** Optional badge (e.g. a skill's origin root, or "N MCP servers") for derived/agent-surface nodes. */
+  note?: string;
+}
+
+export interface OnboardingControl {
+  /** First-run + agent-detection state for the welcome wizard. Agent detection is async (it shells the
+   *  CLI's `--version`), so this returns a promise. */
+  state(): Promise<{ firstRun: boolean; agent: { available: boolean; version?: string } }>;
+  /** Mark the wizard finished (or skipped) so it doesn't show again on the next launch. */
+  complete(): void;
+}
+
+export type Handler = (req: Request) => Promise<Response>;
+
+export function createDaemon(deps: DaemonDeps): Handler {
+  const appSubs = new Map<string, () => void>(); // token → unsubscribe (mini-app host registration)
+  const handle = async (req: Request): Promise<Response> => {
+    const url = new URL(req.url);
+    const path = url.pathname;
+    const method = req.method;
+
+    if (method === "GET" && path === "/healthz") return json({ ok: true });
+    if (method === "GET" && path === "/api/config") {
+      return json({ company: deps.company ?? { name: "buildex" }, roots: deps.roots.map((r) => ({ name: r.name })) });
+    }
+    if (deps.onboarding) {
+      if (method === "GET" && path === "/api/onboarding") return json(await deps.onboarding.state());
+      if (method === "POST" && path === "/api/onboarding/complete") {
+        deps.onboarding.complete();
+        return json({ ok: true });
+      }
+    }
+    if (method === "GET" && path === "/api/map") return json(deps.buildMap());
+    if (method === "GET" && deps.recentChanges && path === "/api/changes")
+      return json({ changes: deps.recentChanges() });
+    if (method === "GET" && path === "/api/pending") return json({ cards: deps.broker.pending() });
+
+    if (deps.sessions) {
+      if (method === "GET" && path === "/api/sessions") return json({ sessions: deps.sessions.list() });
+      if (method === "POST" && path === "/api/sessions") {
+        const b = await body<{ folder?: string; title?: string }>(req, { folder: "string", title: "string" });
+        return json({ id: deps.sessions.create(b) });
+      }
+      const m = path.match(/^\/api\/sessions\/([0-9a-f-]{36})$/);
+      if (method === "GET" && m) {
+        try {
+          return json(deps.sessions.read(m[1]!));
+        } catch {
+          return json({ error: "not found" }, 404);
+        }
+      }
+    }
+    if (deps.projects) {
+      if (method === "GET" && path === "/api/projects") return json({ projects: deps.projects.list() });
+      if (method === "POST" && path === "/api/projects") {
+        const b = await body<{ name?: string }>(req, { name: "string" });
+        return json({ project: deps.projects.create(b.name ?? "") });
+      }
+      const pm = path.match(/^\/api\/projects\/([0-9a-f-]{36})\/(items|rename|remove-item|delete)$/);
+      if (method === "POST" && pm) {
+        const [, id, action] = pm;
+        try {
+          if (action === "items") {
+            const { item } = await body<{ item: ProjectItem }>(req, { item: "object!" });
+            checkBody(item, PROJECT_ITEM_SHAPE, "item");
+            return json(deps.projects.addItem(id!, item));
+          }
+          if (action === "rename") return json(deps.projects.rename(id!, (await body<{ name: string }>(req, { name: "string!" })).name));
+          if (action === "remove-item") return json(deps.projects.removeItem(id!, (await body<{ index: number }>(req, { index: "number!" })).index));
+          deps.projects.remove(id!);
+          return json({ ok: true });
+        } catch (e) {
+          return json({ error: e instanceof Error ? e.message : "project error" }, 400);
+        }
+      }
+    }
+    if (method === "GET" && deps.fileTree && path === "/api/tree") return json({ tree: deps.fileTree() });
+    if (method === "GET" && deps.agentView && path === "/api/agent-view") return json(deps.agentView());
+    if (method === "GET" && deps.usageFn && path === "/api/usage")
+      return json(await deps.usageFn(url.searchParams.get("refresh") === "1"));
+
+    if (method === "GET" && deps.catalog && path === "/api/skills") return json({ skills: deps.catalog.skills() });
+    if (deps.skillEditor) {
+      if (method === "GET" && path === "/api/skill") {
+        const name = url.searchParams.get("name");
+        if (name === null) return json({ template: deps.skillEditor.template(url.searchParams.get("template") ?? "") });
+        try {
+          return json(deps.skillEditor.read(name));
+        } catch {
+          return json({ error: "not found" }, 404);
+        }
+      }
+      if (method === "POST" && path === "/api/skill") {
+        const b = await body<{ name: string; description: string; instructions: string; repo: string }>(req, {
+          name: "string!", description: "string!", instructions: "string!", repo: "string!",
+        });
+        try {
+          return json(deps.skillEditor.write(b));
+        } catch (e) {
+          return json({ error: e instanceof Error ? e.message : "write failed" }, 400);
+        }
+      }
+    }
+    if (method === "GET" && deps.appCatalog && path === "/api/apps") {
+      return json({ apps: deps.appCatalog.list() });
+    }
+    if (method === "POST" && deps.appStore && path === "/api/apps") {
+      const b = await body<{ repo: string; name: string; kind: "local" | "external"; title?: string; icon?: string; url?: string }>(req, {
+        repo: "string!", name: "string!", kind: { enum: ["local", "external"], required: true }, title: "string", icon: "string", url: "string",
+      });
+      try {
+        return json({ ok: true, name: deps.appStore.create(b).name });
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "create failed" }, 400);
+      }
+    }
+    if (method === "GET" && deps.packStore && path === "/api/catalog") {
+      return json({ packs: deps.packStore.list() });
+    }
+    if (method === "POST" && deps.packStore && (path === "/api/catalog/install" || path === "/api/catalog/uninstall")) {
+      const b = await body<{ id?: string; target?: string }>(req, { id: "string", target: "string" });
+      if (!b.id || (b.target !== "team" && b.target !== "private")) {
+        return json({ error: "id and target (team|private) required" }, 400);
+      }
+      const installing = path.endsWith("/install");
+      // Human-gate every pack mutation through the approval broker (invariant 5) - so no loopback
+      // caller (incl. the agent) can install/uninstall without the operator's tap in the Pending tray.
+      const { decision } = deps.broker.request({
+        name: installing ? "Install app pack" : "Uninstall app pack",
+        input: { id: b.id, target: b.target },
+      });
+      if ((await decision) !== "approve") return json({ error: installing ? "install declined" : "uninstall declined" }, 403);
+      try {
+        const run = installing ? deps.packStore.install : deps.packStore.uninstall;
+        return json(run(b.id, b.target));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "install failed";
+        return json({ error: msg }, /^unknown pack:/.test(msg) ? 404 : 400);
+      }
+    }
+    if (deps.gatewayView) {
+      const gw = deps.gatewayView;
+      if (method === "GET" && path === "/api/connectors/gateway") {
+        return json({ status: gw.status(), tools: gw.tools() });
+      }
+      if (method === "POST" && path === "/api/connectors/gateway") {
+        const b = await body<{ name?: string; url?: string; scopes?: string[] }>(req, { name: "string", url: "string", scopes: "string[]" });
+        const name = (b.name ?? "").trim().toLowerCase();
+        const url = (b.url ?? "").trim();
+        if (!/^[a-z][a-z0-9_-]{1,31}$/.test(name)) return json({ error: "name: lowercase letters/digits/-/_ , 2–32 chars" }, 400);
+        if (!/^https?:\/\//.test(url)) return json({ error: "url must start with http(s)://" }, 400);
+        const scopes = Array.isArray(b.scopes) ? b.scopes.filter((s) => typeof s === "string") : undefined;
+        try {
+          return json(await gw.add({ name, url, ...(scopes && scopes.length ? { scopes } : {}) }));
+        } catch (e) {
+          return json({ error: e instanceof Error ? e.message : "add failed" }, 400);
+        }
+      }
+      const rm = path.match(/^\/api\/connectors\/gateway\/([a-z0-9_-]+)\/remove$/);
+      if (method === "POST" && rm) {
+        gw.remove(rm[1]!);
+        return json({ ok: true });
+      }
+      // Reclassify one tool (read/gated/hidden), TIGHTEN-ONLY - the engine refuses to un-gate an
+      // outward tool, so the human gate can only be added, never removed (invariant 5).
+      const pol = path.match(/^\/api\/connectors\/gateway\/([a-z0-9_-]+)\/policy$/);
+      if (method === "POST" && pol) {
+        const b = await body<{ tool?: string; kind?: string }>(req, { tool: "string", kind: "string" });
+        const tool = (b.tool ?? "").trim();
+        const kind = b.kind;
+        if (!tool) return json({ error: "tool is required" }, 400);
+        if (kind !== "read" && kind !== "gated" && kind !== "hidden") return json({ error: "kind must be read|gated|hidden" }, 400);
+        const r = gw.setPolicy(pol[1]!, tool, kind);
+        return r.ok ? json({ ok: true }) : json({ error: r.reason ?? "policy update refused" }, 400);
+      }
+      const cb = path.match(/^\/oauth\/([a-z0-9_-]+)\/callback$/);
+      if (method === "GET" && cb) {
+        const code = url.searchParams.get("code");
+        const state = url.searchParams.get("state");
+        // CSRF: the callback must echo the one-time state minted at authorize time (invariant 7).
+        if (!code || !state) return oauthPage("Authorization failed - missing code or state.", 400);
+        try {
+          await gw.finishAuth(cb[1]!, code, state);
+          return oauthPage(`Connected “${cb[1]}” ✓ - you can close this tab and return to buildex.`);
+        } catch (e) {
+          return oauthPage("Could not complete authorization: " + (e instanceof Error ? e.message : "error"), 400);
+        }
+      }
+    }
+    if (deps.connectorHub) {
+      const hub = deps.connectorHub;
+      if (method === "GET" && path === "/api/connectors") return json({ connectors: hub.catalog() });
+      // Start OAuth for a file connector: mint state/PKCE, return the provider authorize URL.
+      const au = path.match(/^\/api\/connectors\/([a-z0-9-]+)\/authorize$/);
+      if (method === "POST" && au) {
+        if (!hub.beginAuth) return json({ error: "OAuth is not configured for connectors" }, 400);
+        try {
+          return json(hub.beginAuth(au[1]!));
+        } catch (e) {
+          return json({ error: e instanceof Error ? e.message : "authorize failed" }, 400);
+        }
+      }
+      // The loopback OAuth callback for FILE connectors - distinct from the MCP gateway's
+      // /oauth/<name>/callback so a "gmail" file connector and a "gmail" MCP provider never collide.
+      const fcb = path.match(/^\/oauth\/connector\/([a-z0-9_-]+)\/callback$/);
+      if (method === "GET" && fcb) {
+        const code = url.searchParams.get("code");
+        const state = url.searchParams.get("state");
+        if (!code || !state) return oauthPage("Authorization failed - missing code or state.", 400);
+        if (!hub.finishAuth) return oauthPage("OAuth is not configured for connectors.", 400);
+        try {
+          await hub.finishAuth(fcb[1]!, code, state);
+          return oauthPage(`Connected “${fcb[1]}” ✓ - you can close this tab and return to buildex.`);
+        } catch (e) {
+          return oauthPage(`Authorization failed - ${e instanceof Error ? e.message : "unknown error"}.`, 400);
+        }
+      }
+      const cm = path.match(/^\/api\/connectors\/([a-z0-9-]+)\/(connect|disconnect|sync)$/);
+      if (method === "POST" && cm) {
+        const [, name, action] = cm;
+        try {
+          if (action === "connect") {
+            const b = await body<{ credential: string }>(req, { credential: "string!" });
+            deps.connectorHub.connect(name!, b.credential);
+            return json({ ok: true });
+          }
+          if (action === "disconnect") {
+            deps.connectorHub.disconnect(name!);
+            return json({ ok: true });
+          }
+          return json(await deps.connectorHub.sync(name!));
+        } catch (e) {
+          return json({ error: e instanceof Error ? e.message : "connector error" }, 400);
+        }
+      }
+    } else if (method === "GET" && deps.catalog && path === "/api/connectors") {
+      return json({ connectors: deps.catalog.connectors() });
+    }
+    if (deps.automations) {
+      if (method === "GET" && path === "/api/routines") return json({ routines: deps.automations.list() });
+      if (method === "POST" && path === "/api/routines") {
+        const b = await body<{ name: string; verb: string; cadence: string }>(req, {
+          name: "string!", verb: "string!", cadence: { enum: CADENCES, required: true }, catchUp: { enum: ["coalesce", "each"] },
+        });
+        try {
+          return json(deps.automations.add(b));
+        } catch (e) {
+          return json({ error: e instanceof Error ? e.message : "add failed" }, 400);
+        }
+      }
+      const am = path.match(/^\/api\/routines\/([a-z0-9-]+)\/(run|toggle|remove)$/);
+      if (method === "POST" && am) {
+        const [, name, action] = am;
+        try {
+          if (action === "run") return json(await deps.automations.runNow(name!));
+          if (action === "toggle") return json(deps.automations.toggle(name!));
+          deps.automations.remove(name!);
+          return json({ ok: true });
+        } catch (e) {
+          return json({ error: e instanceof Error ? e.message : "action failed" }, 400);
+        }
+      }
+    } else if (method === "GET" && deps.catalog && path === "/api/routines") {
+      return json({ routines: deps.catalog.routines() });
+    }
+
+    if (method === "GET" && deps.vault && path === "/api/files") return json({ docs: deps.vault.listDocs() });
+    if (method === "GET" && deps.vault && path === "/api/doc") {
+      const p = url.searchParams.get("path");
+      if (!p) return json({ error: "missing path" }, 400);
+      return json({ path: p, content: deps.vault.readDoc(p) });
+    }
+    if (method === "POST" && deps.saveDoc && path === "/api/doc") {
+      const b = await body<{ path: string; content: string }>(req, { path: "string!", content: "string" });
+      if (!b.path) return json({ error: "missing path" }, 400);
+      try {
+        deps.saveDoc(b.path, b.content ?? "");
+        return json({ ok: true, path: b.path });
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "save failed" }, 400);
+      }
+    }
+    if (method === "GET" && deps.vault && path === "/api/history") {
+      const p = url.searchParams.get("path");
+      if (!p) return json({ error: "missing path" }, 400);
+      return json({ path: p, history: deps.vault.history(p) });
+    }
+    // One-tap history restore: rewrite a doc to its content at an earlier commit. This
+    // is NON-destructive - it writes the old version as a NEW commit (via saveDoc → commit + sync), so
+    // the version being replaced is itself preserved in history and a restore can always be undone.
+    if (method === "POST" && deps.vault?.readDocAt && deps.saveDoc && path === "/api/doc/restore") {
+      const b = await body<{ path: string; sha: string }>(req, { path: "string!", sha: "string!" });
+      try {
+        const content = deps.vault.readDocAt(b.path, b.sha); // path is repo-confined; sha is validated
+        deps.saveDoc(b.path, content);
+        return json({ ok: true, path: b.path, content });
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "restore failed" }, 400);
+      }
+    }
+
+    if (method === "POST" && path === "/api/prompt") {
+      const { prompt, resume, sessionId, model, effort } = await body<{ prompt: string; resume?: string; sessionId?: string; model?: string; effort?: string }>(req, {
+        prompt: "string!", resume: "string", sessionId: "string", model: "string", effort: "string",
+      });
+      return streamPrompt(deps, prompt, resume, sessionId, model, effort);
+    }
+    if (method === "POST" && path === "/api/gate") {
+      const b = await body<{ name: string; input?: Record<string, unknown> }>(req, { name: "string!", input: "object" });
+      const tool: ToolInvocation = { name: b.name, input: b.input ?? {} };
+      const decision = await deps.gate.evaluate(tool); // blocks on the approval card for ask-tier
+      return json({ decision });
+    }
+    if (method === "POST" && path === "/api/approve") {
+      const { id, verdict } = await body<{ id: string; verdict: "approve" | "deny" }>(req, {
+        id: "string!", verdict: { enum: ["approve", "deny"], required: true },
+      });
+      return json({ ok: deps.broker.resolve(id, verdict) });
+    }
+    if (method === "POST" && path === "/api/sync") {
+      return json({ result: await deps.syncFn() });
+    }
+    if (method === "GET" && path === "/api/sync") {
+      return json({ status: deps.syncStatus?.() ?? "ok" });
+    }
+
+    // Mini-app bridge: the agent's app-driver MCP posts commands here; the mini-app window
+    // polls /api/app-frames and reports results to /api/app-result.
+    if (deps.appBus) {
+      if (method === "POST" && path === "/api/app-control") {
+        const command = await body<AppCommand>(req, {
+          app: "string!", op: { enum: ["open", "read", "click", "fill"], required: true }, selector: "string", value: "string",
+        });
+        try {
+          return json(await deps.appBus.send(command));
+        } catch (e) {
+          return json({ error: e instanceof Error ? e.message : "no mini-app window" }, 409);
+        }
+      }
+      if (method === "GET" && path === "/api/app-frames") {
+        return json({ frames: deps.appBus.drain() });
+      }
+      if (method === "POST" && path === "/api/app-result") {
+        const { id, ok, result, error } = await body<{ id: string; ok: boolean; result?: unknown; error?: string }>(req, {
+          id: "string!", ok: "boolean!", error: "string",
+        });
+        return json({ ok: deps.appBus.resolve(id, { ok, result, error }) });
+      }
+      if (method === "POST" && path === "/api/app-subscribe") {
+        const token = randomToken();
+        appSubs.set(token, deps.appBus.subscribe());
+        return json({ token });
+      }
+      if (method === "POST" && path === "/api/app-unsubscribe") {
+        const { token } = await body<{ token: string }>(req, { token: "string!" });
+        const unsub = appSubs.get(token);
+        if (unsub) { unsub(); appSubs.delete(token); }
+        return json({ ok: !!unsub });
+      }
+    }
+
+    if (method === "GET" && deps.appServe && path.startsWith("/apps-serve/")) {
+      const served = deps.appServe(path);
+      if (served) {
+        return new Response(served.body, {
+          status: 200,
+          headers: {
+            "content-type": served.contentType,
+            "x-content-type-options": "nosniff",
+            "cache-control": "no-store",
+            // Force an opaque origin even on direct navigation / window.open from a sandboxed app
+            // (mirrors the iframe `sandbox` attribute) - a served app can never reach the daemon
+            // /api/* from a top-level context. Do NOT add default-src/script-src here: local apps
+            // load their own bundled css/js/images via relative URLs and that would break them.
+            "content-security-policy": "sandbox allow-scripts allow-forms allow-popups",
+            "cross-origin-resource-policy": "same-origin",
+          },
+        });
+      }
+      return json({ error: "app asset not found" }, 404);
+    }
+    if (method === "POST" && deps.appData && path === "/apps-api/data") {
+      const b = await body<{ op: "read" | "list" | "write"; path?: string; glob?: string }>(req, {
+        op: { enum: ["read", "list", "write"], required: true }, path: "string", glob: "string",
+      });
+      const r = deps.appData(b);
+      return json(r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error }, r.status);
+    }
+
+    // The operator console (served only when a web root is configured; never shadows API routes).
+    if (method === "GET" && deps.webRoot) {
+      const asset = serveStatic(deps.webRoot, path);
+      if (asset) return asset;
+    }
+
+    return json({ error: "not found" }, 404);
+  };
+  // Every POST route reads its body through body(req, shape); a malformed JSON body or a mis-shaped
+  // field raises BodyError anywhere in the chain and maps to a terse 400 here - one wrapper instead
+  // of per-route try/catch, and never a raw 500.
+  return async (req) => {
+    try {
+      return await handle(req);
+    } catch (e) {
+      if (e instanceof BodyError) return json({ error: e.message }, 400);
+      throw e;
+    }
+  };
+}
+
+const CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".json": "application/json",
+};
+
+/** Serve a static asset from the web root, refusing any path that escapes it. */
+function serveStatic(webRoot: string, urlPath: string): Response | null {
+  const rel = urlPath === "/" ? "index.html" : urlPath.replace(/^\/+/, "");
+  const root = normalize(webRoot);
+  const full = normalize(join(webRoot, rel));
+  // Confine to the root: allow the root itself, else require a path UNDER it (with a trailing
+  // separator) so a sibling whose name merely shares the root's prefix (e.g. `<root>-secrets`) can't
+  // slip through a bare startsWith.
+  if (full !== root && !full.startsWith(root + sep)) return null; // traversal → not served
+  if (!existsSync(full)) return null;
+  const ext = full.slice(full.lastIndexOf("."));
+  return new Response(readFileSync(full), {
+    status: 200,
+    headers: { "content-type": CONTENT_TYPES[ext] ?? "application/octet-stream" },
+  });
+}
+
+function streamPrompt(deps: DaemonDeps, prompt: string, resume: string | undefined, sessionId?: string, model?: string, effort?: string): Response {
+  const enc = new TextEncoder();
+  const store = deps.sessions;
+  // Resume the underlying claude session if we have one for this conversation.
+  const claudeResume = resume ?? (store && sessionId ? store.getClaudeSessionId(sessionId) : undefined);
+  if (store && sessionId) {
+    // Name the conversation from its first message.
+    const s = store.read(sessionId);
+    if ((s.title === "New chat" || !s.title) && s.events.length === 0) {
+      store.setTitle(sessionId, prompt.length > 48 ? prompt.slice(0, 48) + "…" : prompt);
+    }
+    store.append(sessionId, { kind: "text", text: prompt }); // (user turn recorded by the UI too; harmless)
+    store.setStatus(sessionId, "running");
+  }
+  // A turn is cancelled when the client goes away (tab closed / navigated - the node adapter cancels
+  // this stream on socket close). Cancelling ABORTS the agent child so it is never orphaned (the old
+  // bug: nobody drained it and the turn hung). We keep appending every event we have already received
+  // to the session store as it streams, so a mid-turn disconnect still leaves a complete, resumable
+  // transcript - and an aborted turn resolves to "idle", never the misleading "error".
+  const ac = new AbortController();
+  let clientGone = false;
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      // Enqueue to the client only while it's still connected; once it's gone, enqueue would throw on
+      // the closed controller - swallow that and keep persisting server-side.
+      const send = (e: UiEvent) => {
+        if (clientGone) return;
+        try {
+          controller.enqueue(enc.encode(`data: ${JSON.stringify(e)}\n\n`));
+        } catch {
+          clientGone = true;
+        }
+      };
+      try {
+        for await (const e of deps.runPrompt({ prompt, workspace: deps.workspace, signal: ac.signal, ...(claudeResume ? { resume: claudeResume } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}) })) {
+          send(e);
+          if (store && sessionId) {
+            if (e.kind === "done" && e.sessionId) store.setClaudeSessionId(sessionId, e.sessionId);
+            store.append(sessionId, e); // includes `done` - a turn boundary for replay
+          }
+        }
+        if (store && sessionId) store.setStatus(sessionId, "idle");
+      } catch (err) {
+        // An abort (client disconnect) is a clean stop, not a failure: leave the session idle and
+        // resumable. Only a genuine error marks the session "error".
+        if (ac.signal.aborted) {
+          if (store && sessionId) store.setStatus(sessionId, "idle");
+        } else {
+          send({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+          if (store && sessionId) store.setStatus(sessionId, "error");
+        }
+      } finally {
+        try {
+          controller.close();
+        } catch {
+          /* already closed by a cancel - fine */
+        }
+      }
+    },
+    cancel() {
+      // The client disconnected. Abort the agent turn so its child process is killed rather than
+      // orphaned; the start() loop above finishes gracefully and marks the session idle.
+      clientGone = true;
+      ac.abort();
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    },
+  });
+}
+
+/** Rules for the tiny hand-rolled body validator: a primitive type name - append "!" to require the
+ *  field - "string[]", or an allowed-literals enum `{ enum: [...], required? }`. Absent optional
+ *  fields (and explicit null) pass; a present field must match its rule. No dependencies. */
+type BodyRule =
+  | "string" | "string!" | "number" | "number!" | "boolean" | "boolean!"
+  | "object" | "object!" | "string[]" | "string[]!"
+  | { enum: readonly string[]; required?: boolean };
+type BodyShape = Record<string, BodyRule>;
+
+/** A malformed or mis-shaped request body. The handler wrapper maps it to a 400 (never a raw 500). */
+class BodyError extends Error {}
+
+// Keep in step with ProjectItem (projects.ts) and Cadence/CatchUp (brain/automations.ts) - the
+// daemon depends on those modules by interface only, so the literal lists live here.
+const PROJECT_ITEM_SHAPE: BodyShape = {
+  type: { enum: ["chat", "browser", "doc", "map", "app"], required: true },
+  sessionId: "string", url: "string", path: "string", title: "string", repo: "string", name: "string",
+};
+const CADENCES = ["hourly", "daily", "weekly"] as const;
+
+/** Parse a JSON request body and (when a shape is given) validate required fields, field types, and
+ *  enum membership. Throws BodyError - the route chain's wrapper turns it into a terse 400. */
+async function body<T>(req: Request, shape?: BodyShape): Promise<T> {
+  let parsed: unknown;
+  try {
+    parsed = await req.json();
+  } catch {
+    throw new BodyError("invalid JSON body");
+  }
+  if (shape) checkBody(parsed, shape);
+  return parsed as T;
+}
+
+/** Validate one (possibly nested) object against a shape. `label` prefixes nested field names. */
+function checkBody(obj: unknown, shape: BodyShape, label = "body"): void {
+  if (typeof obj !== "object" || obj === null || Array.isArray(obj)) throw new BodyError(`${label} must be a JSON object`);
+  const rec = obj as Record<string, unknown>;
+  for (const [key, rule] of Object.entries(shape)) {
+    const v = rec[key];
+    const name = label === "body" ? key : `${label}.${key}`;
+    if (typeof rule === "object") {
+      if (v == null) {
+        if (rule.required) throw new BodyError(`${name} must be one of: ${rule.enum.join("|")}`);
+      } else if (typeof v !== "string" || !rule.enum.includes(v)) {
+        throw new BodyError(`${name} must be one of: ${rule.enum.join("|")}`);
+      }
+      continue;
+    }
+    const required = rule.endsWith("!");
+    const type = required ? rule.slice(0, -1) : rule;
+    if (v == null) {
+      if (required) throw new BodyError(`${name} is required`);
+    } else if (type === "string[]") {
+      if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) throw new BodyError(`${name} must be an array of strings`);
+    } else if (type === "object") {
+      if (typeof v !== "object" || Array.isArray(v)) throw new BodyError(`${name} must be an object`);
+    } else if (typeof v !== type) {
+      throw new BodyError(`${name} must be a ${type}`);
+    }
+  }
+}
+
+function json(obj: unknown, status = 200): Response {
+  return new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json" } });
+}
+
+// Date.now()/Math.random() are fine in the daemon runtime (only forbidden inside Workflow scripts).
+function randomToken(): string {
+  return "s" + Math.abs(Date.now() ^ (Math.random() * 1e9)).toString(36);
+}
+
+/** A tiny self-contained page shown at the end of an OAuth redirect (the connector callback). */
+function oauthPage(message: string, status = 200): Response {
+  const safe = message.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!);
+  const body = `<!doctype html><meta charset="utf-8"><title>buildex - connector</title><body style="font:15px/1.5 ui-sans-serif,system-ui;background:#0a1211;color:#eaf3f1;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center;max-width:32ch"><div style="width:14px;height:14px;border-radius:4px;background:#2dd4bf;margin:0 auto 16px"></div>${safe}</div></body>`;
+  return new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } });
+}

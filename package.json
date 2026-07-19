@@ -1,0 +1,32 @@
+{
+  "name": "buildex",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BuildEx - the eXponential ORGanization Operating System",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "demo:setup": "tsx scripts/demo-setup.ts",
+    "demo": "npm run demo:setup && tsx scripts/demo.ts",
+    "demo:app": "npm run demo:setup && electron apps/client/electron/main.cjs",
+    "demo:orgs": "tsx scripts/demo-orgs.ts",
+    "demo:here": "tsx scripts/demo-here.ts web",
+    "demo:app:here": "tsx scripts/demo-here.ts app",
+    "demo:agent-login": "tsx scripts/agent-login.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "electron": "^43.1.1",
+    "tsx": "^4.23.1",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.5"
+  }
+}

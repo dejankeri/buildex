@@ -1,0 +1,12 @@
+{
+  "name": "@buildex/sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "@buildex/sync - the thin cloud service - identity, git hosting, seats",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  }
+}

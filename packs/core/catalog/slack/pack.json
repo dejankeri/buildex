@@ -1,0 +1,8 @@
+{
+  "id": "slack",
+  "name": "Slack",
+  "icon": "💬",
+  "summary": "Team chat - open Slack and let the agent help search and draft messages.",
+  "app": { "url": "https://slack.com" },
+  "skills": ["slack-search", "slack-post"]
+}

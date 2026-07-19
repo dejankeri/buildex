@@ -1,0 +1,41 @@
+<!--
+  Mini-app starter. A mini-app is a small, self-contained HTML view the agent can open inside
+  the workspace to show something visual - a dashboard, a live venture view, a form. It runs in a
+  sandboxed iframe and talks to the app only through the injected bridge (window.buildex.*), never to
+  the network directly. Copy this into team/.apps/<name>/app.html and edit.
+
+  The agent can read and drive this view through the local app-driver MCP (list_apps, open_app,
+  read_app, click, fill) - so a mini-app is both a human display and an agent-operable surface.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mini-app</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 0; padding: 24px; }
+    h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: -0.01em; }
+    .muted { color: #6b7280; margin: 0 0 20px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; max-width: 520px; }
+    [data-metric] { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 28px; }
+  </style>
+</head>
+<body>
+  <h1 data-title>Venture dashboard</h1>
+  <p class="muted">A starter mini-app. Replace this with your view.</p>
+  <div class="card">
+    <div data-metric>-</div>
+    <div class="muted">This value is set by the app or by the agent.</div>
+  </div>
+
+  <script>
+    // The app bridge is injected by the client before this script runs. Use it to read data the
+    // agent has prepared, or to expose values the agent can read back. It never reaches the network.
+    if (window.buildex && typeof window.buildex.ready === "function") {
+      window.buildex.ready();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# Reverse proxy + automatic TLS for the sync service. Domain comes from infra/.env at deploy time
+# (public repo — no live host here). Long-lived agent turns stream over this path, so no read/write
+# timeout is imposed on the proxy.
+{$BUILDEX_SYNC_DOMAIN:sync.example.com} {
+	encode gzip
+	reverse_proxy sync:8080 {
+		# Never sever a long agent turn / large git transfer.
+		flush_interval -1
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+	}
+}

@@ -1,0 +1,8 @@
+/* Reset, root sizing, body typography, buttons, scrollbars.
+   Part of the operator console design system (web/index.html). */
+  *{box-sizing:border-box;} html,body{height:100%;margin:0;}
+  body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:14px;-webkit-font-smoothing:antialiased;overflow:hidden;}
+  .mono{font-family:var(--mono);}
+  button{font-family:inherit;color:inherit;cursor:pointer;}
+  ::-webkit-scrollbar{width:9px;height:9px;} ::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:6px;} ::-webkit-scrollbar-track{background:transparent;}
+

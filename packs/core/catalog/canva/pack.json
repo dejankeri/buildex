@@ -1,0 +1,17 @@
+{
+  "id": "canva",
+  "name": "Canva",
+  "icon": "🎨",
+  "summary": "Design - find designs and assets, and generate or edit designs, drivable by the agent.",
+  "app": {
+    "url": "https://www.canva.com"
+  },
+  "mcp": {
+    "kind": "http",
+    "url": "https://mcp.canva.com/mcp"
+  },
+  "skills": [
+    "canva-search",
+    "canva-design"
+  ]
+}

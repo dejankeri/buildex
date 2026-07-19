@@ -1,0 +1,9 @@
+{
+  "id": "stripe",
+  "name": "Stripe",
+  "icon": "💳",
+  "summary": "Payments & subscriptions - look up customers and invoices, draft payment links, from the agent.",
+  "app": { "url": "https://dashboard.stripe.com" },
+  "mcp": { "kind": "http", "url": "https://mcp.stripe.com" },
+  "skills": ["stripe-lookup", "stripe-billing"]
+}

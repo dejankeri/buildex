@@ -1,0 +1,52 @@
+# dependencies
+node_modules/
+.pnp.*
+
+# build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# test / coverage
+coverage/
+.vitest/
+
+# local env & secrets — NEVER commit (invariant: no secret enters history)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# buildex workspace-local state (never synced, never committed)
+.sessions/
+.conflicts/
+
+# Claude Code machine-local settings (per-user, per-machine — never commit; the shared repo policy
+# lives in the committed .claude/settings.json, but *.local.json overrides are personal).
+.claude/settings.local.json
+**/.claude/settings.local.json
+
+# OS / editor
+.DS_Store
+*.log
+.idea/
+.vscode/
+.gstack/
+
+# local agent tooling — machine-local, never committed to the public repo
+.superpowers/
+.gemini/
+# Antigravity/Gemini CLI per-project config (a machine-local symlink into ~/.gemini — never commit)
+.antigravitycli/
+
+# local-only working docs — never committed
+.local/
+
+# Cloudflare Pages config carries a live KV namespace id — keep it local (see wrangler.toml.example)
+apps/site/wrangler.toml
+
+# wrangler local state/cache
+.wrangler/

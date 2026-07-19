@@ -1,0 +1,37 @@
+{
+  "$comment": "The allow/ask/deny policy preset shipped into every workspace. The client writes this into .claude/settings.json permissions and pairs it with the PreToolUse gate hook. Reads and local edits flow freely; anything outward or irreversible waits for a human tap; a few things are always refused. An unknown tool defaults to 'ask' - conservative by design for a non-technical operator.",
+  "allow": [
+    "Read",
+    "Grep",
+    "Glob",
+    "LS",
+    "Edit",
+    "Write",
+    "NotebookEdit",
+    "TodoWrite",
+    "Bash(git status:*)",
+    "Bash(git diff:*)",
+    "Bash(git log:*)",
+    "Bash(git show:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(find:*)",
+    "Bash(grep:*)",
+    "Bash(rg:*)",
+    "Bash(head:*)",
+    "Bash(tail:*)",
+    "Bash(wc:*)"
+  ],
+  "ask": [
+    "Bash",
+    "WebFetch",
+    "WebSearch"
+  ],
+  "deny": [
+    "Bash(rm:*)",
+    "Bash(sudo:*)",
+    "Bash(git push:*)",
+    "Bash(git reset --hard:*)"
+  ],
+  "default": "ask"
+}

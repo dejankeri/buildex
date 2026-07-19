@@ -1,0 +1,148 @@
+"use strict";
+// Project-item open/switch, empty-project start screen, the ＋ add-menu.
+//
+// Part of the operator console (web/index.html). Classic script — loaded in order via
+// <script src>, sharing one global scope. NOT an ES module.
+// State it reads/writes on the shared global `S`: `S.projects` (project list + their saved items),
+// `S.activeProject` (id of the open project), `S.tabs`/`S.active` (open tabs + focused tab id),
+// `S.apps` (installed apps, resolved when re-opening an "app" item).
+
+/**
+ * Open a single saved project item by dispatching on its type to the matching tab opener.
+ * @param {object} it - a persisted project item ({type, plus type-specific fields}).
+ */
+function openProjectItem(it) {
+  if (it.type === "chat") openChatTab({ id: it.sessionId, title: it.title || "Chat", status: "idle" });
+  else if (it.type === "doc") openDocTab(it.path, false);
+  else if (it.type === "browser") openBrowserTab(it.url, false);
+  else if (it.type === "map") openMapTab(false);
+  else if (it.type === "app") {
+    const a = (S.apps || []).find((x) => x.repo === it.repo && x.name === it.name);
+    if (a) openAppTab(a, false);
+  }
+}
+
+/**
+ * Switch the console to project `pid`: tear down the current project's tabs, open the new one's
+ * saved items, and focus a tab (or show the start screen when the project is empty).
+ * @param {string} pid - id of the project to activate.
+ * @param {number} [focusIdx] - index into the freshly-opened tabs to focus; defaults to the last.
+ */
+async function switchToProject(pid, focusIdx) {
+  S.activeProject = pid;
+  // unload the previous project's tabs
+  S.tabs.slice().forEach((t) => {
+    if (t.dispose)
+      try {
+        t.dispose();
+      } catch (e) {}
+    t.pane.remove();
+  });
+  S.tabs = [];
+  S.active = null;
+  const p = (S.projects || []).find((x) => x.id === pid);
+  if (p) p.items.forEach(openProjectItem); // load this project's context
+  if (typeof focusIdx === "number" && S.tabs[focusIdx]) activateTab(S.tabs[focusIdx].id);
+  else if (S.tabs.length) activateTab(S.tabs[S.tabs.length - 1].id);
+  if (!S.tabs.length) {
+    renderTabbar();
+    showProjectStart();
+  }
+  refreshProjects();
+}
+
+/** Render the empty-project start screen (session title + quick-start action buttons) into the tab body. */
+function showProjectStart() {
+  hideProjectStart();
+  const p = (S.projects || []).find((x) => x.id === S.activeProject);
+  const el = elt("div", "startscreen");
+  el.id = "startScreen";
+  el.innerHTML = '<div class="ss-card"><div class="ss-emoji">✦</div><h2>' + esc((p && p.name) || "Session") + '</h2><p>Start working - everything you open stays in this session.</p><div class="ss-actions">'
+    + '<button data-a="chat"><span>◈</span>Start a chat</button><button data-a="doc"><span>✎</span>New document</button><button data-a="browser"><span>◉</span>Open a browser</button><button data-a="map"><span>◇</span>Workspace map</button></div></div>';
+  $("#tabbody").appendChild(el);
+  el.querySelectorAll("button").forEach((b) => b.onclick = () => {
+    const a = b.dataset.a;
+    if (a === "chat") newConversation();
+    else if (a === "doc") openMarkdownEditor(null, "");
+    else if (a === "browser") openBrowserTab();
+    else openMapTab();
+  });
+}
+
+/** Remove the start screen from the DOM if it is currently shown. */
+function hideProjectStart() {
+  const el = $("#startScreen");
+  if (el) el.remove();
+}
+
+// One source of truth for the "＋" add-menu: the popup and the global keyboard shortcuts share it.
+// Modifier is ⌘ on macOS, Ctrl elsewhere; the letter+shift combo is identical across platforms.
+const IS_MAC = /Mac/i.test(navigator.platform || navigator.userAgent || "");
+
+/**
+ * Build the human-readable shortcut label for an add-action.
+ * @param {boolean} shift - whether the shortcut requires Shift.
+ * @param {string} letter - the shortcut letter (already upper-cased for display).
+ * @returns {string} e.g. "⌘⇧N" on macOS, "Ctrl+Shift+N" elsewhere.
+ */
+function kbdLabel(shift, letter) {
+  return IS_MAC ? ("⌘" + (shift ? "⇧" : "") + letter) : ("Ctrl+" + (shift ? "Shift+" : "") + letter);
+}
+
+// The add-menu items: icon glyph, label, keyboard shortcut (letter + shift flag), and the action.
+const ADD_ACTIONS=[
+  {icon:"◈",label:"New chat",       key:"n",shift:false,run:()=>newConversation()},
+  {icon:"✎",label:"New document",   key:"n",shift:true, run:()=>openMarkdownEditor(null,"")},
+  {icon:"▤",label:"Open a document",key:"o",shift:false,run:()=>switchRight("files")},
+  {icon:"◉",label:"Web browser",    key:"b",shift:true, run:()=>openBrowserTab()},
+  {icon:"◇",label:"Workspace map",  key:"m",shift:true, run:()=>openMapTab()},
+];
+
+/**
+ * Global keydown handler: if the event matches an add-action shortcut, run it.
+ * @param {KeyboardEvent} e - the keydown event.
+ */
+function onAddShortcut(e) {
+  const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+  if (!mod || e.altKey) return;
+  const k = (e.key || "").toLowerCase();
+  const a = ADD_ACTIONS.find((x) => x.key === k && (!!x.shift === e.shiftKey));
+  if (a) {
+    e.preventDefault();
+    closeMenus();
+    a.run();
+  }
+}
+
+/**
+ * Open the "＋" add-menu dropdown anchored under `anchor`, one button per add-action.
+ * @param {HTMLElement} anchor - the ＋ button the menu hangs off.
+ */
+function openAddMenu(anchor) {
+  closeMenus();
+  const m = elt("div", "dropdown");
+  m.style.top = "34px";
+  m.style.left = (anchor.offsetLeft) + "px";
+  ADD_ACTIONS.forEach((a) => {
+    const b = elt("button", null, '<span class="k">' + a.icon + '</span>' + esc(a.label) + '<span class="kbd">' + kbdLabel(a.shift, a.key.toUpperCase()) + '</span>');
+    b.onclick = () => {
+      closeMenus();
+      a.run();
+    };
+    m.appendChild(b);
+  });
+  anchor.parentElement.appendChild(m);
+  m.dataset.menu = "1";
+}
+
+/** Remove every open dropdown menu, and hide the file menu if present. */
+function closeMenus() {
+  $$('[data-menu]').forEach((m) => m.remove());
+  const fm = $("#fileMenu");
+  if (fm) fm.style.display = "none";
+}
+
+// Click anywhere outside a menu (or its trigger buttons) closes all open menus.
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("[data-menu],#tabAdd,#fileMenuBtn,#fileMenu")) closeMenus();
+});

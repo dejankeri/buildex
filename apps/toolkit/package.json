@@ -1,0 +1,12 @@
+{
+  "name": "@buildex/toolkit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "@buildex/toolkit - Company setup toolkit: provision, backfill, connector scaffold; CLI wrapper pending",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  }
+}

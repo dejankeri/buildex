@@ -1,0 +1,50 @@
+/* App grid, status strip + usage meter, title bar, dropdowns, add-app form, body grid.
+   Part of the operator console design system (web/index.html). */
+  .app{height:100vh;display:grid;grid-template-rows:40px 1fr 23px;grid-template-columns:minmax(0,1fr);--lw:260px;--rw:300px;}
+  /* bottom status strip - mini agent-usage read-out */
+  .statusbar{display:flex;align-items:center;gap:12px;padding:0 12px;background:var(--panel);border-top:1px solid var(--line);font-size:11px;color:var(--faint);overflow:hidden;white-space:nowrap;-webkit-app-region:drag;}
+  .statusbar .sb-label{text-transform:uppercase;letter-spacing:.06em;font-weight:650;color:var(--faint);}
+  .statusbar .sb-refresh{-webkit-app-region:no-drag;background:none;border:0;color:var(--faint);font-size:12px;line-height:1;padding:2px 4px;border-radius:5px;cursor:pointer;} .statusbar .sb-refresh:hover{color:var(--ink);background:var(--panel-2);} .statusbar .sb-refresh.spin{animation:usagespin .7s linear infinite;}
+  @keyframes usagespin{to{transform:rotate(360deg);}}
+  .statusbar.dim .usage{opacity:.7;} .usage .uoff{color:var(--faint);font-style:italic;}
+  .statusbar .sbspace{flex:1;}
+  .usage{display:flex;align-items:center;gap:11px;min-width:0;overflow:hidden;}
+  .useg{display:flex;align-items:center;gap:6px;color:var(--muted);} .useg+.useg{padding-left:11px;border-left:1px solid var(--line-2);}
+  .useg .ubar{width:34px;height:4px;border-radius:3px;background:var(--line-2);overflow:hidden;flex:none;} .useg .ubar i{display:block;height:100%;width:0;background:var(--brand);border-radius:3px;transition:width .3s ease;}
+  .useg.warn .ubar i{background:var(--gate);} .useg.crit .ubar i{background:var(--crit);}
+  .useg .upct{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600;} .useg .ulabel{color:var(--faint);}
+  .app.lc{--lw:0px;} .app.rc{--rw:0px;}
+  /* unified native title bar: the whole strip drags the window; controls are no-drag.
+     The left/right clusters track the rail widths (var --lw/--rw) so they line up with the panels
+     below; the tabs take the centre and scroll in place instead of pushing the clusters out. */
+  .top{display:flex;align-items:stretch;background:var(--panel);border-bottom:1px solid var(--line);-webkit-app-region:drag;}
+  .top .tl{display:flex;align-items:center;gap:8px;padding:0 10px;overflow:hidden;transition:width .12s ease;}
+  .top .tl-l{flex:none;width:var(--lw);min-width:max-content;border-right:1px solid var(--line);} /* == left rail width; the divider lines up with the rail border below */
+  .top .tl-r{flex:none;width:var(--rw);min-width:max-content;justify-content:space-between;gap:6px;border-left:1px solid var(--line);} /* panel icons hug the divider (left), sync/theme/collapse hug the corner (right); when collapsed there's no slack so they sit together */
+  .top .rgroup{display:flex;align-items:center;gap:6px;}
+  body.macapp .top .tl-l{padding-left:80px;} /* clear the macOS traffic lights */
+  .top .brand{font-weight:800;letter-spacing:-.02em;display:flex;align-items:center;gap:7px;font-size:14.5px;white-space:nowrap;background:none;border:0;padding:2px 4px;border-radius:7px;color:inherit;-webkit-app-region:no-drag;cursor:pointer;transition:background .12s;} .top .brand:hover{background:var(--panel-2);} .top .brand .dot{width:9px;height:9px;border-radius:3px;background:var(--brand);box-shadow:0 0 7px var(--brand);}
+  .top .nav{display:flex;gap:1px;-webkit-app-region:no-drag;} .top .nav button{width:23px;height:26px;border:0;background:none;color:var(--muted);font-size:19px;line-height:1;border-radius:6px;display:grid;place-items:center;padding:0;} .top .nav button:hover:not(:disabled){background:var(--panel-2);color:var(--ink);} .top .nav button:disabled{opacity:.32;cursor:default;}
+  /* sync = a status dot: green synced · orange pulsing while the agent works (changes will sync) · red offline */
+  .top .sync{display:flex;align-items:center;height:28px;padding:0 8px;border-radius:7px;cursor:pointer;-webkit-app-region:no-drag;} .top .sync:hover{background:var(--panel-2);} .top .sync .d{width:8px;height:8px;border-radius:50%;background:var(--good);transition:background .2s;}
+  .top .sync.ok .d{background:var(--good);} .top .sync.busy .d{background:var(--gate);animation:syncpulse 1.1s infinite;} .top .sync.off .d{background:var(--crit);}
+  .top .sync.queued .d{background:var(--gate);} .top .sync.help .d{background:var(--crit);animation:synchelp 1.4s infinite;}
+  /* local = no account yet: neutral grey, not an error - an invitation to connect & sync */
+  .top .sync.local .d{background:var(--faint);}
+  @keyframes syncpulse{0%,100%{box-shadow:0 0 0 0 rgba(240,169,75,.55);}70%{box-shadow:0 0 0 5px rgba(240,169,75,0);}}
+  @keyframes synchelp{0%,100%{box-shadow:0 0 0 0 rgba(224,115,107,.6);}70%{box-shadow:0 0 0 5px rgba(224,115,107,0);}}
+  .top .ico{width:28px;height:28px;border:1px solid var(--line);border-radius:7px;background:var(--panel-2);color:var(--muted);font-size:13px;display:grid;place-items:center;flex:none;-webkit-app-region:no-drag;} .top .ico:hover{color:var(--ink);border-color:var(--line-2);}
+  .dropdown{position:absolute;top:36px;left:0;background:var(--elevate);border:1px solid var(--line-2);border-radius:9px;padding:5px;min-width:180px;box-shadow:0 10px 30px rgba(0,0,0,.4);z-index:50;}
+  .dropdown button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:none;border:0;font-size:13px;padding:7px 9px;border-radius:6px;color:var(--ink);} .dropdown button:hover{background:var(--brand-tint);}
+  .dropdown .k{color:var(--faint);width:15px;text-align:center;}
+  .dropdown .kbd{margin-left:auto;padding-left:16px;font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.02em;}
+  .addapp .aform{display:flex;flex-direction:column;gap:7px;padding:10px;}
+  .addapp label{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;}
+  .addapp input,.addapp select{background:var(--bg);border:1px solid var(--line-2);border-radius:6px;padding:5px 8px;color:var(--ink);font:inherit;font-size:12.5px;}
+  .addapp .arow{display:flex;gap:8px;justify-content:flex-end;margin-top:4px;}
+  .addapp .arow button{padding:5px 12px;border-radius:7px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink);cursor:pointer;}
+  .addapp .arow .acreate{background:var(--brand-dim);border-color:var(--brand-dim);color:var(--brand);}
+  .addapp .aerr{color:var(--crit);font-size:11.5px;min-height:1em;}
+
+  .body{display:grid;grid-template-columns:var(--lw) 1fr var(--rw);min-height:0;transition:grid-template-columns .12s ease;}
+

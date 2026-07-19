@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BuildEx - social card</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    background: radial-gradient(1100px 700px at 78% -10%, #10201d 0%, #0a1211 55%, #070d0c 100%);
+    color: #eaf3f1;
+    font-family: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .card {
+    position: relative;
+    width: 1200px; height: 630px;
+    padding: 84px 88px;
+    display: flex; flex-direction: column;
+    justify-content: space-between;
+  }
+  /* thin brand hairline top border */
+  .card::before {
+    content: ""; position: absolute; left: 0; top: 0; right: 0; height: 6px;
+    background: linear-gradient(90deg, #2dd4bf 0%, #2dd4bf 62%, #f0a94b 100%);
+    opacity: .9;
+  }
+  /* oversized radial mark, bleeding off the right edge as a watermark */
+  .mark-bg {
+    position: absolute; right: -140px; top: 50%; transform: translateY(-50%);
+    width: 620px; height: 620px; opacity: .22;
+  }
+  .top { display: flex; align-items: center; gap: 20px; }
+  .mk { width: 62px; height: 62px; }
+  .wm { font-size: 30px; font-weight: 600; letter-spacing: -.015em; color: #eaf3f1; }
+  .wm .tld { color: #2dd4bf; }
+  .mid { position: relative; z-index: 2; max-width: 860px; }
+  .eyebrow {
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 17px; letter-spacing: .14em; text-transform: uppercase;
+    color: #2dd4bf; margin-bottom: 26px;
+  }
+  h1 {
+    font-size: 74px; line-height: 1.04; font-weight: 600; letter-spacing: -.025em;
+    color: #f5faf9;
+  }
+  h1 em { font-style: normal; color: #2dd4bf; }
+  .sub {
+    margin-top: 26px; font-size: 27px; line-height: 1.4; font-weight: 400;
+    color: #a7bab6; max-width: 780px;
+  }
+  .bottom { position: relative; z-index: 2; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .pill {
+    font-family: "Geist Mono", ui-monospace, monospace;
+    font-size: 18px; color: #cfe0dc;
+    border: 1px solid rgba(45,212,191,.28); border-radius: 999px;
+    padding: 9px 18px; background: rgba(45,212,191,.06);
+  }
+  .pill.gate { color: #f6d29a; border-color: rgba(240,169,75,.4); background: rgba(240,169,75,.08); }
+  .dot { color: #3a4b48; font-size: 18px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <!-- oversized radial mark watermark -->
+    <svg class="mark-bg" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <g stroke="#2dd4bf" stroke-opacity=".6" stroke-width="1.4" stroke-linecap="round">
+        <path d="M24 8 Q29.48 16.46 39.22 19.06"/><path d="M39.22 19.06 Q32.86 26.88 33.40 36.94"/>
+        <path d="M33.40 36.94 Q24 33.32 14.60 36.94"/><path d="M14.60 36.94 Q15.14 26.88 8.78 19.06"/>
+        <path d="M8.78 19.06 Q18.52 16.46 24 8"/>
+      </g>
+      <g stroke="#2dd4bf" stroke-opacity=".32" stroke-width="1" stroke-dasharray="1.5 2.5" stroke-linecap="round">
+        <line x1="24" y1="18.6" x2="24" y2="8"/><line x1="29.14" y1="22.33" x2="39.22" y2="19.06"/>
+        <line x1="27.18" y1="28.37" x2="33.40" y2="36.94"/><line x1="20.83" y1="28.37" x2="14.60" y2="36.94"/>
+        <line x1="18.87" y1="22.33" x2="8.78" y2="19.06"/>
+      </g>
+      <g fill="#2dd4bf">
+        <circle cx="24" cy="8" r="2.5"/><circle cx="39.22" cy="19.06" r="2.5"/>
+        <circle cx="33.40" cy="36.94" r="2.5"/><circle cx="8.78" cy="19.06" r="2.5"/>
+      </g>
+      <circle cx="14.60" cy="36.94" r="6" stroke="#f0a94b" stroke-width="1.4" opacity=".6"/>
+      <circle cx="14.60" cy="36.94" r="3.7" fill="#f0a94b"/>
+      <circle cx="24" cy="24" r="5" stroke="#2dd4bf" stroke-width="1.7"/>
+      <circle cx="24" cy="24" r="2.1" fill="#2dd4bf"/>
+    </svg>
+
+    <div class="top">
+      <svg class="mk" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <g stroke="#2dd4bf" stroke-opacity=".6" stroke-width="1.4" stroke-linecap="round">
+          <path d="M24 8 Q29.48 16.46 39.22 19.06"/><path d="M39.22 19.06 Q32.86 26.88 33.40 36.94"/>
+          <path d="M33.40 36.94 Q24 33.32 14.60 36.94"/><path d="M14.60 36.94 Q15.14 26.88 8.78 19.06"/>
+          <path d="M8.78 19.06 Q18.52 16.46 24 8"/>
+        </g>
+        <g fill="#2dd4bf">
+          <circle cx="24" cy="8" r="2.5"/><circle cx="39.22" cy="19.06" r="2.5"/>
+          <circle cx="33.40" cy="36.94" r="2.5"/><circle cx="8.78" cy="19.06" r="2.5"/>
+        </g>
+        <circle cx="14.60" cy="36.94" r="6" stroke="#f0a94b" stroke-width="1.4" opacity=".6"/>
+        <circle cx="14.60" cy="36.94" r="3.7" fill="#f0a94b"/>
+        <circle cx="24" cy="24" r="5" stroke="#2dd4bf" stroke-width="1.7"/>
+        <circle cx="24" cy="24" r="2.1" fill="#2dd4bf"/>
+      </svg>
+      <span class="wm">BuildExponential<span class="tld">.Org</span></span>
+    </div>
+
+    <div class="mid">
+      <div class="eyebrow">BuildEx &middot; the company operating system</div>
+      <h1>Run your company from <em>one place</em>, with your AI.</h1>
+      <p class="sub">Your whole company as plain files in git. Your own AI agent operates on them &mdash; anything outward waits for a human tap.</p>
+    </div>
+
+    <div class="bottom">
+      <span class="pill">agent</span>
+      <span class="dot">&middot;</span>
+      <span class="pill">git</span>
+      <span class="dot">&middot;</span>
+      <span class="pill">markdown</span>
+      <span class="dot">&middot;</span>
+      <span class="pill gate">a human tap</span>
+      <span class="dot">&middot;</span>
+      <span class="pill">free &amp; MIT</span>
+    </div>
+  </div>
+</body>
+</html>

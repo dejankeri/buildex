@@ -1,0 +1,18 @@
+{
+  "id": "gmail",
+  "name": "Gmail",
+  "icon": "✉️",
+  "summary": "Email - open your inbox and let the agent help triage and draft.",
+  "app": {
+    "url": "https://mail.google.com"
+  },
+  "mcp": {
+    "kind": "http",
+    "url": "https://gmailmcp.googleapis.com/mcp/v1",
+    "direct": true
+  },
+  "skills": [
+    "gmail-triage",
+    "gmail-draft"
+  ]
+}

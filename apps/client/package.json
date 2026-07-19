@@ -1,0 +1,25 @@
+{
+  "name": "@buildex/client",
+  "productName": "BuildEx",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BuildEx - Electron desktop app + local daemon (the product)",
+  "license": "MIT",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "dependencies": {
+    "@buildex/connectors": "*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build:daemon": "node scripts/build-daemon.mjs",
+    "check:electron": "node ../../scripts/check-electron-version.mjs",
+    "package:mac": "npm run check:electron && electron-builder --mac --config electron-builder.yml",
+    "package:mac:unsigned": "npm run check:electron && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac -c.mac.notarize=false --config electron-builder.yml"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "jsdom": "^27.0.1"
+  }
+}

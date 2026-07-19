@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Content-Security-Policy. The console is now split into external classic-script modules,
+     so script-src drops 'unsafe-inline' — no inline <script> or on*= handlers
+     remain, and injected inline script can no longer execute. md()'s output escaping
+     (web/md.js) remains the stored-XSS defense on rendered content. style-src keeps
+     'unsafe-inline' for the static style="" attributes in the markup. Scripts/styles load only
+     from 'self'; object-src 'none'; no <base> hijack (base-uri 'none'); fetch/XHR only to the
+     daemon (connect-src 'self'); forms submit only to 'self'. frame-src stays open to http(s)
+     for the app panes and the browser tab. frame-ancestors is spec-ignored in a <meta> policy
+     — if we ever need it, the daemon must send it as a response header. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self' http: https: about:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<title>BuildEx - operator console</title>
+<link rel="stylesheet" href="styles/tokens.css">
+<link rel="stylesheet" href="styles/base.css">
+<link rel="stylesheet" href="styles/layout.css">
+<link rel="stylesheet" href="styles/left-rail.css">
+<link rel="stylesheet" href="styles/middle.css">
+<link rel="stylesheet" href="styles/doc-editor.css">
+<link rel="stylesheet" href="styles/panes.css">
+<link rel="stylesheet" href="styles/right-rail.css">
+<link rel="stylesheet" href="styles/focus.css">
+<link rel="stylesheet" href="styles/welcome.css">
+</head>
+<body>
+<div class="app">
+  <!-- One unified title bar: our chrome lives in the macOS traffic-light strip. The
+       whole bar is a window-drag region; interactive controls carve themselves out as no-drag. -->
+  <header class="top" id="titlebar">
+    <div class="tl tl-l">
+      <button class="ico" id="tgLeft" title="Toggle sidebar">⇤</button>
+      <div class="nav">
+        <button id="navBack" title="Back" disabled>‹</button>
+        <button id="navFwd" title="Forward" disabled>›</button>
+      </div>
+      <button class="brand" id="brandBtn" title="Your company brain - the whole system, live"><span class="dot"></span>BuildEx</button>
+    </div>
+
+    <div class="tabs" id="tabbar"><button class="tabadd" id="tabAdd" title="New tab" aria-label="New tab">＋</button></div>
+
+    <div class="tl tl-r">
+      <div class="rtabs" id="rtabs" role="tablist" aria-label="Right panel">
+        <button data-r="pending" class="pendbtn on" role="tab" aria-selected="true" title="Pending - outward actions wait for you" aria-label="Pending - outward actions wait for you"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg><span class="badge" id="pbadge" style="display:none">0</span></button>
+        <button data-r="files" role="tab" aria-selected="false" title="Files" aria-label="Files"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg></button>
+        <button data-r="skills" role="tab" aria-selected="false" title="Skills" aria-label="Skills"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z"/></svg></button>
+        <!-- Automations UI is hidden for now (feature intact; remove display:none to re-enable) -->
+        <button data-r="automations" role="tab" aria-selected="false" title="Automations" aria-label="Automations" style="display:none"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg></button>
+        <button data-r="apps" role="tab" aria-selected="false" title="Apps &amp; connectors" aria-label="Apps &amp; connectors"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 0 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
+      </div>
+      <div class="rgroup">
+        <div class="sync ok" id="sync" role="status" aria-label="Sync status: Synced" title="Synced"><span class="d"></span></div>
+        <button class="ico" id="themeBtn" title="Theme">◐</button>
+        <button class="ico" id="tgRight" title="Toggle panel">⇥</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="body" id="bodyGrid">
+    <!-- LEFT -->
+    <aside class="left">
+      <!-- Organization switcher (B2a). Populated by js/orgs.js from /api/orgs; stays hidden on a
+           single-workspace daemon (route absent). The demo org is a local-only sandbox, badged. -->
+      <div class="orgbar" id="orgbar" hidden></div>
+      <div class="hd"><h3>Sessions</h3><button id="newSessionTop" title="New session">＋</button></div>
+      <div class="convos" id="convos"></div>
+      <button class="newchat" id="newProject">＋ New session</button>
+      <div class="hd apps-hd"><h3>Apps</h3><button id="newAppTop" title="Add an app">＋</button></div>
+      <div class="applist" id="applist"></div>
+    </aside>
+
+    <!-- MIDDLE (tabs now live in the title bar) -->
+    <section class="mid">
+      <div class="tabbody" id="tabbody"></div>
+    </section>
+
+    <!-- RIGHT (panel switcher now lives in the title bar) -->
+    <aside class="right">
+      <div class="rpanel" id="rpanel"></div>
+    </aside>
+  </div>
+
+  <!-- bottom status strip: live agent token usage, read from the operator's transcripts -->
+  <footer class="statusbar" id="statusbar">
+    <span class="sb-label" title="Your live Claude subscription usage, from Anthropic's usage endpoint (the same numbers as /usage).">Claude usage</span>
+    <button class="sb-refresh" id="usageRefresh" title="Refresh now">⟳</button>
+    <span class="sbspace"></span>
+    <div class="usage" id="usage"></div>
+  </footer>
+</div>
+
+<script src="md.js"></script>
+<script src="dom.js"></script>
+<script src="js/core.js"></script>
+<script src="js/sync.js"></script>
+<script src="js/usage.js"></script>
+<script src="js/state.js"></script>
+<script src="js/boot.js"></script>
+<script src="js/onboarding.js"></script>
+<script src="js/orgs.js"></script>
+<script src="js/projects.js"></script>
+<script src="js/tabs.js"></script>
+<script src="js/apps.js"></script>
+<script src="js/store.js"></script>
+<script src="js/navmenu.js"></script>
+<script src="js/chat.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/browser.js"></script>
+<script src="js/map.js"></script>
+<script src="js/brain.js"></script>
+<script src="js/right-rail.js"></script>
+<script src="js/skills.js"></script>
+<script src="js/connectors.js"></script>
+<script src="js/pending.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

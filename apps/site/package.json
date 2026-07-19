@@ -1,0 +1,17 @@
+{
+  "name": "@buildex/site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BuildEx - buildexponential.org (static)",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "dev": "eleventy --serve",
+    "build": "eleventy"
+  },
+  "devDependencies": {
+    "@11ty/eleventy": "^3.1.6"
+  }
+}

@@ -1,0 +1,50 @@
+# electron-builder config. Runs on a release machine - electron + electron-builder
+# are intentionally NOT installed in CI (keeps the test lane fast and headless). The release machine
+# signs with a "Developer ID Application" certificate and notarizes; ALL Apple credentials come from
+# ENV at build time (never committed - see docs/guides/package-macos.md). An unset APPLE_TEAM_ID makes
+# the notarize step a no-op, so an unsigned local build still works for testing.
+appId: org.buildexponential.app
+productName: BuildEx
+# Pinned so electron-builder can resolve the platform binaries: in this npm workspace `electron` is a
+# hoisted ROOT devDep declared as a range, which electron-builder can't compute a fixed version from.
+# Keep in sync with the root package.json `electron` version.
+electronVersion: 43.1.1
+directories:
+  output: dist
+  buildResources: build
+files:
+  - electron/**/*     # the Electron main process (main.cjs) + its helpers/assets
+  - build/**/*        # bundled daemon (build/daemon.cjs)
+  - web/**/*          # the operator console the daemon serves
+  - "!**/*.test.*"
+  # The daemon is fully bundled into build/daemon.cjs (esbuild), and main.cjs requires only electron +
+  # its own .cjs files - nothing resolves node_modules at runtime. Excluding them drops ~12MB of dead
+  # weight (the SDK + express are already inlined in the bundle).
+  - "!node_modules/**"
+# The core pack ships INSIDE the app so a fresh, self-serve install can provision a local `core`
+# repo with zero network. electron-builder copies extraResources into process.resourcesPath;
+# resolveCorePackDir() reads it from <resources>/core-pack in the packaged app.
+extraResources:
+  - from: ../../packs/core
+    to: core-pack
+  # The PreToolUse gate-hook ships UNPACKED: the operator's own `claude` runs `node <hook>` outside the
+  # asar, so it must be a real file on disk. daemon-entry points the gate command at <resources>/gate-hook.mjs.
+  - from: scripts/gate-hook.mjs
+    to: gate-hook.mjs
+mac:
+  target:
+    - dmg
+  category: public.app-category.productivity
+  icon: electron/assets/icon.png   # 512×512 → electron-builder generates the .icns
+  # Sign with the "Developer ID Application" cert in the release machine's login keychain
+  # (electron-builder auto-selects it; override with CSC_NAME if more than one is present).
+  hardenedRuntime: true                          # required by Apple's notary service
+  gatekeeperAssess: false                        # we notarize explicitly; skip the local Gatekeeper probe
+  entitlements: entitlements.mac.plist
+  entitlementsInherit: entitlements.mac.plist
+  # Enable @electron/notarize. It reads ALL Apple credentials from the build ENV (nothing Apple-specific
+  # lives in this committed config): the App Store Connect API key via APPLE_API_KEY / APPLE_API_KEY_ID /
+  # APPLE_API_ISSUER, plus APPLE_TEAM_ID. For an unsigned local validation build, override on the CLI:
+  #   CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac -c.mac.notarize=false
+  notarize: true
+publish: null         # latest.json is hosted separately (see infra/latest.json.example)
