@@ -36,4 +36,20 @@ describe("startPackagedDaemon - the shipped app's boot", () => {
     expect(demo).toMatchObject({ name: "Acme Labs", sandbox: true });
     expect(orgs.activeId).toBe("demo"); // a fresh install lands in the play-now sandbox
   });
+
+  it("widens PATH on boot so a Finder-launched app can still find the agent CLI", async () => {
+    // Regression guard for the `spawn claude ENOENT` crash: booting from a bare PATH (what Finder
+    // hands a .app) must leave the common install dirs reachable, or every agent spawn fails.
+    const savedPath = process.env["PATH"];
+    process.env["PATH"] = "/usr/bin:/bin"; // simulate the stripped GUI-launch PATH
+    try {
+      daemon = await startPackagedDaemon({ port: 0, appDataDir: tmp });
+      const dirs = (process.env["PATH"] ?? "").split(":");
+      expect(dirs).toContain("/opt/homebrew/bin");
+      expect(dirs.some((d) => d.endsWith("/.local/bin"))).toBe(true);
+      expect(dirs).toContain("/usr/bin"); // the inherited entries are preserved, not replaced
+    } finally {
+      process.env["PATH"] = savedPath;
+    }
+  });
 });

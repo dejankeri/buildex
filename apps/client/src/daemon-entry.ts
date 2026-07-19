@@ -15,6 +15,7 @@ import { resolveOrgsRoot } from "./orgs/roots.js";
 import { resolveCorePackDir } from "./provision/core-pack.js";
 import { provisionLocalWorkspace } from "./provision/local-workspace.js";
 import { seedAcmeWorkspace } from "./demo/acme-seed.js";
+import { augmentedPath } from "./agent/resolve-path.js";
 import { bundleCatalogSource } from "./brain/catalog-source.js";
 import type { Root } from "./brain/graph.js";
 import type { PolicyPreset } from "./gate/policy.js";
@@ -36,6 +37,11 @@ export interface PackagedDaemonOpts {
  *  is exercisable from a plain Node smoke test with the repo's own pack standing in for the bundle. */
 export async function startPackagedDaemon(opts: PackagedDaemonOpts = {}): Promise<RunningDaemon> {
   const resourcesPath = opts.resourcesPath ?? (process as { resourcesPath?: string }).resourcesPath;
+  // A Finder-launched app inherits a bare PATH, so the operator's `claude` (and the git/rg/node it
+  // shells out to) are invisible and every agent spawn would ENOENT. Widen this process's PATH to the
+  // common install dirs before anything spawns; the daemon runs in-process in Electron main, so this
+  // one mutation covers every downstream child. See agent/resolve-path.ts.
+  process.env["PATH"] = augmentedPath({ home: homedir(), current: process.env["PATH"] });
   // Dev fallback: build/daemon.cjs sits at <repo>/apps/client/build, so the repo root is three up.
   const repoRoot = join(__dirname, "..", "..", "..");
   const port = opts.port ?? Number(process.env["BUILDEX_PORT"] || 4319);

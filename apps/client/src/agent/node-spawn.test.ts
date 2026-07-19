@@ -57,4 +57,23 @@ describe("nodeSpawnAgent", () => {
     expect(await proc.exit).toBe(2);
     expect(proc.stderrTail!()).toBe("warn: something odd");
   });
+
+  it("does not crash on a missing binary - settles non-zero and records the reason", async () => {
+    // The Finder-launched-app failure mode: `claude` not on PATH. Node emits 'error' (ENOENT) on the
+    // child; without our handler that is an uncaught exception that takes down the whole app. Here it
+    // must resolve to a normal non-zero exit with the reason in the tail, so detect()/runPrompt can
+    // report "unavailable" instead of crashing. If this leaked as an unhandled 'error', the test run
+    // itself would abort.
+    const proc = nodeSpawnAgent({
+      command: "definitely-not-a-real-binary-xyz",
+      args: ["--version"],
+      cwd: process.cwd(),
+    });
+    let out = "";
+    for await (const chunk of proc.stdout) out += chunk.toString();
+    expect(out).toBe(""); // stdout just ends empty
+    const code = await proc.exit;
+    expect(code).not.toBe(0);
+    expect(proc.stderrTail!()).toContain("ENOENT");
+  });
 });
