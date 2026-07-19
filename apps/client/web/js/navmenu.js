@@ -71,6 +71,7 @@ function showProjectStart() {
     + '<div class="ss-tools"><div class="ss-tools-h">Work with your apps &amp; tools</div>'
     + '<div class="ss-tools-row">' + appBtns
     + '<button class="ss-store" data-a="store"><span>⊕</span>' + (apps.length ? "Add apps &amp; tools" : "Add apps &amp; tools you work with") + "</button></div></div>"
+    + '<div class="ss-tips"></div>'
     + "</div>";
   $("#tabbody").appendChild(el);
   el.querySelectorAll("[data-a]").forEach((b) => b.onclick = () => {
@@ -83,10 +84,21 @@ function showProjectStart() {
     const app = (S.apps || []).find((x) => x.name === b.dataset.app);
     if (app) openAppChat(app);
   });
+  // Rotating shortcut tips: 2 random ones, reshuffled every few seconds while this screen is up.
+  const tips = $(".ss-tips", el);
+  if (tips) {
+    renderShortcutTips(tips);
+    if (_tipTimer) clearInterval(_tipTimer);
+    _tipTimer = setInterval(() => {
+      if (document.body.contains(tips)) renderShortcutTips(tips);
+      else { clearInterval(_tipTimer); _tipTimer = null; }
+    }, 5000);
+  }
 }
 
-/** Remove the start screen from the DOM if it is currently shown. */
+/** Remove the start screen from the DOM if it is currently shown (and stop the tip rotation). */
 function hideProjectStart() {
+  if (_tipTimer) { clearInterval(_tipTimer); _tipTimer = null; }
   const el = $("#startScreen");
   if (el) el.remove();
 }
@@ -94,6 +106,29 @@ function hideProjectStart() {
 // One source of truth for the "＋" add-menu: the popup and the global keyboard shortcuts share it.
 // Modifier is ⌘ on macOS, Ctrl elsewhere; the letter+shift combo is identical across platforms.
 const IS_MAC = /Mac/i.test(navigator.platform || navigator.userAgent || "");
+
+// Keyboard shortcuts surfaced as rotating discovery tips on the empty session screen. `keys` render as
+// <kbd> chips ("mod" → ⌘ on macOS, Ctrl elsewhere).
+const SHORTCUT_TIPS = [
+  { label: "New chat", keys: ["mod", "N"] },
+  { label: "New document", keys: ["mod", "⇧", "N"] },
+  { label: "Open a document", keys: ["mod", "O"] },
+  { label: "Web browser", keys: ["mod", "⇧", "B"] },
+  { label: "Hide / show panels", keys: ["mod", "\\"] },
+  { label: "Next session", keys: ["mod", "⇧", "]"] },
+  { label: "Previous session", keys: ["mod", "⇧", "["] },
+];
+let _tipTimer = null; // rotation interval for the tips, cleared when the start screen goes away
+
+/** Paint TWO random shortcut tips into `host` (kbd chips + label). Re-called on a timer so the pair
+ *  keeps changing - lightweight discovery, especially useful before the operator has many apps. */
+function renderShortcutTips(host) {
+  const pool = SHORTCUT_TIPS.slice();
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
+  host.innerHTML = pool.slice(0, 2).map((t) =>
+    '<span class="ss-tip">' + t.keys.map((k) => "<kbd>" + esc(k === "mod" ? (IS_MAC ? "⌘" : "Ctrl") : k) + "</kbd>").join("") + '<span class="ss-tip-l">' + esc(t.label) + "</span></span>"
+  ).join("");
+}
 
 /**
  * Build the human-readable shortcut label for an add-action.
@@ -120,6 +155,13 @@ const ADD_ACTIONS=[
 function onAddShortcut(e) {
   const mod = IS_MAC ? e.metaKey : e.ctrlKey;
   if (!mod || e.altKey) return;
+  // Hide/show both side panels together - Cmd/Ctrl+\ (Figma's "hide UI" trick). Match by code so it
+  // works regardless of keyboard layout.
+  if (!e.shiftKey && (e.code === "Backslash" || e.key === "\\")) { e.preventDefault(); togglePanels(); return; }
+  // Switch sessions - Cmd/Ctrl+Shift+] (next) / [ (prev). Matched by code because Shift turns the
+  // bracket keys into { } on most layouts.
+  if (e.shiftKey && e.code === "BracketRight") { e.preventDefault(); switchSession(1); return; }
+  if (e.shiftKey && e.code === "BracketLeft") { e.preventDefault(); switchSession(-1); return; }
   const k = (e.key || "").toLowerCase();
   const a = ADD_ACTIONS.find((x) => x.key === k && (!!x.shift === e.shiftKey));
   if (a) {
@@ -127,6 +169,16 @@ function onAddShortcut(e) {
     closeMenus();
     a.run();
   }
+}
+
+/** Cycle the active session (project) by `dir` (+1 next / -1 previous), wrapping around. No-op with
+ *  fewer than two sessions. */
+function switchSession(dir) {
+  const list = S.projects || [];
+  if (list.length < 2) return;
+  const cur = list.findIndex((p) => p.id === S.activeProject);
+  const next = (((cur < 0 ? 0 : cur) + dir) % list.length + list.length) % list.length;
+  if (list[next] && list[next].id !== S.activeProject) switchToProject(list[next].id);
 }
 
 /**

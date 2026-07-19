@@ -10,6 +10,23 @@
 // State it reads/writes on the shared global `S`: `S.config` (server config, fetched here) and
 // `S.activeProject` (the project to restore into the tab strip on load).
 
+/** Persist the current column-collapse state to localStorage (a per-profile local file Electron keeps
+ *  under userData), so the layout is restored on the next launch. */
+function savePanels() {
+  const a = $(".app").classList;
+  try { localStorage.setItem("buildex.panels", JSON.stringify({ lc: a.contains("lc"), rc: a.contains("rc") })); } catch (e) {}
+}
+
+/** Hide/show BOTH side panels together, Figma-style (Cmd/Ctrl+\). If either is open, collapse both;
+ *  if both are already collapsed, reveal both. The choice is remembered for next launch. */
+function togglePanels() {
+  const cl = $(".app").classList;
+  const anyOpen = !cl.contains("lc") || !cl.contains("rc");
+  cl.toggle("lc", anyOpen);
+  cl.toggle("rc", anyOpen);
+  savePanels();
+}
+
 /**
  * First paint: bind the title-bar/rail controls, fetch config, load the initial data (projects,
  * apps, doc tree), open the default right panel, and kick off the background refresh loops.
@@ -25,13 +42,9 @@ async function boot() {
     const dark = c ? c === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
     document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
   };
-  // Column collapse is remembered across launches (localStorage - a per-profile local file Electron
-  // persists under userData). On the VERY first launch nothing is stored, so both columns start open
-  // (see the default applied after the initial render below); afterwards we honor the operator's choice.
-  const savePanels = () => {
-    const a = $(".app").classList;
-    try { localStorage.setItem("buildex.panels", JSON.stringify({ lc: a.contains("lc"), rc: a.contains("rc") })); } catch (e) {}
-  };
+  // Column collapse is remembered across launches (localStorage - see savePanels below). On the VERY
+  // first launch nothing is stored, so both columns start open (default applied after the initial
+  // render); afterwards we honor the operator's choice.
   $("#tgLeft").onclick = () => { $(".app").classList.toggle("lc"); savePanels(); }; // toggle + remember the left column
   $("#tgRight").onclick = () => { $(".app").classList.toggle("rc"); savePanels(); }; // toggle + remember the right column
   $("#helpBtn").onclick = () => startTour(true); // replay the guided tour any time
