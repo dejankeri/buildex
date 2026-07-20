@@ -16,11 +16,26 @@ export const GATE_CARD_TTL_MS = 600_000; // 10 minutes
  *  TTL so the operator gate (approve/deny, or the TTL auto-deny) always wins the race. */
 export const GATE_HOOK_TIMEOUT_SECS = 660; // 11 minutes
 
+/** Which run a card belongs to, so the UI can render it inline in the originating chat (or, for a
+ *  card with no live chat - an automation/background run - fall to the company surface). */
+export interface CardOrigin {
+  kind: "chat" | "automation" | "operator";
+  /** The BuildEx session id (the same id a chat tab holds), when the card came from one. */
+  sessionId?: string;
+}
+
 export interface ApprovalCard {
   id: string;
   tool: ToolInvocation;
   createdAt: number;
+  /** The run this card belongs to; undefined when it can't be attributed (see the active-origin rule). */
+  origin?: CardOrigin;
 }
+
+/** Broker lifecycle events, streamed to the UI (the push half of the inline-approval surface). */
+export type ApprovalEvent =
+  | { type: "open"; card: ApprovalCard }
+  | { type: "resolve"; id: string; verdict: Verdict };
 
 export interface ApprovalBrokerDeps {
   idFactory: () => string;
@@ -45,14 +60,46 @@ interface PendingEntry {
 
 export class ApprovalBroker {
   private readonly open = new Map<string, PendingEntry>();
+  // A stack of the runs currently in flight (each /api/prompt run pushes one). A card is attributed
+  // to the active run only when there is EXACTLY one - if zero or several overlap, its origin is left
+  // undefined so it never renders inline in the wrong chat (it still shows in the tray/company surface).
+  private readonly activeOrigins: CardOrigin[] = [];
+  private readonly listeners = new Set<(ev: ApprovalEvent) => void>();
 
   constructor(private readonly deps: ApprovalBrokerDeps) {}
 
-  /** Open an approval card and return the card plus a promise for the operator's decision. If a TTL
-   *  is configured, arm a timer that auto-resolves the card to "deny" so a tool call never hangs
-   *  forever waiting on an operator who never taps (see GATE_CARD_TTL_MS). */
-  request(tool: ToolInvocation): { card: ApprovalCard; decision: Promise<Verdict> } {
-    const card: ApprovalCard = { id: this.deps.idFactory(), tool, createdAt: this.deps.now() };
+  /** Mark a run as in flight so cards it raises are attributed to it. Balanced by popOrigin. */
+  pushOrigin(origin: CardOrigin): void {
+    this.activeOrigins.push(origin);
+  }
+
+  /** End a run (removes the first identity match). Safe if the origin was never pushed. */
+  popOrigin(origin: CardOrigin): void {
+    const i = this.activeOrigins.indexOf(origin);
+    if (i >= 0) this.activeOrigins.splice(i, 1);
+  }
+
+  private currentOrigin(): CardOrigin | undefined {
+    return this.activeOrigins.length === 1 ? this.activeOrigins[0] : undefined;
+  }
+
+  /** Subscribe to open/resolve events (the SSE route uses this). Returns an unsubscribe fn. */
+  subscribe(listener: (ev: ApprovalEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private emit(ev: ApprovalEvent): void {
+    for (const l of this.listeners) l(ev);
+  }
+
+  /** Open an approval card and return the card plus a promise for the operator's decision. The card is
+   *  attributed to the active run (unless an explicit origin is given, or the attribution is ambiguous).
+   *  If a TTL is configured, arm a timer that auto-resolves the card to "deny" so a tool call never
+   *  hangs forever waiting on an operator who never taps (see GATE_CARD_TTL_MS). */
+  request(tool: ToolInvocation, origin?: CardOrigin): { card: ApprovalCard; decision: Promise<Verdict> } {
+    const attributed = origin ?? this.currentOrigin();
+    const card: ApprovalCard = { id: this.deps.idFactory(), tool, createdAt: this.deps.now(), ...(attributed ? { origin: attributed } : {}) };
     const decision = new Promise<Verdict>((resolve) => {
       const entry: PendingEntry = { card, resolve };
       this.open.set(card.id, entry);
@@ -62,6 +109,7 @@ export class ApprovalBroker {
       }
     });
     this.deps.onCard?.(card);
+    this.emit({ type: "open", card });
     return { card, decision };
   }
 
@@ -77,6 +125,7 @@ export class ApprovalBroker {
     this.open.delete(id);
     if (entry.timer !== undefined) this.deps.clearTimer?.(entry.timer);
     entry.resolve(verdict);
+    this.emit({ type: "resolve", id, verdict });
     return true;
   }
 }

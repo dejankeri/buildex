@@ -5,7 +5,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join, normalize, sep } from "node:path";
 import type { Gate } from "../gate/gate.js";
-import type { ApprovalBroker } from "../gate/approval.js";
+import type { ApprovalBroker, ApprovalEvent } from "../gate/approval.js";
 import type { ToolInvocation } from "../gate/policy.js";
 import type { UiEvent } from "../agent/types.js";
 import type { Graph, Root } from "../brain/graph.js";
@@ -231,6 +231,32 @@ export function createDaemon(deps: DaemonDeps): Handler {
     if (method === "GET" && deps.recentChanges && path === "/api/changes")
       return json({ changes: deps.recentChanges() });
     if (method === "GET" && path === "/api/pending") return json({ cards: deps.broker.pending() });
+    // Live approval feed (SSE). The console opens one EventSource and routes each event to the chat
+    // whose session matches the card's origin (inline approval), while the tray still lists them all.
+    if (method === "GET" && path === "/api/approvals/stream") {
+      const enc = new TextEncoder();
+      let unsub: (() => void) | undefined;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const send = (ev: ApprovalEvent) => {
+            try {
+              controller.enqueue(enc.encode(`data: ${JSON.stringify(ev)}\n\n`));
+            } catch {
+              /* client gone - the cancel() below unsubscribes */
+            }
+          };
+          // Replay open cards first so a fresh (or reconnected) subscriber catches up, then stream live.
+          for (const card of deps.broker.pending()) send({ type: "open", card });
+          unsub = deps.broker.subscribe(send);
+        },
+        cancel() {
+          unsub?.();
+        },
+      });
+      return new Response(stream, {
+        headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" },
+      });
+    }
 
     if (deps.sessions) {
       if (method === "GET" && path === "/api/sessions") return json({ sessions: deps.sessions.list() });
@@ -674,6 +700,11 @@ function streamPrompt(deps: DaemonDeps, prompt: string, resume: string | undefin
           clientGone = true;
         }
       };
+      // Mark this chat run in flight so any approval card it raises mid-turn (bash gate, connector
+      // gateway, pack install) is attributed to THIS session - which is how the card renders inline in
+      // the right chat. Popped in finally so it spans the whole run (incl. cancel/error).
+      const origin = sessionId ? { kind: "chat" as const, sessionId } : undefined;
+      if (origin) deps.broker.pushOrigin(origin);
       try {
         for await (const e of deps.runPrompt({ prompt, workspace: deps.workspace, signal: ac.signal, ...(claudeResume ? { resume: claudeResume } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(systemPromptAppend ? { systemPromptAppend } : {}) })) {
           send(e);
@@ -693,6 +724,7 @@ function streamPrompt(deps: DaemonDeps, prompt: string, resume: string | undefin
           if (store && sessionId) store.setStatus(sessionId, "error");
         }
       } finally {
+        if (origin) deps.broker.popOrigin(origin);
         try {
           controller.close();
         } catch {

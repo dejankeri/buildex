@@ -48,3 +48,19 @@
   .ss-tip kbd{font-family:var(--mono);font-size:10.5px;color:var(--muted);background:var(--panel-2);border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;padding:1px 6px;min-width:11px;text-align:center;}
   .ss-tip .ss-tip-l{color:var(--muted);}
 
+  /* Inline approval card: a gated action paused in the chat thread, awaiting the operator's tap.
+     Mirrors the right-rail tray card's language (--gate border, same buttons) but sits in the turn. */
+  .approval{border:1px solid var(--gate);border-radius:11px;background:var(--panel-2);margin:10px 0 4px;padding:11px 13px;max-width:640px;}
+  .approval .ap-head{display:flex;align-items:baseline;gap:8px;}
+  .approval .ap-ic{color:var(--gate);font-size:14px;line-height:1;}
+  .approval .ap-line{font-size:13.5px;font-weight:600;color:var(--ink);}
+  .approval .ap-cmd{margin-top:8px;} .approval .ap-cmd code{display:block;font-family:var(--mono);font-size:11.5px;color:var(--muted);background:var(--bg);border:1px solid var(--line-2);border-radius:7px;padding:6px 9px;word-break:break-word;}
+  .approval .ap-actions{display:flex;gap:8px;margin-top:11px;}
+  .approval .ap-actions button{flex:0 0 auto;min-width:104px;padding:7px 0;border-radius:7px;font-weight:650;font-size:12.5px;border:0;cursor:pointer;}
+  .approval .approve{background:var(--gate);color:#000;}
+  .approval .dny{background:var(--elevate);color:var(--muted);border:1px solid var(--line-2);}
+  .approval .ap-actions button:disabled{opacity:.5;cursor:default;}
+  .approval .ap-verdict{font-weight:600;color:var(--muted);font-size:12px;}
+  .approval.ap-approved{border-color:var(--line-2);opacity:.75;} .approval.ap-approved .ap-ic{color:var(--muted);}
+  .approval.ap-denied{border-color:var(--line-2);opacity:.6;} .approval.ap-denied .ap-line{text-decoration:line-through;text-decoration-color:var(--faint);}
+

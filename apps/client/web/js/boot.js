@@ -74,6 +74,7 @@ async function boot() {
   $(".app").classList.toggle("lc", !!(panels && panels.lc));
   $(".app").classList.toggle("rc", !!(panels && panels.rc));
   refreshPending();
+  startApprovals(); // open the live approval feed → inline Approve/Deny cards in the originating chat
   refreshUsage();
   startAppHost(); // fire-and-forget - loops forever for the page session
   setInterval(refreshProjects, 5000);

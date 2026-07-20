@@ -103,3 +103,35 @@ describe("console a11y (jsdom) — right-rail tablist", () => {
     expect(doc.querySelector('#rtabs button[data-r="files"]')!.getAttribute("aria-selected")).toBe("false");
   });
 });
+
+describe("console renderers (jsdom) — inline chat approvals", () => {
+  it("renders an inline Approve/Deny card into the chat thread, humanized from the gateway summary", () => {
+    const { c } = loadConsole();
+    const thread = c.el("div", { class: "thread" });
+    c.injectApproval(
+      { thread, sessionId: "s1" },
+      { id: "a1", tool: { name: "mcp:stripe.charge", input: { summary: "Charge Jane's card $120" } }, origin: { kind: "chat", sessionId: "s1" } },
+    );
+    expect(thread.querySelectorAll(".approval")).toHaveLength(1);
+    expect(thread.querySelector(".approval .ap-line").textContent).toBe("Charge Jane's card $120");
+    expect(thread.querySelector(".approval .approve")).not.toBeNull();
+    expect(thread.querySelector(".approval .dny")).not.toBeNull();
+  });
+
+  it("is idempotent per card id — a replayed 'open' (reconnect) won't double-render", () => {
+    const { c } = loadConsole();
+    const thread = c.el("div", {});
+    const card = { id: "a2", tool: { name: "Bash", input: { command: "git push --force" } } };
+    c.injectApproval({ thread, sessionId: "s" }, card);
+    c.injectApproval({ thread, sessionId: "s" }, card);
+    expect(thread.querySelectorAll(".approval")).toHaveLength(1);
+  });
+
+  it("ESCAPES an XSS-y tool name in an inline card — inert text, never a live element", () => {
+    const { c } = loadConsole();
+    const thread = c.el("div", {});
+    c.injectApproval({ thread, sessionId: "s" }, { id: "a3", tool: { name: "<img src=x onerror=alert(1)>", input: {} } });
+    expect(thread.querySelector("img")).toBeNull();
+    expect(thread.querySelector(".ap-line").textContent).toContain("<img");
+  });
+});

@@ -62,7 +62,7 @@ const EXPOSE = [
   "buildAppPane", "buildBrainSvg", "buildBrowserPane", "buildChatPane", "buildStorePane", "checkOnboarding",
   "closeMenus", "closeTab", "confirmPending", "connectApp", "ensureDefaultProject", "fillSyncLog",
   "findPendingCard", "flattenTree", "fmtNext", "fmtReset", "folderPaths", "getJSON", "hideProjectStart",
-  "insertAt", "kbdLabel", "loadAgentView", "loadBrain", "loadDoc", "loadMap", "loadSession", "loadStorePane",
+  "injectApproval", "insertAt", "kbdLabel", "loadAgentView", "loadBrain", "loadDoc", "loadMap", "loadSession", "loadStorePane",
   "loadTree", "navGo", "navRecord", "navUpdate", "newConversation", "newProject", "offerConnect",
   "onAddShortcut", "openAddAppForm", "openAddMenu", "openAppTab", "openAttachPicker", "openAutomationEditor",
   "openBrainTab", "openBrowserTab", "openChatTab", "openConnectorEditor", "openDocTab", "openFilesSettings",
