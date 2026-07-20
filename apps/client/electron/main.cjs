@@ -40,10 +40,15 @@ async function bootDaemon() {
   }
   const PORT = process.env.BUILDEX_DEMO_PORT || "4317";
   daemonUrl = `http://127.0.0.1:${PORT}`;
-  daemon = spawn("npx", ["tsx", "scripts/demo.ts"], {
+  // On Windows the npm shims are .cmd files. Modern Node refuses to spawn a .cmd/.bat directly
+  // (EINVAL, per CVE-2024-27980) unless shell:true, so route through the shell there; macOS/Linux
+  // keep the plain spawn. This lets the dev daemon boot the same as on macOS.
+  const isWin = process.platform === "win32";
+  daemon = spawn(isWin ? "npx.cmd" : "npx", ["tsx", "scripts/demo.ts"], {
     cwd: REPO_ROOT,
     env: { ...process.env, BUILDEX_DEMO_PORT: PORT },
     stdio: "inherit",
+    shell: isWin,
   });
   daemon.on("error", (e) => console.error("failed to start daemon:", e.message));
   await new Promise((resolve) => waitForDaemon(daemonUrl, () => resolve()));
