@@ -36,6 +36,12 @@ export interface KeychainOAuthOptions {
 /** How long a minted CSRF state stays valid (invariant 7 - one-time, short TTL). */
 const STATE_TTL_MS = 10 * 60 * 1000;
 
+/** Namespaced, non-spec marker folded into the persisted client blob: the loopback redirect we
+ *  registered this DCR client with. Lets clientInformation() detect a genuine redirect drift without
+ *  trusting the server to faithfully echo our redirect_uris (some DCR endpoints don't). Stripped
+ *  before the record is handed back to the SDK. */
+const REGISTERED_REDIRECT_KEY = "__buildexRegisteredRedirect";
+
 export class KeychainOAuthProvider implements OAuthClientProvider {
   constructor(private readonly o: KeychainOAuthOptions) {}
 
@@ -61,21 +67,38 @@ export class KeychainOAuthProvider implements OAuthClientProvider {
   }
 
   clientInformation(): OAuthClientInformationMixed | undefined {
-    const info = this.readJson<OAuthClientInformationMixed>("client");
-    if (!info) return undefined;
-    // A DCR client is bound to the exact redirect_uri(s) it registered with. If our redirect changed
-    // since - 127.0.0.1→localhost, or a different daemon port - reusing the cached client makes the
-    // provider reject authorize with `invalid_redirect_uri`. Detect the drift and drop the stale
-    // client (+ its tokens) so the SDK re-registers cleanly with the current redirect.
-    const uris = (info as { redirect_uris?: unknown }).redirect_uris;
+    const raw = this.readJson<Record<string, unknown>>("client");
+    if (!raw) return undefined;
+    // A DCR client is bound to the redirect it registered with. If OUR redirect changed since -
+    // 127.0.0.1→localhost, or a different daemon port - reusing the cached client makes the provider
+    // reject authorize with `invalid_redirect_uri`, so we drop it and let the SDK re-register.
+    // We measure that drift against the redirect WE registered with (stamped at save time), NOT the
+    // server's echoed `redirect_uris`: some DCR endpoints (e.g. HeyGen) ignore the requested
+    // redirect_uris and echo a fixed allowlist that never contains ours - which would otherwise trip
+    // this guard on every token exchange and strand the connector at needs-auth.
+    const registeredWith = raw[REGISTERED_REDIRECT_KEY];
+    if (typeof registeredWith === "string") {
+      if (registeredWith !== this.o.redirectUrl) {
+        this.invalidateCredentials("all");
+        return undefined;
+      }
+      const info = { ...raw };
+      delete info[REGISTERED_REDIRECT_KEY];
+      return info as OAuthClientInformationMixed;
+    }
+    // Legacy client persisted before we stamped the redirect: fall back to the server-echoed
+    // redirect_uris comparison so a real host/port drift is still caught.
+    const uris = (raw as { redirect_uris?: unknown }).redirect_uris;
     if (Array.isArray(uris) && uris.length > 0 && !uris.includes(this.o.redirectUrl)) {
       this.invalidateCredentials("all");
       return undefined;
     }
-    return info;
+    return raw as OAuthClientInformationMixed;
   }
   saveClientInformation(info: OAuthClientInformationMixed): void {
-    this.o.store.set(this.key("client"), JSON.stringify(info));
+    // Stamp the redirect we registered with so clientInformation() can detect a genuine redirect
+    // drift without depending on the server faithfully echoing our redirect_uris.
+    this.o.store.set(this.key("client"), JSON.stringify({ ...info, [REGISTERED_REDIRECT_KEY]: this.o.redirectUrl }));
   }
 
   tokens(): OAuthTokens | undefined {
