@@ -24,8 +24,9 @@ Most "AI for work" tools are a chat box in someone else's cloud. BuildEx is the 
 - **Your own agent does the work.** BuildEx drives *your* Claude Code login — it never sees your
   keys, never proxies a model, never resells tokens.
 - **Git is the database.** Every change is a commit. Full history, full undo, nothing hidden.
-- **Outward actions are human-gated.** Sending an email, posting to Slack, spending money — the
-  agent proposes, you approve. One tap.
+- **You approve the big moves.** The agent works on its own by default — but sending an email,
+  posting to Slack, spending money, anything you can't undo waits for your ok. One tap. Everything
+  outward is logged.
 - **The cloud only syncs.** It moves commits between your machines and teammates. It can't read your
   brain or your model traffic.
 

@@ -24,7 +24,10 @@ living maps, and an allow/ask/deny policy (`.claude/`).
 3. **Documents are plain markdown** - rendered views derived on demand, never committed.
 4. **Conductor bright-lines** - never read any agent's credential store, never proxy model tokens,
    never set provider API keys, never render provider sign-in.
-5. **Outward/irreversible ⇒ human-gated** - via the allow/ask/deny preset, surfaced as approval cards.
+5. **Wide autonomy, few gates** - the agent acts autonomously by default across local files, web,
+   and connected tools; a small, operator-configurable set of *money / outbound-to-people /
+   irreversible* actions waits for a human tap, surfaced inline where the work is happening. Every
+   outward action is recorded on a company-level activity log.
 6. **Hard company isolation** - per-company repos; server-side permission matrix; per-machine tokens.
 7. **Identity from JWT only** - setup tokens minted S2S; loopback redirects validated; state one-time, short TTL.
 8. **Never lose an operator's work** - unclean content is backed up locally and flagged, never discarded.

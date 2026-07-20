@@ -5,20 +5,57 @@ const read: McpTool = { name: "search", annotations: { readOnlyHint: true } };
 const write: McpTool = { name: "send", annotations: { readOnlyHint: false, destructiveHint: true } };
 const unmarked: McpTool = { name: "do_thing" };
 
-describe("classifyTool - default-deny toward the gate", () => {
+describe("classifyTool - default pass-through, gate by intent", () => {
   it("treats a readOnlyHint tool as a read pass-through", () => {
     expect(classifyTool(read)).toBe("read");
   });
-  it("gates a tool with no hint (safe default)", () => {
-    expect(classifyTool(unmarked)).toBe("gated");
+  it("runs an unmarked, non-outward tool autonomously (wide by default)", () => {
+    expect(classifyTool(unmarked)).toBe("read");
   });
-  it("gates a non-read / destructive tool", () => {
+  it("gates a destructiveHint tool", () => {
     expect(classifyTool(write)).toBe("gated");
   });
-  it("lets an explicit policy.read allowlist promote an unmarked tool", () => {
+
+  it("gates money / outbound / publish / destroy tools by name", () => {
+    for (const name of [
+      "send",
+      "sendMessage",
+      "send_email",
+      "message",
+      "post_to_instagram",
+      "publish-brand-template",
+      "create_charge",
+      "refund",
+      "issue_payout",
+      "delete_client",
+      "archive_thread",
+      "cancel_subscription",
+    ]) {
+      expect(classifyTool({ name })).toBe("gated");
+    }
+  });
+
+  it("runs fetch/inspect and neutral write tools autonomously (must NOT gate)", () => {
+    for (const name of [
+      "search",
+      "get_client",
+      "get_message_count", // read verb wins over the 'message' token
+      "list_invoices", // read verb wins over the 'invoice' token
+      "find",
+      "build_workout",
+      "create_design", // draft creation - not outbound
+      "assign_program",
+      "record_progress",
+    ]) {
+      expect(classifyTool({ name })).toBe("read");
+    }
+  });
+
+  it("lets an explicit policy.read override widen an outward tool (operator owns the risk)", () => {
+    expect(classifyTool(write, { read: ["send"] })).toBe("read");
     expect(classifyTool(unmarked, { read: ["do_thing"] })).toBe("read");
   });
-  it("lets policy.gated override a readOnlyHint (gate wins)", () => {
+  it("lets policy.gated force the gate on an otherwise-autonomous tool (gate wins)", () => {
     expect(classifyTool(read, { gated: ["search"] })).toBe("gated");
   });
 });
@@ -56,20 +93,20 @@ describe("ConnectorGateway.listInventory - the operator's trust surface (include
     expect(byTool["secret_admin"]!.kind).toBe("hidden"); // hidden IS present here (unlike listTools)
     expect(byTool["search"]).toMatchObject({ kind: "read", baseline: "read" });
     expect(byTool["send"]).toMatchObject({ kind: "gated", baseline: "gated" });
-    expect(byTool["do_thing"]).toMatchObject({ kind: "gated", baseline: "gated" });
+    expect(byTool["do_thing"]).toMatchObject({ kind: "read", baseline: "read" });
     expect(byTool["search"]!.name).toBe("gmail__search"); // still qualified + carries connector
     expect(byTool["search"]!.connector).toBe("gmail");
   });
 });
 
-describe("ConnectorGateway.setToolPolicy - tighten-only (invariant 5 by construction)", () => {
-  it("REFUSES to promote an outward (gated) tool to read - the gate can't be removed", () => {
+describe("ConnectorGateway.setToolPolicy - operator-adjustable both ways (revised invariant 5)", () => {
+  it("lets the operator WIDEN an outward (gated) tool to read - autonomy is configurable", () => {
     const g = new ConnectorGateway({ approve: async () => ({ approved: true }) });
     g.register(conn({ policy: {} }));
     const r = g.setToolPolicy("gmail", "send", "read");
-    expect(r.ok).toBe(false);
-    expect(r.reason).toMatch(/gate|outward/i);
-    expect(g.listTools().find((t) => t.name === "gmail__send")!.kind).toBe("gated"); // unchanged
+    expect(r.ok).toBe(true);
+    expect(r.policy?.read).toContain("send"); // records the widen for persistence
+    expect(g.listTools().find((t) => t.name === "gmail__send")!.kind).toBe("read");
   });
 
   it("allows tightening a read tool to gated", () => {

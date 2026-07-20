@@ -1,13 +1,15 @@
-// The connector MCP gateway - the load-bearing safety piece of the OAuth+MCP connectors.
+// The connector MCP gateway - the classifier for the OAuth+MCP connectors.
 //
 // buildex exposes ONE local MCP server (registered per-workspace in the agent's config - the blessed
 // local-MCP seam) that proxies to provider MCP servers. This module is the transport-free CORE: given a set
-// of provider tools, it decides which are safe to pass straight to the agent (reads) and which must
-// wait for a human tap (writes/sends), preserving invariant 5 ("nothing outward without a human").
+// of provider tools, it decides which run autonomously and which wait for a human tap - the revised
+// invariant 5 ("wide autonomy, few gates").
 //
-// The rule is DEFAULT-DENY: a tool is gated unless it proves itself read-only (MCP's own
-// `readOnlyHint`) or a connector policy explicitly allows it. Reads execute live; gated calls go
-// through the injected approver (→ the Pending tray) and only run if a human approves.
+// The rule is DEFAULT PASS-THROUGH: a tool runs autonomously unless it reads as business-important -
+// money, outbound-to-real-people, publishing, or irreversible destruction (MCP's own `destructiveHint`
+// or an outward-intent name), or a connector policy explicitly gates it. Gated calls go through the
+// injected approver (→ inline in chat / the company surface) and only run if a human approves. The
+// operator can tighten OR widen any tool (setToolPolicy); every outward call is logged regardless.
 
 /** A provider tool as the gateway sees it (mirrors the MCP tool shape we depend on). */
 export interface McpTool {
@@ -21,11 +23,11 @@ export type ToolKind = "read" | "gated";
 /** Effective state on the operator's trust surface - like ToolKind, plus "hidden". */
 export type ToolState = "read" | "gated" | "hidden";
 
-/** Per-connector overrides on the default-deny classifier. */
+/** Per-connector overrides on the intent-based classifier. */
 export interface ConnectorPolicy {
-  /** Tool names to expose as read pass-through even without a readOnlyHint. */
+  /** Tool names to run autonomously (read pass-through) even if they'd otherwise gate by intent. */
   read?: string[];
-  /** Tool names to force through the gate even if they claim to be read-only. */
+  /** Tool names to force through the gate even if they'd otherwise run autonomously. */
   gated?: string[];
   /** Tool names to hide from the agent entirely. */
   hidden?: string[];
@@ -76,12 +78,27 @@ export interface GatewayInventoryItem {
   baseline: ToolKind;
 }
 
-/** Decide whether a tool is a safe read pass-through or must wait for a human. Default: gated. */
+// Tool names that read as fetching/inspecting, never acting - kept autonomous even if they happen to
+// contain an outward token (e.g. `get_message_count`, `list_invoices`). Matched as a leading verb.
+const READ_PREFIX = /^(get|list|search|find|read|fetch|count|lookup|show|view|describe|query|browse)([_\-]|[A-Z]|$)/i;
+
+// Business-important intents that stay gated even at wide-open defaults: money, outbound-to-real-
+// people, publishing, and irreversible destruction. Matched as a whole token (word start / camelCase
+// hump) so `send`/`sendMessage`/`create_charge`/`publish-post` gate but `search`/`created_at` don't.
+const OUTWARD_INTENT =
+  /(^|[_\-])(send|message|msg|email|mail|sms|dm|notify|post|publish|share|charge|refund|payout|invoice|delete|remove|destroy|cancel|archive|revoke)([_\-]|[A-Z]|$)/i;
+
+/** Decide whether a tool runs autonomously (read) or must wait for a human (gated). Default: read.
+ *  Gate only money / outbound-to-people / publishing / destruction - by explicit policy, MCP's
+ *  destructiveHint, or an outward-intent name. Operator overrides (policy.read / policy.gated) win. */
 export function classifyTool(tool: McpTool, policy?: ConnectorPolicy): ToolKind {
-  if (policy?.gated?.includes(tool.name)) return "gated"; // the gate always wins
-  if (policy?.read?.includes(tool.name)) return "read";
-  if (tool.annotations?.readOnlyHint === true) return "read";
-  return "gated";
+  if (policy?.gated?.includes(tool.name)) return "gated"; // explicit operator/pack gate wins
+  if (policy?.read?.includes(tool.name)) return "read"; // explicit operator widen (owns the risk)
+  if (tool.annotations?.destructiveHint === true) return "gated"; // provider says it's destructive
+  if (tool.annotations?.readOnlyHint === true) return "read"; // provider asserts no side effects
+  if (READ_PREFIX.test(tool.name)) return "read"; // a fetch/inspect verb - autonomous
+  if (OUTWARD_INTENT.test(tool.name)) return "gated"; // money / outbound / publish / destroy
+  return "read"; // wide by default
 }
 
 const SEP = "__";
@@ -140,25 +157,24 @@ export class ConnectorGateway {
     return out;
   }
 
-  /** Reclassify one tool, TIGHTEN-ONLY: read→gated/hidden and restore are allowed, but an outward
-   *  (baseline-gated) tool can NEVER be promoted to read - the human gate is add-only (invariant 5).
-   *  Returns the new connector policy so the caller can persist it. Never throws. */
+  /** Reclassify one tool, OPERATOR-ADJUSTABLE both ways: read↔gated↔hidden. Under the revised
+   *  invariant 5 the operator may widen an outward tool to run autonomously (they own the risk) as
+   *  well as tighten a read tool to the gate - autonomy is configured, not add-only. Every outward
+   *  call is logged on the company activity surface regardless. Returns the new connector policy so
+   *  the caller can persist it. Never throws. */
   setToolPolicy(connName: string, toolName: string, target: ToolState): { ok: boolean; reason?: string; policy?: ConnectorPolicy } {
     const conn = this.conns.get(connName);
     if (!conn) return { ok: false, reason: `unknown connector: ${connName}` };
     const tool = conn.tools.find((t) => t.name === toolName);
     if (!tool) return { ok: false, reason: `unknown tool: ${toolName}` };
     const baseline = classifyTool(tool, {});
-    if (target === "read" && baseline !== "read") {
-      return { ok: false, reason: "the human gate can't be removed from an outward tool" };
-    }
     // Start from the current policy, strip this tool from every list, then record only a real override
     // (restoring a tool to its baseline leaves it out of all lists).
     const strip = (arr?: string[]) => (arr ?? []).filter((n) => n !== toolName);
     const next: ConnectorPolicy = { read: strip(conn.policy?.read), gated: strip(conn.policy?.gated), hidden: strip(conn.policy?.hidden) };
     if (target === "hidden") next.hidden!.push(toolName);
     else if (target === "gated" && baseline !== "gated") next.gated!.push(toolName);
-    else if (target === "read" && baseline !== "read") next.read!.push(toolName); // unreachable (guarded above)
+    else if (target === "read" && baseline !== "read") next.read!.push(toolName);
     conn.policy = normalizePolicy(next);
     return { ok: true, policy: conn.policy };
   }

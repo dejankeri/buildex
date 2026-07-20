@@ -34,7 +34,7 @@ each that your change could touch:
 - [ ] **Conductor bright-lines** — never reads an agent's credential store, proxies model tokens,
       sets provider API keys, or renders provider sign-in. (The one documented exception is the
       opt-in usage strip.)
-- [ ] **Outward/irreversible ⇒ human-gated** — such actions still surface as approval cards.
+- [ ] **Wide autonomy, few gates** — money/outbound/irreversible actions surface as approval cards; every outward action is logged.
 - [ ] **Hard company isolation** — per-company repos; server-side permission matrix; per-machine tokens.
 - [ ] **Identity from JWT only** — S2S-minted setup tokens; validated loopback redirects; one-time state.
 - [ ] **Never lose operator work** — unclean content is backed up + flagged, never discarded.

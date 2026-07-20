@@ -57,9 +57,9 @@ for Linux coverage and provider flexibility.
 
 ## Constraints from BuildEx invariants
 
-- **Invariant #5 (outward/irreversible ⇒ human-gated).** Silently replacing the running binary is
-  irreversible-ish and must not be automatic. Design: download in the background, then surface an
-  **approval card** - the operator chooses when to install/restart. Do **not** call
+- **Invariant #5 (wide autonomy, few gates).** Replacing the running binary is irreversible, so it
+  falls in the gated set and must not be automatic. Design: download in the background, then surface
+  an **approval card** - the operator chooses when to install/restart. Do **not** call
   `checkForUpdatesAndNotify()` in a way that force-installs.
 - **Secrets stay private.** Apple certificates, notarization credentials, and the SignPath token are
   secrets - they live in CI secrets / the private repo, **never** in this public monorepo's history
