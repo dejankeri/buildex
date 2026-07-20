@@ -21,14 +21,14 @@ function buildChatPane(tab){
     +'<textarea rows="1" aria-label="Message your company brain" placeholder="Ask your company brain…"></textarea>'
     +'<div class="crow">'
     +'<button class="ctool attach" title="Attach a workspace file" aria-label="Attach a workspace file">📎</button>'
-    +'<select class="ctool modelsel" title="Model" aria-label="Model"><option value="">Model: default</option><option value="opus">Opus</option><option value="sonnet">Sonnet</option><option value="haiku">Haiku</option></select>'
+    +'<select class="ctool modelsel" title="Model" aria-label="Model"><option value="sonnet">Sonnet 5</option><option value="opus">Opus 4.8</option><option value="haiku">Haiku 4.5</option><option value="fable">Fable 5</option></select>'
     +'<select class="ctool effortsel" title="Thinking effort" aria-label="Thinking effort"><option value="">Effort: normal</option><option value="think">Think</option><option value="think-harder">Think harder</option></select>'
     +'<span class="cspacer"></span><button class="send">Send</button></div>'
     +'</div></div>';
   tab.thread=$(".thread",tab.pane);
   const ta=$("textarea",tab.pane), send=$(".send",tab.pane);
   const model=$(".modelsel",tab.pane), effort=$(".effortsel",tab.pane), attach=$(".attach",tab.pane);
-  model.value=tab.model||"";
+  model.value=tab.model||"sonnet"; // Sonnet 5 is the pinned default (see wiring defaultModel)
   effort.value=tab.effort||"";
   // Persist the picker selections back onto the tab; empty string means "default" (null).
   model.onchange=()=>tab.model=model.value||null;

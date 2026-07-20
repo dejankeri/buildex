@@ -30,6 +30,9 @@ export interface ClaudeDriverDeps {
   bin: string;
   /** If set, `runPrompt` rejects any model id not in this allowlist (the `--model` security boundary). */
   allowedModels?: string[];
+  /** The model to pass when a prompt supplies none - pins BuildEx's default (Sonnet 5) instead of
+   *  deferring to the `claude` CLI's own default. Still allowlist-checked. Unset ⇒ no `--model` flag. */
+  defaultModel?: string;
   /** If set, spawn the agent with CLAUDE_CONFIG_DIR pointed here - a config home isolated from the
    *  operator's own Claude Code (no inherited hooks), so BuildEx's agent gets a clean, predictable tool
    *  set. Still NOT a credential seam: the driver never sets a provider key (conductor bright-line). */
@@ -86,11 +89,12 @@ export class ClaudeCodeDriver implements AgentDriver {
     const args = ["-p", opts.prompt, "--output-format", "stream-json", "--verbose"];
     if (opts.systemPromptAppend) args.push("--append-system-prompt", opts.systemPromptAppend);
     if (opts.resume) args.push("--resume", opts.resume);
-    if (opts.model) {
-      if (this.deps.allowedModels && !this.deps.allowedModels.includes(opts.model)) {
-        throw new Error(`model not allowed: ${opts.model}`);
+    const model = opts.model ?? this.deps.defaultModel;
+    if (model) {
+      if (this.deps.allowedModels && !this.deps.allowedModels.includes(model)) {
+        throw new Error(`model not allowed: ${model}`);
       }
-      args.push("--model", opts.model);
+      args.push("--model", model);
     }
     return args;
   }
