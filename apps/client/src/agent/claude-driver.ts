@@ -37,6 +37,15 @@ export interface ClaudeDriverDeps {
    *  operator's own Claude Code (no inherited hooks), so BuildEx's agent gets a clean, predictable tool
    *  set. Still NOT a credential seam: the driver never sets a provider key (conductor bright-line). */
   configDir?: string;
+  /** Extra environment for the agent process, read fresh on every run so a credential provisioned
+   *  mid-session takes effect without a restart.
+   *
+   *  This is for CONNECTOR credentials the operator explicitly provisioned (a pack's escape-hatch key),
+   *  which BuildEx already owns and already hands the agent - the pasted `mcp-bearer` key rides into
+   *  the workspace `.mcp.json` as a Bearer header today. It is NOT a hole in the conductor bright-line:
+   *  that line is about the MODEL provider - the agent's own credential store, model tokens, and
+   *  provider sign-in - none of which may ever pass through here. */
+  extraEnv?: () => NodeJS.ProcessEnv;
 }
 
 export class ClaudeCodeDriver implements AgentDriver {
@@ -54,8 +63,13 @@ export class ClaudeCodeDriver implements AgentDriver {
   async *runPrompt(opts: RunPromptOpts): AsyncIterable<UiEvent> {
     const args = this.buildArgs(opts);
     const parser = new ClaudeStreamParser({ workspace: opts.workspace });
-    // Only pass an env when we need to (an isolated config dir); never inject a provider key.
-    const env = this.deps.configDir ? { ...process.env, CLAUDE_CONFIG_DIR: this.deps.configDir } : undefined;
+    // Only pass an env when we need to (an isolated config dir, or operator-provisioned connector
+    // credentials); never a MODEL provider key.
+    const extra = this.deps.extraEnv?.() ?? {};
+    const env =
+      this.deps.configDir || Object.keys(extra).length > 0
+        ? { ...process.env, ...(this.deps.configDir ? { CLAUDE_CONFIG_DIR: this.deps.configDir } : {}), ...extra }
+        : undefined;
     const proc = this.deps.spawn({ command: this.deps.bin, args, cwd: opts.workspace, ...(env ? { env } : {}) });
     if (opts.signal) opts.signal.addEventListener("abort", () => proc.kill(), { once: true });
 

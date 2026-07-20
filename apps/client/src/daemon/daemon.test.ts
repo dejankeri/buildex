@@ -272,7 +272,7 @@ describe("App Store - /api/catalog", () => {
   it("GET /api/catalog returns the pack list", async () => {
     const { app } = makeDaemon({
       packStore: {
-        list: () => [{ id: "notion", name: "Notion", installed: false, faces: { app: true, mcp: true, apiKey: false, skills: 1 } }],
+        list: () => [{ id: "notion", name: "Notion", installed: false, faces: { app: true, mcp: true, apiKey: false, provision: false, skills: 1 } }],
         install: okResult,
         uninstall: okResult,
         setApiKey: () => {},
@@ -372,5 +372,101 @@ describe("App Store - /api/catalog", () => {
     const res = await p;
     expect(res.status).toBe(200);
     expect(called).toBe(true);
+  });
+});
+
+// The escape-hatch grant. Unlike install/uninstall this is NOT approval-gated - like OAuth connect and
+// the API-key route it is the operator authorizing their own workspace - but it must state what is
+// being granted up front, and the callback must never store a credential on a bad state.
+describe("App Store - escape-hatch provisioning", () => {
+  const okResult = (id: string, target: string) => ({ id, target, did: { app: true, skills: [] as string[], mcp: true, policy: false } });
+  const base = {
+    list: () => [],
+    install: okResult,
+    uninstall: okResult,
+    setApiKey: () => {},
+  };
+
+  it("POST /api/catalog/provision returns the consent URL and what it grants", async () => {
+    const { app } = makeDaemon({
+      packStore: {
+        ...base,
+        beginProvision: (id: string) => ({ authorizeUrl: `https://p.example/c?x=${id}`, grants: "Full account access." }),
+      },
+    });
+    const res = await app(post("/api/catalog/provision", { id: "protocol" }));
+    expect(res.status).toBe(200);
+    // `grants` rides back with the URL so the UI can say what is being granted BEFORE the browser opens.
+    expect(await res.json()).toEqual({ authorizeUrl: "https://p.example/c?x=protocol", grants: "Full account access." });
+  });
+
+  it("surfaces a refusal (not installed / no such face) as a 400, not a crash", async () => {
+    const { app } = makeDaemon({
+      packStore: {
+        ...base,
+        beginProvision: () => { throw new Error("install \"protocol\" before granting it extra access"); },
+      },
+    });
+    const res = await app(post("/api/catalog/provision", { id: "protocol" }));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/before granting/i);
+  });
+
+  it("requires an id", async () => {
+    const { app } = makeDaemon({ packStore: { ...base, beginProvision: () => ({ authorizeUrl: "x", grants: "y" }) } });
+    expect((await app(post("/api/catalog/provision", {}))).status).toBe(400);
+  });
+
+  it("completes the grant from the loopback callback and confirms in the browser", async () => {
+    let got: [string, string | null] | undefined;
+    const { app } = makeDaemon({
+      packStore: {
+        ...base,
+        finishProvision: async (id: string, params: URLSearchParams) => {
+          got = [id, params.get("code")];
+          return { id, name: "Protocol" };
+        },
+      },
+    });
+    const res = await app(new Request("http://127.0.0.1/oauth/provision/protocol/callback?code=wsc_1&state=S"));
+    expect(res.status).toBe(200);
+    expect(got).toEqual(["protocol", "wsc_1"]);
+    expect(await res.text()).toMatch(/Protocol/);
+  });
+
+  it("reports a failed exchange in the browser instead of throwing", async () => {
+    const { app } = makeDaemon({
+      packStore: {
+        ...base,
+        finishProvision: async () => { throw new Error("authorization state did not match - start the connection again"); },
+      },
+    });
+    const res = await app(new Request("http://127.0.0.1/oauth/provision/protocol/callback?code=x&state=BAD"));
+    expect(res.status).toBe(400);
+    expect(await res.text()).toMatch(/state did not match/i);
+  });
+
+  it("treats a provider-side denial as a clean cancel, never an exchange", async () => {
+    let called = false;
+    const finishProvision = async () => { called = true; return { id: "protocol", name: "Protocol" }; };
+    const { app } = makeDaemon({ packStore: { ...base, finishProvision } });
+    const res = await app(new Request("http://127.0.0.1/oauth/provision/protocol/callback?error=denied&state=S"));
+    expect(res.status).toBe(400);
+    expect(await res.text()).toMatch(/cancelled/i);
+    expect(called).toBe(false);
+  });
+
+  it("POST /api/catalog/provision/clear forgets the credential locally", async () => {
+    let cleared: string | undefined;
+    const { app } = makeDaemon({ packStore: { ...base, clearProvision: (id: string) => { cleared = id; } } });
+    const res = await app(post("/api/catalog/provision/clear", { id: "protocol" }));
+    expect(res.status).toBe(200);
+    expect(cleared).toBe("protocol");
+  });
+
+  it("does not expose the routes at all for a packStore without the face", async () => {
+    const { app } = makeDaemon({ packStore: base });
+    expect((await app(post("/api/catalog/provision", { id: "protocol" }))).status).toBe(404);
+    expect((await app(new Request("http://127.0.0.1/oauth/provision/protocol/callback?code=x&state=S"))).status).toBe(404);
   });
 });

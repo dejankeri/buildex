@@ -159,6 +159,12 @@ export interface DaemonDeps {
     /** Save (key set) or clear (key null) a pack's API key in the keychain and re-pin its MCP entry.
      *  For a `mcp-bearer` pack this switches it between OAuth (gateway) and the pasted-key direct pin. */
     setApiKey(id: string, key: string | null): void;
+    /** Start a pack's escape-hatch grant - returns the provider's consent URL and what it grants. */
+    beginProvision?(id: string): { authorizeUrl: string; grants: string };
+    /** Finish it from the loopback callback (validate + consume state, exchange the code). */
+    finishProvision?(id: string, params: URLSearchParams): Promise<{ id: string; name: string }>;
+    /** Forget a provisioned credential locally (does NOT revoke it at the provider). */
+    clearProvision?(id: string): void;
   };
   /** The workspace catalog (verbs, connectors, routines). */
   catalog?: Catalog;
@@ -371,6 +377,24 @@ export function createDaemon(deps: DaemonDeps): Handler {
       deps.packStore.setApiKey(b.id, key);
       return json({ ok: true, connected: key !== null });
     }
+    // Begin an escape-hatch grant. Like OAuth connect and the API-key route, this is the operator
+    // authorizing their OWN workspace, so it is not approval-gated - but unlike them it hands back
+    // `grants` so the UI states what is being granted BEFORE the browser opens.
+    if (method === "POST" && deps.packStore?.beginProvision && path === "/api/catalog/provision") {
+      const b = await body<{ id?: string }>(req, { id: "string" });
+      if (!b.id) return json({ error: "id required" }, 400);
+      try {
+        return json(deps.packStore.beginProvision(b.id));
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "provision failed" }, 400);
+      }
+    }
+    if (method === "POST" && deps.packStore?.clearProvision && path === "/api/catalog/provision/clear") {
+      const b = await body<{ id?: string }>(req, { id: "string" });
+      if (!b.id) return json({ error: "id required" }, 400);
+      deps.packStore.clearProvision(b.id);
+      return json({ ok: true });
+    }
     if (deps.gatewayView) {
       const gw = deps.gatewayView;
       if (method === "GET" && path === "/api/connectors/gateway") {
@@ -418,6 +442,19 @@ export function createDaemon(deps: DaemonDeps): Handler {
         } catch (e) {
           return oauthPage("Could not complete authorization: " + (e instanceof Error ? e.message : "error"), 400);
         }
+      }
+    }
+    // The escape-hatch loopback callback. Its own /oauth/provision/<id>/ namespace so it can never
+    // collide with the MCP gateway's /oauth/<name>/callback or the file connectors'. The one-time
+    // state is validated and consumed inside finishProvision before the code is exchanged.
+    const pcb = path.match(/^\/oauth\/provision\/([a-z0-9-]+)\/callback$/);
+    if (method === "GET" && pcb && deps.packStore?.finishProvision) {
+      if (url.searchParams.get("error")) return oauthPage("Connection cancelled - nothing was granted.", 400);
+      try {
+        const r = await deps.packStore.finishProvision(pcb[1]!, url.searchParams);
+        return oauthPage(`Granted extra access to “${r.name}” ✓ - you can close this tab and return to buildex.`);
+      } catch (e) {
+        return oauthPage("Could not complete the connection: " + (e instanceof Error ? e.message : "error"), 400);
       }
     }
     if (deps.connectorHub) {
