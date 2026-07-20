@@ -9,7 +9,7 @@ import { join } from "node:path";
 import type { Root } from "./graph.js";
 import type { AppManifest } from "./apps.js";
 import type { CatalogSource } from "./catalog-source.js";
-import { PACK_KEY_PREFIX, type McpServerConfig } from "@buildex/connectors";
+import { PACK_KEY_PREFIX, entryTool, type ConnectorPolicy, type McpServerConfig, type PolicyEntry } from "@buildex/connectors";
 
 const NAME_RE = /^[a-z][a-z0-9-]*$/;
 
@@ -35,6 +35,15 @@ export interface PackMcp {
   /** Keep this MCP as a direct remote pin instead of routing it through the connector gateway - for
    *  non-DCR providers that need a static OAuth client (e.g. Google Gmail/Calendar/Drive). */
   direct?: boolean;
+  /** Corrections to the gateway's name-based tool classifier, shipped WITH the pack because only the
+   *  pack author knows the provider's real semantics. Two things the heuristic cannot know:
+   *   - a tool whose name reads outward but only reads (Protocol's `message` lists conversations);
+   *   - an intent-verb tool where the outward action hides in an argument, gated with a `when` rule
+   *     (`schedule` books appointments freely but `action: "send_reminder"` waits for a human).
+   *  This is a BASELINE, not a lock: the operator can still tighten or widen any tool, and their
+   *  choice wins for that tool. It is re-read from the catalog on every sync, never persisted, so a
+   *  pack update that tightens a gate reaches providers that are already connected. */
+  policy?: ConnectorPolicy;
 }
 /** The API-key connection face - the operator pastes a static key instead of running OAuth. Public
  *  metadata only; the key itself is runtime-injected into the keychain (never a manifest). */
@@ -55,6 +64,45 @@ export interface PackApiKey {
   /** Short hint shown in the store, e.g. "Restricted key (rk_…)". */
   hint?: string;
 }
+/** The escape-hatch face: a second, broader credential the provider will only mint through its OWN
+ *  browser consent, because the MCP connection cannot carry it.
+ *
+ *  Protocol is the shape this exists for. Its MCP OAuth access token authenticates `/mcp` and nothing
+ *  else, so everything the MCP surface deliberately omits - billing, hard deletes, outbound client
+ *  messaging - is unreachable no matter how the agent is asked. The provider issues a REST key from a
+ *  separate loopback flow: browser consent → single-use code on our loopback → server-to-server
+ *  exchange → key. This face describes that flow declaratively so the daemon can drive it.
+ *
+ *  Deliberately NEVER run at install. Provisioning is a real grant (often a broader one than the MCP
+ *  connection), so it happens when the work actually needs it, with the operator watching. */
+export interface PackProvision {
+  /** The provider page the operator approves on. `{redirect_uri}` and `{state}` are substituted. Must
+   *  carry no query string of its own - providers commonly append theirs with a raw `?`. */
+  authorizeUrl: string;
+  /** Where the daemon POSTs the code, server-to-server. The browser never sees this response. */
+  exchangeUrl: string;
+  /** Callback query param carrying the single-use code. Default "code". */
+  codeParam?: string;
+  /** Request-body field the code is sent as. Default "code". */
+  codeField?: string;
+  /** Optional body field carrying this machine's name, so the provider can label and rotate the key
+   *  per device rather than piling up credentials. */
+  hostField?: string;
+  /** Dotted path to the credential in the exchange response, e.g. "data.protocolApiKey". */
+  keyPath: string;
+  /** Optional dotted path to an API base URL issued alongside the credential. */
+  apiBasePath?: string;
+  /** Environment variable the credential reaches the agent under. */
+  envKey: string;
+  /** Environment variable the API base reaches the agent under. */
+  envBase?: string;
+  /** One line naming what this grant actually allows - shown to the operator BEFORE the browser opens.
+   *  Required: a broader-than-MCP credential must never be requested without saying so. */
+  grants: string;
+  /** Public page describing the grant. */
+  docsUrl: string;
+}
+
 export interface PackManifest {
   id: string;
   name: string;
@@ -63,6 +111,7 @@ export interface PackManifest {
   app?: { url: string; icon?: string };
   mcp?: PackMcp;
   apiKey?: PackApiKey;
+  provision?: PackProvision;
   skills?: string[];
   policy?: { allow?: string[]; ask?: string[]; deny?: string[] };
 }
@@ -70,7 +119,9 @@ export interface PackMeta extends PackManifest {
   installed: boolean;
   /** The writable root a pack is installed in (team|private), or undefined if not installed. */
   installedIn?: string;
-  faces: { app: boolean; mcp: boolean; apiKey: boolean; skills: number };
+  faces: { app: boolean; mcp: boolean; apiKey: boolean; provision: boolean; skills: number };
+  /** True when this pack's escape-hatch credential has been provisioned on this machine. */
+  provisioned?: boolean;
   /** True when a static API key is stored for this pack (set by callers with keychain access, e.g.
    *  the daemon packStore; the pure catalog reader leaves it undefined). Drives the store's
    *  "connected via key" state. */
@@ -85,6 +136,56 @@ function countSkills(dir: string, skills: string[] | undefined): number {
     if (NAME_RE.test(s) && existsSync(join(dir, "skills", s, "SKILL.md"))) n++;
   }
   return n;
+}
+
+/** Is this a well-formed policy entry - a bare tool name, or a `{tool, when}` rule whose conditions map
+ *  argument names to non-empty value lists? */
+function validEntry(e: unknown, allowRules: boolean): boolean {
+  if (typeof e === "string") return e.trim().length > 0;
+  if (!allowRules || typeof e !== "object" || e === null) return false;
+  const r = e as { tool?: unknown; when?: unknown };
+  if (typeof r.tool !== "string" || !r.tool.trim()) return false;
+  if (r.when === undefined) return true;
+  if (typeof r.when !== "object" || r.when === null || Array.isArray(r.when)) return false;
+  return Object.values(r.when as Record<string, unknown>).every(
+    (vals) => Array.isArray(vals) && vals.length > 0 && vals.every((v) => ["string", "number", "boolean"].includes(typeof v)),
+  );
+}
+
+/** Validate a pack's classifier corrections. Fails CLOSED - a malformed policy skips the whole pack
+ *  rather than connecting it with the gate silently missing. `hidden` takes bare names only: a tool is
+ *  in the agent's list or not, and that is decided before any call (and so any argument) exists. */
+function validPackPolicy(p: unknown): boolean {
+  if (typeof p !== "object" || p === null || Array.isArray(p)) return false;
+  const { read, gated, hidden, ...rest } = p as Record<string, unknown>;
+  if (Object.keys(rest).length > 0) return false; // unknown key - refuse rather than ignore
+  for (const [list, allowRules] of [
+    [read, true],
+    [gated, true],
+    [hidden, false],
+  ] as const) {
+    if (list === undefined) continue;
+    if (!Array.isArray(list) || !list.every((e) => validEntry(e, allowRules))) return false;
+  }
+  return true;
+}
+
+/** Validate the escape-hatch face. Both URLs must be https - this flow carries a credential broader
+ *  than the MCP connection, so it never rides plaintext - and the authorize URL must not already carry
+ *  both placeholders, since the consent page has no other way to learn where to send the operator back.
+ *  `grants` is required: the operator is told what they are granting before the browser opens, never
+ *  after. (The redirect_uri the daemon substitutes is a bare loopback path with no query string of its
+ *  own - consent pages commonly append their params with a raw `?`.) */
+function validProvision(p: PackProvision): boolean {
+  const str = (v: unknown) => typeof v === "string" && v.trim().length > 0;
+  if (!str(p.authorizeUrl) || !str(p.exchangeUrl) || !str(p.keyPath) || !str(p.envKey)) return false;
+  if (!str(p.grants) || !str(p.docsUrl)) return false;
+  for (const u of [p.authorizeUrl, p.exchangeUrl, p.docsUrl]) if (!u.startsWith("https://")) return false;
+  if (!p.authorizeUrl.includes("{redirect_uri}") || !p.authorizeUrl.includes("{state}")) return false;
+  for (const k of ["codeParam", "codeField", "hostField", "apiBasePath", "envBase"] as const) {
+    if (p[k] !== undefined && !str(p[k])) return false;
+  }
+  return true;
 }
 
 /** Validate + normalize a raw manifest; returns undefined if it must be skipped. */
@@ -102,7 +203,9 @@ function parsePack(dir: string, id: string): PackManifest | undefined {
     if (m.mcp.kind === "http" && !/^https?:\/\//.test(m.mcp.url ?? "")) return undefined;
     if (m.mcp.kind === "stdio" && !(typeof m.mcp.command === "string" && m.mcp.command.trim())) return undefined;
     if (m.mcp.kind !== "http" && m.mcp.kind !== "stdio") return undefined;
+    if (m.mcp.policy !== undefined && !validPackPolicy(m.mcp.policy)) return undefined;
   }
+  if (m.provision && !validProvision(m.provision)) return undefined;
   if (!m.app && !m.mcp && countSkills(dir, m.skills) === 0) return undefined; // must have ≥1 face
   return m;
 }
@@ -138,7 +241,7 @@ export function listPacks(source: CatalogSource, roots: Root[]): PackMeta[] {
       ...m,
       installed: !!inRoot,
       ...(inRoot ? { installedIn: inRoot } : {}),
-      faces: { app: !!m.app, mcp: !!m.mcp, apiKey: !!m.apiKey, skills: countSkills(dir, m.skills) },
+      faces: { app: !!m.app, mcp: !!m.mcp, apiKey: !!m.apiKey, provision: !!m.provision, skills: countSkills(dir, m.skills) },
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
@@ -178,6 +281,10 @@ export interface PackProviderSpec {
   name: string;
   url: string;
   scopes?: string[];
+  /** The pack's classifier corrections, handed to the gateway as the baseline under any operator
+   *  overrides. Named `basePolicy` (not `policy`) so it can never be mistaken for, or persisted as,
+   *  the operator's own tightening. */
+  basePolicy?: ConnectorPolicy;
 }
 
 /** Map a pack's mcp face to a connector-gateway provider - the unified connection path: the
@@ -188,13 +295,29 @@ export interface PackProviderSpec {
 export function packMcpProvider(m: PackManifest): PackProviderSpec | null {
   const mcp = m.mcp;
   if (!mcp || mcp.kind !== "http" || mcp.direct) return null;
-  return { name: m.id, url: mcp.url!, ...(mcp.scopes ? { scopes: mcp.scopes } : {}) };
+  return {
+    name: m.id,
+    url: mcp.url!,
+    ...(mcp.scopes ? { scopes: mcp.scopes } : {}),
+    ...(mcp.policy ? { basePolicy: mcp.policy } : {}),
+  };
 }
 
 /** Keychain key holding a pack's static API key (the connector:<id>:apikey namespace, sibling to the
  *  OAuth token namespace). Public convention - the value is never a manifest or repo secret. */
 export function apiKeyKeychainKey(id: string): string {
   return `connector:${id}:apikey`;
+}
+
+/** Keychain key holding a pack's provisioned escape-hatch credential. A THIRD namespace, deliberately
+ *  distinct from `:apikey` (the operator's pasted MCP key) and the OAuth slots: this credential is
+ *  usually broader than either, and conflating them would let clearing one silently revoke another. */
+export function provisionKeychainKey(id: string): string {
+  return `connector:${id}:provisioned`;
+}
+/** Keychain key holding the API base URL issued alongside that credential. */
+export function provisionBaseKeychainKey(id: string): string {
+  return `connector:${id}:provisioned-base`;
 }
 
 /** A minimal secret reader - the client Keychain satisfies it structurally. */

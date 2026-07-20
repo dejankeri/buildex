@@ -48,7 +48,7 @@ describe("listPacks", () => {
     const packs = listPacks(source, roots);
     expect(packs).toHaveLength(1);
     expect(packs[0]!.id).toBe("notion");
-    expect(packs[0]!.faces).toEqual({ app: true, mcp: true, apiKey: false, skills: 1 });
+    expect(packs[0]!.faces).toEqual({ app: true, mcp: true, apiKey: false, provision: false, skills: 1 });
     expect(packs[0]!.installed).toBe(false);
   });
 
@@ -260,5 +260,70 @@ describe("slot → writable-root resolution (company-suffixed names)", () => {
     uninstallPack(source, rs, { id: "notion", target: slot }, d);
     expect(ex(join(dir, "team-acme", "apps", "notion", "app.json"))).toBe(false);
     expect(d.pins["buildex-pack:notion"]).toBeNull();
+  });
+});
+
+// ---- Pack-shipped classifier corrections (mcp.policy) ---------------------------------------------
+// The gateway classifies provider tools by NAME, which only the pack author can correct: a tool that
+// reads outward but only reads, or an intent verb whose outward action hides in an argument.
+describe("mcp.policy - the pack's classifier baseline", () => {
+  const withPolicy = (policy: unknown) => ({
+    id: "protocol", name: "Protocol", icon: "🏋️", summary: "Coaching CRM.",
+    mcp: { kind: "http", url: "https://api.protocolcrm.com/mcp", policy },
+  });
+
+  it("carries a valid policy through to the gateway provider spec as basePolicy", () => {
+    const policy = {
+      read: ["message"],
+      gated: [{ tool: "schedule", when: { action: ["send_reminder"] } }],
+    };
+    pack("protocol", withPolicy(policy));
+    const spec = packMcpProvider(readPack(source, "protocol")!);
+    // Named basePolicy, never `policy`: the operator's own overrides own that field, and only theirs
+    // are persisted to the keychain.
+    expect(spec).toMatchObject({ name: "protocol", basePolicy: policy });
+    expect(spec).not.toHaveProperty("policy");
+  });
+
+  it("omits basePolicy entirely when the pack declares none", () => {
+    pack("protocol", { id: "protocol", name: "Protocol", icon: "🏋️", summary: "x", mcp: { kind: "http", url: "https://api.protocolcrm.com/mcp" } });
+    expect(packMcpProvider(readPack(source, "protocol")!)).not.toHaveProperty("basePolicy");
+  });
+
+  it("accepts bare names, unconditional rules, and multi-arg conditions", () => {
+    for (const policy of [
+      { read: ["message"] },
+      { gated: [{ tool: "schedule" }] }, // rule with no `when` == the bare-string form
+      { gated: [{ tool: "post", when: { target: ["public", "world"], confirm: [true] } }] },
+      { gated: [{ tool: "x", when: { n: [1, 2] } }] },
+      { hidden: ["internal_debug"] },
+      {},
+    ]) {
+      pack("protocol", withPolicy(policy));
+      expect(readPack(source, "protocol"), JSON.stringify(policy)).toBeDefined();
+    }
+  });
+
+  it("SKIPS the whole pack when the policy is malformed (fails closed)", () => {
+    // A pack whose gate we cannot parse must not be offered at all. Dropping just the bad rule would
+    // connect the provider with its outward gate silently missing - the one outcome invariant 5 forbids.
+    for (const policy of [
+      "nope",                                            // not an object
+      ["message"],                                       // array, not an object
+      { unknownKey: ["x"] },                             // unknown key - refuse rather than ignore
+      { read: "message" },                               // list must be an array
+      { gated: [{ when: { action: ["run"] } }] },        // rule with no tool
+      { gated: [{ tool: "", when: {} }] },               // empty tool name
+      { gated: [{ tool: "x", when: { action: [] } }] },  // empty value list matches nothing
+      { gated: [{ tool: "x", when: { action: "run" } }] }, // values must be a list
+      { gated: [{ tool: "x", when: [] }] },              // `when` must be an object
+      { gated: [{ tool: "x", when: { a: [{ b: 1 }] } }] }, // non-scalar value
+      { hidden: [{ tool: "x", when: { a: ["b"] } }] },   // hidden takes bare names only
+      { read: [""] },                                    // empty name
+    ]) {
+      pack("protocol", withPolicy(policy));
+      expect(readPack(source, "protocol"), JSON.stringify(policy)).toBeUndefined();
+      expect(listPacks(source, roots).find((p) => p.id === "protocol"), JSON.stringify(policy)).toBeUndefined();
+    }
   });
 });

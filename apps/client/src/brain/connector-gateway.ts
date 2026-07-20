@@ -45,7 +45,12 @@ export interface ProviderSpec {
   /** The provider's MCP endpoint (streamable HTTP). */
   url: string;
   scopes?: string[];
+  /** The OPERATOR's tighten/widen overrides. Persisted in the keychain (see SPECS_KEY). */
   policy?: ConnectorPolicy;
+  /** The pack-shipped classification baseline. Deliberately NOT persisted: it is re-read from the
+   *  bundled catalog on every sync, so a pack update that tightens a gate reaches providers that are
+   *  already connected instead of being frozen at whatever shipped when the operator first connected. */
+  basePolicy?: ConnectorPolicy;
 }
 
 export interface ConnectorStatus {
@@ -138,6 +143,7 @@ export class ConnectorGatewayHub {
       name: spec.name,
       url: spec.url,
       ...(spec.policy ? { policy: spec.policy } : {}),
+      ...(spec.basePolicy ? { basePolicy: spec.basePolicy } : {}),
       authProvider,
     };
     const res = await open(config);
@@ -248,9 +254,22 @@ export class ConnectorGatewayHub {
     }
   }
 
+  /** Re-apply a pack's shipped baseline to a live provider (and its in-memory spec). The baseline is
+   *  never persisted, so this is how a catalog update reaches an already-connected provider. */
+  setBasePolicy(name: string, basePolicy: ConnectorPolicy | undefined): void {
+    const spec = this.specs.get(name);
+    if (spec) {
+      if (basePolicy) spec.basePolicy = basePolicy;
+      else delete spec.basePolicy;
+    }
+    this.gateway.setBasePolicy(name, basePolicy);
+  }
+
   private persistSpecs(): void {
     try {
-      this.deps.store.set(SPECS_KEY, JSON.stringify([...this.specs.values()]));
+      // basePolicy is stripped: it belongs to the bundled catalog, not the operator's trust store.
+      const persistable = [...this.specs.values()].map(({ basePolicy: _drop, ...s }) => s);
+      this.deps.store.set(SPECS_KEY, JSON.stringify(persistable));
     } catch {
       /* best-effort - a failed persist only costs reconnect-on-restart, never the live session */
     }
