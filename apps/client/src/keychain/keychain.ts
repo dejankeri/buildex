@@ -6,6 +6,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { WindowsKeychain, defaultWinCredRunner, windowsKeychainAvailable, type WinCredRunner } from "./windows.js";
 
 export interface Keychain {
   get(key: string): string | undefined;
@@ -83,23 +84,30 @@ export function keychainService(workspace: string): string {
   return `buildex-${createHash("sha256").update(workspace).digest("hex").slice(0, 12)}`;
 }
 
-/** Pick a keychain implementation. "auto" (default) persists to the OS keychain on macOS when
- *  available, else falls back to in-memory - NEVER a plaintext file, so the secrets invariant holds
- *  even without an OS keychain. "system" is an explicit opt-in that errors if unavailable. */
+/** Pick a keychain implementation. "auto" (default) persists to the OS keychain when available - macOS
+ *  `security`, Windows Credential Manager - else falls back to in-memory, NEVER a plaintext file, so the
+ *  secrets invariant holds even without an OS keychain. "system" is an explicit opt-in that errors if
+ *  unavailable. */
 export function createKeychain(opts: {
   mode?: "auto" | "system" | "memory";
   workspace: string;
   run?: SecurityRunner;
+  winRun?: WinCredRunner;
   platform?: string;
 }): Keychain {
   const mode = opts.mode ?? "auto";
   if (mode === "memory") return new InMemoryKeychain();
   const platform = opts.platform ?? process.platform;
-  // An injected runner means a test/host is supplying the CLI - treat it as available on darwin.
-  const available = platform === "darwin" && (opts.run !== undefined || existsSync(SECURITY_BIN));
-  if (!available) {
-    if (mode === "system") throw new Error(`system keychain unavailable on ${platform} - no OS keychain backend`);
-    return new InMemoryKeychain();
+
+  // An injected runner means a test/host is supplying the backend - treat it as available.
+  if (platform === "darwin" && (opts.run !== undefined || existsSync(SECURITY_BIN))) {
+    return new SystemKeychain(keychainService(opts.workspace), opts.run ?? defaultRunner());
   }
-  return new SystemKeychain(keychainService(opts.workspace), opts.run ?? defaultRunner());
+  if (platform === "win32" && (opts.winRun !== undefined || windowsKeychainAvailable())) {
+    return new WindowsKeychain(keychainService(opts.workspace), opts.winRun ?? defaultWinCredRunner());
+  }
+  // No OS backend on this platform: "system" must not silently degrade; "auto" falls back to in-memory
+  // (never a plaintext file, so the secrets invariant holds even without an OS keychain).
+  if (mode === "system") throw new Error(`system keychain unavailable on ${platform} - no OS keychain backend`);
+  return new InMemoryKeychain();
 }
