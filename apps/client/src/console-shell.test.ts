@@ -24,10 +24,10 @@ const linkHrefs = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)">/
 const markup = html.replace(/<!--[\s\S]*?-->/g, "");
 
 describe("console shell — referenced assets", () => {
-  it("references md.js + dom.js first, then only js/ modules", () => {
+  it("references md.js + dom.js first, then vendor/ and js/ modules", () => {
     expect(scriptSrcs[0]).toBe("md.js"); // esc/escAttr/md the modules build on
     expect(scriptSrcs[1]).toBe("dom.js"); // the safe DOM builder (el/txt/frag), before any renderer
-    expect(scriptSrcs.slice(2).every((s) => s.startsWith("js/"))).toBe(true);
+    expect(scriptSrcs.slice(2).every((s) => s.startsWith("js/") || s.startsWith("vendor/"))).toBe(true);
     expect(scriptSrcs[scriptSrcs.length - 1]).toBe("js/main.js"); // boot() runs last
   });
 
@@ -41,6 +41,44 @@ describe("console shell — referenced assets", () => {
     const onDisk = readdirSync(join(WEB, "js")).filter((f) => f.endsWith(".js")).sort();
     const loaded = scriptSrcs.filter((s) => s.startsWith("js/")).map((s) => s.slice(3)).sort();
     expect(loaded).toEqual(onDisk);
+  });
+});
+
+// Vendored third-party code is committed into a PUBLIC MIT repo, so the things that make that
+// defensible have to be enforced, not remembered: the license travels with the file, the copyright
+// banner survives minification, and the inventory records what to re-verify against upstream.
+describe("console shell — vendored third-party code", () => {
+  const vendored = readdirSync(join(WEB, "vendor")).filter((f) => f.endsWith(".js")).sort();
+
+  it("every vendored script is actually loaded by the shell (no dead weight in the repo)", () => {
+    const loaded = scriptSrcs.filter((s) => s.startsWith("vendor/")).map((s) => s.slice(7)).sort();
+    expect(loaded).toEqual(vendored);
+  });
+
+  it("ships a license file and an inventory entry for each vendored script", () => {
+    const inventory = readFileSync(join(WEB, "vendor", "README.md"), "utf8");
+    expect(vendored.length).toBeGreaterThan(0);
+    for (const f of vendored) {
+      expect(inventory, f).toContain(f); // the file is named in the inventory
+      const licenses = readdirSync(join(WEB, "vendor")).filter((x) => x.includes("LICENSE"));
+      expect(licenses.length, "a LICENSE file must sit beside " + f).toBeGreaterThan(0);
+    }
+    // the inventory must carry a verifiable integrity hash, not just a version
+    expect(inventory).toMatch(/sha(256|384|512)-[A-Za-z0-9+/=]{40,}/);
+  });
+
+  it("keeps each vendored file's copyright banner intact (minifiers strip everything else)", () => {
+    for (const f of vendored) {
+      const head = readFileSync(join(WEB, "vendor", f), "utf8").slice(0, 400);
+      expect(head, f).toMatch(/License:|Licensed|\(c\)|Copyright/i);
+    }
+  });
+
+  it("is used only behind a capability guard, so the console works without it", () => {
+    // Nothing may reference the vendored global at load time or without a typeof check — the jsdom
+    // renderer net runs with vendor/ absent, and that must stay a supported configuration.
+    const chatTurn = readFileSync(join(WEB, "js", "chat-turn.js"), "utf8");
+    expect(chatTurn).toContain('typeof hljs === "undefined"');
   });
 });
 
@@ -79,7 +117,10 @@ describe("console modules — the split is one valid program", () => {
     // statement in an early module referencing a symbol a later module declares would throw here,
     // exactly as in the browser. Light stubs cover the only globals touched at load time
     // (navigator for IS_MAC, document.addEventListener for the navmenu click-away listener).
-    const order = scriptSrcs.filter((s) => s !== "js/main.js"); // md.js + dom.js + js/ modules, minus boot
+    // vendor/ is excluded: third-party code needs real browser globals to initialise, and the point
+    // of this smoke is OUR modules' load order. That the console still works without it is asserted
+    // above (the capability guard) and exercised by the whole jsdom renderer net, which omits it.
+    const order = scriptSrcs.filter((s) => s !== "js/main.js" && !s.startsWith("vendor/"));
     const probe = `;globalThis.__probe={boot:typeof boot,md:typeof md,esc:typeof esc,switchRight:typeof switchRight,S:typeof S,sKeys:(typeof S==="object"&&S)?Object.keys(S):[]};`;
     const sandbox: Record<string, unknown> = {
       navigator: { platform: "MacIntel", userAgent: "vitest" },

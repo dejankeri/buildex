@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileSessionStore } from "./sessions.js";
+import { sessionTitle } from "./daemon.js";
 
 let dir: string;
 let store: FileSessionStore;
@@ -46,5 +47,41 @@ describe("session metadata + list", () => {
     store.setClaudeSessionId(id, "claude-xyz");
     expect((store.read(id) as unknown as Record<string, unknown>)["claudeSessionId"]).toBeUndefined();
     expect(store.getClaudeSessionId(id)).toBe("claude-xyz");
+  });
+});
+
+// A conversation's name is the operator's main handle on it in the left rail. A hard mid-word slice
+// reads like a bug, so the title is cut at a word boundary - deterministically, with no model call
+// (invariant 9: trust surfaces render from repo state with zero LLM).
+describe("sessionTitle", () => {
+  it("leaves a short first message alone", () => {
+    expect(sessionTitle("What is our runway?")).toBe("What is our runway?");
+  });
+
+  it("prefers the first sentence when the message runs on", () => {
+    expect(sessionTitle("Fix the payroll bug. Then tell me why it happened and who noticed.")).toBe("Fix the payroll bug.");
+  });
+
+  it("strips markdown noise so the rail shows prose, not syntax", () => {
+    expect(sessionTitle("**Fix** the `payroll` bug")).toBe("Fix the payroll bug");
+  });
+
+  it("cuts a long single sentence at a word boundary, never mid-word", () => {
+    const t = sessionTitle("Can you check whether the third quarter invoices were reconciled properly");
+    expect(t.endsWith("…")).toBe(true);
+    expect(t).not.toMatch(/\s…$/); // no dangling space before the ellipsis
+    expect(t.length).toBeLessThanOrEqual(49);
+    // whatever we kept is a real prefix of the message, ending on a whole word
+    const kept = t.slice(0, -1);
+    expect("Can you check whether the third quarter invoices were reconciled properly").toContain(kept);
+    expect(kept.endsWith("invoices") || kept.endsWith("were") || kept.endsWith("quarter")).toBe(true);
+  });
+
+  it("falls back to a usable title for an all-whitespace message", () => {
+    expect(sessionTitle("   ")).toBe("New chat");
+  });
+
+  it("collapses newlines rather than titling a session with a paragraph", () => {
+    expect(sessionTitle("line one\nline two")).toBe("line one line two");
   });
 });

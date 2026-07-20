@@ -156,4 +156,12 @@ New to the repo (human or agent)? Read [`CLAUDE.md`](CLAUDE.md) first — it's t
 
 ## License
 
-[MIT](LICENSE) over the whole monorepo.
+[MIT](LICENSE) over the whole monorepo — every file we wrote.
+
+Third-party code we vendor (copy in and commit, because the console's CSP forbids loading script from
+a CDN) keeps its own license and copyright. It lives under
+[`apps/client/web/vendor/`](apps/client/web/vendor/README.md), which records each file's version,
+upstream source, and integrity hash:
+
+- **highlight.js** 11.11.1 — BSD-3-Clause — © 2006 Ivan Sagalaev, © 2006-2024 Josh Goebel and
+  contributors. Colours code blocks in the chat thread.

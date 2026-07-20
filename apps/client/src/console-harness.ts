@@ -24,12 +24,21 @@ interface JsdomWindow {
 interface JsdomDoc {
   querySelector(sel: string): JsdomEl | null;
   querySelectorAll(sel: string): ArrayLike<JsdomEl>;
+  /** Tests that build their own nodes (a chat thread, a scroll container) need this typed; the
+   *  index signature alone would leave it `unknown`. */
+  createElement(tag: string): JsdomEl;
+  /** The window, for constructing real Event/KeyboardEvent instances to dispatch. */
+  defaultView: JsdomWindow;
   [key: string]: unknown;
 }
 interface JsdomEl {
   textContent: string | null;
   innerHTML: string;
   className: string;
+  /** Live child-element list — how the streaming tests assert that unchanged blocks were reused. */
+  children: ArrayLike<JsdomEl>;
+  /** data-* attributes (e.g. the code-block "already wrapped" marker). */
+  dataset: Record<string, string | undefined>;
   getAttribute(name: string): string | null;
   querySelector(sel: string): JsdomEl | null;
   querySelectorAll(sel: string): ArrayLike<JsdomEl>;
@@ -45,8 +54,12 @@ import { fileURLToPath } from "node:url";
 const WEB = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 const html = readFileSync(join(WEB, "index.html"), "utf8");
 const scriptSrcs = [...html.matchAll(/<script\s+src="([^"]+)"><\/script>/g)].map((m) => m[1]!);
+// vendor/ is excluded on purpose: it is ~130KB of minified grammar tables that every call site
+// already guards on (`typeof hljs`), so loading it would only cost every renderer test a parse of
+// third-party code that changes none of the DOM these tests assert on. Running without it is also
+// the honest check that the guards hold.
 const bundle = scriptSrcs
-  .filter((s) => s !== "js/main.js")
+  .filter((s) => s !== "js/main.js" && !s.startsWith("vendor/"))
   .map((f) => readFileSync(join(WEB, f), "utf8"))
   .join("\n;\n");
 
@@ -56,15 +69,18 @@ const bundle = scriptSrcs
 // the modules by `grep -rhoE "^(async )?function [A-Za-z0-9_]+" web/js/*.js`.
 const EXPOSE = [
   // shared state + micro-helpers (const/let) + the safe DOM builder (dom.js)
-  "S", "tabSeq", "$", "$$", "elt", "ago", "esc", "escAttr", "md", "IS_MAC", "ADD_ACTIONS", "el", "txt", "frag",
+  "S", "tabSeq", "$", "$$", "elt", "ago", "esc", "escAttr", "md", "mdBlocks", "IS_MAC", "ADD_ACTIONS", "el", "txt", "frag",
+  "SLASH_COMMANDS", "REATTACH_POLL_MS",
   // function declarations (all of them)
   "activateTab", "addTab", "addToActiveProject", "agentTurn", "appConn", "boot", "brainNodes", "btime",
-  "buildAppPane", "buildBrainSvg", "buildBrowserPane", "buildChatPane", "buildStorePane", "checkOnboarding",
+  "buildAppPane", "buildBrainSvg", "buildBrowserPane", "buildChatPane", "buildComposer", "buildStorePane",
+  "chatTitle", "checkOnboarding", "clockTime", "copyText", "editAndResend", "enhanceCode", "flashLabel",
+  "follower", "mdInto", "reattach", "repoRelative", "retryLast", "stopTurn", "userTurn",
   "closeMenus", "closeTab", "confirmPending", "connectApp", "ensureDefaultProject", "fillSyncLog",
   "findPendingCard", "flattenTree", "fmtNext", "fmtReset", "folderPaths", "getJSON", "hideProjectStart",
-  "injectApproval", "insertAt", "kbdLabel", "loadAgentView", "loadBrain", "loadDoc", "loadMap", "loadSession", "loadStorePane",
+  "injectApproval", "kbdLabel", "loadAgentView", "loadBrain", "loadDoc", "loadMap", "loadSession", "loadStorePane",
   "loadTree", "navGo", "navRecord", "navUpdate", "newConversation", "newProject", "offerConnect",
-  "onAddShortcut", "openAddAppForm", "openAddMenu", "openAppTab", "openAttachPicker", "openAutomationEditor",
+  "onAddShortcut", "openAddAppForm", "openAddMenu", "openAppTab", "openAutomationEditor",
   "openBrainTab", "openBrowserTab", "openChatTab", "openConnectorEditor", "openDocTab", "openFilesSettings",
   "openFolderPicker", "openMapTab", "openMarkdownEditor", "openMcpEditor", "openProjectItem", "openSaveMenu",
   "openSkillEditor", "openSkillTab", "openStoreTab", "parseSkill", "pickTarget", "postJSON", "projectMenu",
