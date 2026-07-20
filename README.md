@@ -9,9 +9,10 @@ tap. It's the app of [buildexponential.org](https://buildexponential.org).
 
 ![The BuildEx operator console — sessions, brain, apps, and history in one place](docs/images/console-overview.png)
 
-> **Status: pre-alpha, building in the open.** Everything here runs today from source on macOS. It is
-> not yet a one-click download, and the self-serve experience for non-technical operators is still
-> coming. If you're comfortable running a dev command, the demo below shows the whole product.
+> **Status: pre-alpha, building in the open.** BuildEx runs on macOS as a signed one-click download —
+> grab the DMG from [buildexponential.org](https://buildexponential.org/download), no terminal required.
+> You can also run the whole product from source with the demo below. The fully self-serve onboarding
+> for non-technical operators is still being polished.
 
 ---
 
@@ -28,9 +29,9 @@ Most "AI for work" tools are a chat box in someone else's cloud. BuildEx is the 
 - **The cloud only syncs.** It moves commits between your machines and teammates. It can't read your
   brain or your model traffic.
 
-Built for the operator who runs the company — not the engineer. Today it rewards someone slightly
-technical: the one-command demo below is the current bar. The fully self-serve version is on the
-roadmap; the vision is unchanged, the on-ramp is still being built.
+Built for the operator who runs the company — not the engineer. You can install the app in one click
+today; the one-command demo below runs the same product from source. The fully self-serve onboarding
+is still being polished — the vision is unchanged, and the on-ramp gets shorter with each release.
 
 ## Isn't this just Claude Code in a git repo?
 
@@ -61,6 +62,9 @@ A demo company — *Acme Labs*, a small B2B SaaS — running on BuildEx:
 | ![App store](docs/images/app-store.png) **Connect the tools you already use.** Gmail, Slack, Notion, Linear, Stripe, HubSpot — installed per company. | ![Decision log](docs/images/decision-log.png) **Every decision, remembered.** The brain is organized markdown; the agent keeps it tidy and never forgets. |
 
 ## Quickstart — run the demo
+
+> Just want to use it? [Download the macOS app](https://buildexponential.org/download) — no terminal
+> needed. The steps below run the same product from source, for contributors and the curious.
 
 **Prerequisites**
 
@@ -94,7 +98,8 @@ For a guided walkthrough of what to click and what to look for, see [`DEMO.md`](
 
 | Works now | Not yet |
 |---|---|
-| The full operator console (sessions, brain, docs, history, map) | One-click signed download (run from source today) |
+| The full operator console (sessions, brain, docs, history, map) | In-app auto-update (re-download the DMG to upgrade today) |
+| One-click signed & notarized macOS download | — |
 | Your own agent reading + editing the brain, gated at outward actions | Live Gmail/Slack/Notion out of the box (needs your own OAuth app — [guide](docs/guides/connect-a-connector.md)) |
 | Git-as-database: every change a commit, full history + restore | Hosted sync & seats (local-first demo today) |
 | The App Store: install capability packs per company | Linux & Windows (macOS-first at launch) |
