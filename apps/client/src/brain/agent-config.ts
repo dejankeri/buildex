@@ -10,7 +10,7 @@
 // different volumes). Because a junction/copy isn't reported as a symlink and a copy's bytes live
 // inside the workspace, provenance can't be inferred from the link target - so we also emit a
 // deterministic skill-origins.json manifest that readSkill consults (zero-LLM trust surface).
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync, symlinkSync, statSync, cpSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync, rmdirSync, unlinkSync, symlinkSync, statSync, realpathSync, cpSync } from "node:fs";
 import { join } from "node:path";
 import type { PolicyPreset } from "../gate/policy.js";
 import { GATE_HOOK_TIMEOUT_SECS } from "../gate/approval.js";
@@ -99,16 +99,63 @@ function linkSkills(opts: GenerateOpts): void {
 /** Materialize one resolved skill dir at `dest` per strategy. Junctions/copies need no elevation;
  *  a junction that can't be made (e.g. cross-volume) falls back to a plain recursive copy. */
 function linkOne(src: string, dest: string, strategy: LinkStrategy): void {
-  if (strategy === "copy") return void cpSync(src, dest, { recursive: true });
+  if (strategy === "copy") {
+    clearDest(dest);
+    return void cpSync(src, dest, { recursive: true });
+  }
   if (strategy === "junction") {
     try {
       symlinkSync(src, dest, "junction");
     } catch {
-      cpSync(src, dest, { recursive: true });
+      // dest already exists - a stale junction from an interrupted or concurrent earlier run. If it
+      // already points at src, nothing to do; otherwise clear the LINK (never followed into its target,
+      // which is the real skill source) and recreate, falling back to a copy. This makes re-linking
+      // idempotent on Windows, where re-creating over an existing junction otherwise throws
+      // "src and dest cannot be the same".
+      try {
+        if (realpathSync(dest) === realpathSync(src)) return;
+      } catch {
+        /* dest unreadable - fall through to clear + recreate */
+      }
+      clearDest(dest);
+      try {
+        symlinkSync(src, dest, "junction");
+      } catch {
+        cpSync(src, dest, { recursive: true });
+      }
     }
     return;
   }
-  symlinkSync(src, dest); // POSIX directory symlink
+  try {
+    symlinkSync(src, dest); // POSIX directory symlink
+  } catch {
+    clearDest(dest);
+    symlinkSync(src, dest);
+  }
+}
+
+/** Remove whatever is at `dest` (a junction, a symlink, or a real copied dir) as the ENTRY itself -
+ *  never recursing through a junction into its target (that target is the real skill source we must not
+ *  touch). rmdir removes a junction link or an empty dir; unlink removes a file/symlink; only a real,
+ *  non-empty copied dir needs a recursive remove (no junction to follow, so it is safe). */
+function clearDest(dest: string): void {
+  try {
+    rmdirSync(dest); // junction link, dir symlink, or empty dir - removed without following
+    return;
+  } catch {
+    /* not a junction / not an empty dir */
+  }
+  try {
+    unlinkSync(dest); // file or file symlink
+    return;
+  } catch {
+    /* not a file */
+  }
+  try {
+    rmSync(dest, { recursive: true, force: true }); // a real (copied) directory's contents
+  } catch {
+    /* already gone */
+  }
 }
 
 /** Write .claude/settings.json: the policy preset as permissions + the PreToolUse gate hook. */

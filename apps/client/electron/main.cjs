@@ -138,7 +138,26 @@ function lockExternalSession() {
   ext.setPermissionCheckHandler(() => false);
 }
 
+// Single instance: the daemon binds a fixed loopback port and owns the workspace, so a second launch
+// would collide on the port and race the first on the same files (skill re-link, sync). Refuse the
+// second instance and focus the running window instead. Without this, the installer's post-install
+// launch plus a manual launch = two daemons racing, which can leave the workspace half-provisioned.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+  });
+}
+
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return; // a second instance is quitting; never boot a daemon
   if (process.platform === "darwin" && app.dock) app.dock.setIcon(ICON_PNG);
   lockExternalSession(); // deny hardware/location permissions to embedded external content
   try {

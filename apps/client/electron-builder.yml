@@ -35,6 +35,11 @@ extraResources:
   # asar, so it must be a real file on disk. daemon-entry points the gate command at <resources>/gate-hook.mjs.
   - from: scripts/gate-hook.mjs
     to: gate-hook.mjs
+# Windows installer: do NOT auto-launch after install - the operator opens it when ready. Auto-launch
+# left a post-install instance that could race a manual launch (two daemons on the same workspace);
+# combined with the single-instance lock in main.cjs, the app now runs exactly once at a time.
+nsis:
+  runAfterFinish: false
 mac:
   target:
     - dmg
