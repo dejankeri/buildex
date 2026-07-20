@@ -17,11 +17,13 @@ export type { NotionPage, NotionDeps } from "./catalog/notion.js";
 
 // The OAuth+MCP gateway: buildex proxies provider MCP servers to the agent, passing reads through
 // and routing writes/sends through the human gate. Kernel is transport-free + hermetically tested.
-export { ConnectorGateway, classifyTool } from "./gateway.js";
+export { ConnectorGateway, classifyTool, classifyCall, hasConditionalGate, entryTool } from "./gateway.js";
 export type {
   McpTool,
   ToolKind,
   ConnectorPolicy,
+  PolicyEntry,
+  ToolRule,
   McpToolResult,
   ApprovalRequest,
   Approver,

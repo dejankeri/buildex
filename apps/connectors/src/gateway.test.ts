@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { classifyTool, ConnectorGateway, type McpTool, type ProviderConnection, type ApprovalRequest } from "./gateway.js";
+import { classifyTool, classifyCall, hasConditionalGate, ConnectorGateway, type ConnectorPolicy, type McpTool, type ProviderConnection, type ApprovalRequest } from "./gateway.js";
 
 const read: McpTool = { name: "search", annotations: { readOnlyHint: true } };
 const write: McpTool = { name: "send", annotations: { readOnlyHint: false, destructiveHint: true } };
@@ -192,5 +192,121 @@ describe("ConnectorGateway.callTool", () => {
     const g = new ConnectorGateway({ approve: async () => ({ approved: true }) });
     const res = await g.callTool("nope__x", {});
     expect(res.isError).toBe(true);
+  });
+});
+
+// ---- Argument-conditional gating (intent-verb servers) --------------------------------------------
+// Modelled on Protocol, whose whole surface is 18 fat verbs: `schedule` both books an appointment
+// (routine) and fires a reminder at a real client (outward), decided by its `action` argument. Gating
+// by name alone would either put every booking behind a tap or let reminders out unattended.
+describe("argument-conditional gating", () => {
+  const schedule: McpTool = { name: "schedule" };
+  const automations: McpTool = { name: "manage_automations" };
+  const message: McpTool = { name: "message" }; // read-only in Protocol, but gates on the name alone
+  const packPolicy: ConnectorPolicy = {
+    read: ["message"],
+    gated: [
+      { tool: "schedule", when: { action: ["send_reminder", "reminder"] } },
+      { tool: "manage_automations", when: { action: ["run"] } },
+    ],
+  };
+
+  it("gates only the argument values the rule names, and passes the rest through", () => {
+    expect(classifyCall(schedule, { action: "send_reminder" }, undefined, packPolicy)).toBe("gated");
+    expect(classifyCall(schedule, { action: "reminder" }, undefined, packPolicy)).toBe("gated");
+    expect(classifyCall(schedule, { action: "cancel" }, undefined, packPolicy)).toBe("read"); // never notifies the client
+    expect(classifyCall(schedule, { action: "create" }, undefined, packPolicy)).toBe("read");
+    expect(classifyCall(schedule, { action: "booking_config" }, undefined, packPolicy)).toBe("read");
+    expect(classifyCall(automations, { action: "run" }, undefined, packPolicy)).toBe("gated");
+    expect(classifyCall(automations, { action: "create" }, undefined, packPolicy)).toBe("read");
+  });
+
+  it("widens a tool the name heuristic over-gates (Protocol's `message` only reads)", () => {
+    expect(classifyTool(message)).toBe("gated"); // intrinsic: the 'message' token
+    expect(classifyCall(message, { clientId: "c1" }, undefined, packPolicy)).toBe("read");
+  });
+
+  it("fails CLOSED when a conditional gate cannot be evaluated", () => {
+    // No args object in hand → the outward rule is treated as matching. A spurious approval is the
+    // safe direction; silently dispatching to a real person is not.
+    expect(classifyCall(schedule, undefined, undefined, packPolicy)).toBe("gated");
+    expect(classifyCall(schedule, "not-an-object", undefined, packPolicy)).toBe("gated");
+    // The mirror image: an unevaluable conditional WIDENING must not widen.
+    const widen: ConnectorPolicy = { read: [{ tool: "send_email", when: { draft: [true] } }] };
+    expect(classifyCall({ name: "send_email" }, undefined, undefined, widen)).toBe("gated");
+    expect(classifyCall({ name: "send_email" }, { draft: true }, undefined, widen)).toBe("read");
+  });
+
+  it("ANDs multiple argument conditions and ORs values within one", () => {
+    const t: McpTool = { name: "update_widget" }; // intrinsically read: no read verb, no outward token
+    const rule: ConnectorPolicy = { gated: [{ tool: "update_widget", when: { target: ["public", "world"], confirm: [true] } }] };
+    expect(classifyCall(t, { target: "public", confirm: true }, undefined, rule)).toBe("gated");
+    expect(classifyCall(t, { target: "world", confirm: true }, undefined, rule)).toBe("gated");
+    expect(classifyCall(t, { target: "public", confirm: false }, undefined, rule)).toBe("read"); // AND fails
+    expect(classifyCall(t, { target: "private", confirm: true }, undefined, rule)).toBe("read"); // AND fails
+  });
+
+  it("shows a conditionally-gated tool conservatively on the static surfaces", () => {
+    // No args exist at list time, so display must not imply the tool is safe.
+    expect(classifyTool(schedule, undefined, packPolicy)).toBe("gated");
+    expect(hasConditionalGate(schedule, undefined, packPolicy)).toBe(true);
+    // An UNCONDITIONAL gate is not "conditional" - the flag distinguishes "some calls" from "all".
+    expect(hasConditionalGate(schedule, { gated: ["schedule"] }, packPolicy)).toBe(false);
+  });
+
+  it("lets an operator override beat the pack baseline for that tool only", () => {
+    const override: ConnectorPolicy = { read: ["schedule"] }; // operator owns the risk
+    expect(classifyCall(schedule, { action: "send_reminder" }, override, packPolicy)).toBe("read");
+    // …while every other tool keeps the pack's baseline.
+    expect(classifyCall(automations, { action: "run" }, override, packPolicy)).toBe("gated");
+  });
+
+  it("enforces the condition end to end: the approver sees the outward call only", async () => {
+    const approve = vi.fn(async (_req: ApprovalRequest) => ({ approved: true }));
+    const call = vi.fn(async () => ({ content: [{ type: "text" as const, text: "ok" }] }));
+    const g = new ConnectorGateway({ approve });
+    g.register({ name: "protocol", tools: [schedule], basePolicy: packPolicy, call });
+
+    await g.callTool("protocol__schedule", { action: "create", clientId: "c1" });
+    expect(approve).not.toHaveBeenCalled(); // routine booking runs autonomously
+    expect(call).toHaveBeenCalledTimes(1);
+
+    await g.callTool("protocol__schedule", { action: "send_reminder", clientId: "c1" });
+    expect(approve).toHaveBeenCalledTimes(1); // the reminder waits for a human
+    expect(approve.mock.calls[0]![0]).toMatchObject({ connector: "protocol", tool: "schedule" });
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not run the outward call when the human declines it", async () => {
+    const call = vi.fn(async () => ({ content: [{ type: "text" as const, text: "ok" }] }));
+    const g = new ConnectorGateway({ approve: async () => ({ approved: false }) });
+    g.register({ name: "protocol", tools: [schedule], basePolicy: packPolicy, call });
+    const res = await g.callTool("protocol__schedule", { action: "send_reminder" });
+    expect(call).not.toHaveBeenCalled();
+    expect(res.isError).toBe(true);
+  });
+
+  it("keeps a pack gate when the operator restores a tool to its default", () => {
+    // "Back to default" must mean the pack's shipped intent, not the bare name heuristic under it -
+    // otherwise the reset would silently drop a security gate the pack added.
+    const g = new ConnectorGateway({ approve: async () => ({ approved: true }) });
+    g.register({ name: "protocol", tools: [schedule], basePolicy: packPolicy, call: async () => ({ content: [] }) });
+    g.setToolPolicy("protocol", "schedule", "read"); // operator widens
+    expect(g.listInventory()[0]!.kind).toBe("read");
+    g.setToolPolicy("protocol", "schedule", "gated"); // …then restores
+    const item = g.listInventory()[0]!;
+    expect(item.kind).toBe("gated");
+    expect(item.baseline).toBe("gated"); // the floor is the pack's gate
+  });
+
+  it("never writes the pack baseline into the operator's persisted overrides", () => {
+    const g = new ConnectorGateway({ approve: async () => ({ approved: true }) });
+    g.register({ name: "protocol", tools: [schedule, message], basePolicy: packPolicy, call: async () => ({ content: [] }) });
+    const r = g.setToolPolicy("protocol", "message", "gated");
+    expect(r.ok).toBe(true);
+    // Only the operator's own decision is returned for persistence - the pack's rules stay in the
+    // catalog, so a later pack update that tightens a gate still reaches this connected provider.
+    expect(JSON.stringify(r.policy)).not.toContain("send_reminder");
+    expect(r.policy?.gated).toEqual(["message"]);
   });
 });

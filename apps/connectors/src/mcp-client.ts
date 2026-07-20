@@ -10,6 +10,7 @@ export async function providerFromClient(
   name: string,
   client: Client,
   policy?: ConnectorPolicy,
+  basePolicy?: ConnectorPolicy,
 ): Promise<ProviderConnection> {
   const listed = await client.listTools();
   const tools: McpTool[] = listed.tools.map((t) => ({
@@ -22,6 +23,7 @@ export async function providerFromClient(
     name,
     tools,
     ...(policy ? { policy } : {}),
+    ...(basePolicy ? { basePolicy } : {}),
     async call(tool: string, args: unknown): Promise<McpToolResult> {
       const res = await client.callTool({ name: tool, arguments: (args ?? {}) as Record<string, unknown> });
       return normalize(res as unknown as { content?: unknown; isError?: boolean });
