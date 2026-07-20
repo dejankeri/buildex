@@ -25,26 +25,28 @@
   --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --wrap: 1120px;
+  /* Dark-only for now: the light palette isn't tuned yet, so we pin the whole
+     site to dark regardless of system preference or any stored theme. The light
+     values are preserved below (behind an unreachable selector) for when we
+     revisit it — flip `color-scheme` and restore the media query to bring it back. */
+  color-scheme: dark;
 }
+/* Light palette parked until it's properly designed. Kept for reference; the
+   selector never matches, so system-light users still get the dark instrument panel. */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme]).__light-disabled {
     --bg: #f6f8f7; --bg-1: #eef2f0; --bg-2: #e7edeb; --bg-3: #dde7e3;
     --line: #dde5e2; --line-2: #c6d3ce; --ink: #0f201d; --muted: #475854; --faint: #7d8f8a;
     --brand: #0f766e; --brand-deep: #0b5a50; --brand-glow: rgba(15,118,110,.12);
     --gate: #b45309; --gate-glow: rgba(180,83,9,.12); --good: #16a34a; --crit: #dc2626;
   }
 }
-:root[data-theme="dark"] {
+:root[data-theme="dark"],
+:root[data-theme="light"] {
   --bg: #0a1211; --bg-1: #0e1a18; --bg-2: #122320; --bg-3: #16302b; --line: #1b2b28;
   --line-2: #274740; --ink: #eaf3f1; --muted: #93a7a2; --faint: #5f736e;
   --brand: #2dd4bf; --brand-deep: #0f766e; --brand-glow: rgba(45,212,191,.16);
   --gate: #f0a94b; --gate-glow: rgba(240,169,75,.16); --good: #4ade80; --crit: #f2555a;
-}
-:root[data-theme="light"] {
-  --bg: #f6f8f7; --bg-1: #eef2f0; --bg-2: #e7edeb; --bg-3: #dde7e3; --line: #dde5e2;
-  --line-2: #c6d3ce; --ink: #0f201d; --muted: #475854; --faint: #7d8f8a;
-  --brand: #0f766e; --brand-deep: #0b5a50; --brand-glow: rgba(15,118,110,.12);
-  --gate: #b45309; --gate-glow: rgba(180,83,9,.12); --good: #16a34a; --crit: #dc2626;
 }
 
 * { box-sizing: border-box; }
