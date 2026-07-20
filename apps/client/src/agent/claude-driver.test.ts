@@ -50,6 +50,27 @@ describe("ClaudeCodeDriver.runPrompt", () => {
     expect(spec.args).toEqual(expect.arrayContaining(["-p", "do it", "--output-format", "stream-json", "--verbose", "--resume", "s0", "--model", "claude-x"]));
   });
 
+  it("falls back to defaultModel when a prompt supplies none, and lets an explicit model override it", async () => {
+    const { spawn: s1, calls: c1 } = fakeSpawn(TRANSCRIPT);
+    const d1 = new ClaudeCodeDriver({ spawn: s1, bin: "claude", allowedModels: ["sonnet", "opus"], defaultModel: "sonnet" });
+    await collect(d1.runPrompt({ prompt: "go", workspace: "/ws" }));
+    expect(c1[0]!.args).toEqual(expect.arrayContaining(["--model", "sonnet"]));
+
+    const { spawn: s2, calls: c2 } = fakeSpawn(TRANSCRIPT);
+    const d2 = new ClaudeCodeDriver({ spawn: s2, bin: "claude", allowedModels: ["sonnet", "opus"], defaultModel: "sonnet" });
+    await collect(d2.runPrompt({ prompt: "go", workspace: "/ws", model: "opus" }));
+    const a2 = c2[0]!.args;
+    expect(a2).toEqual(expect.arrayContaining(["--model", "opus"]));
+    expect(a2).not.toContain("sonnet");
+  });
+
+  it("omits --model entirely when neither a prompt model nor a defaultModel is set", async () => {
+    const { spawn, calls } = fakeSpawn(TRANSCRIPT);
+    const driver = new ClaudeCodeDriver({ spawn, bin: "claude" });
+    await collect(driver.runPrompt({ prompt: "go", workspace: "/ws" }));
+    expect(calls[0]!.args).not.toContain("--model");
+  });
+
   it("passes the workspace file map via --append-system-prompt when given", async () => {
     const { spawn, calls } = fakeSpawn(TRANSCRIPT);
     const driver = new ClaudeCodeDriver({ spawn, bin: "claude" });

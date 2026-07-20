@@ -45,13 +45,16 @@ function repoRelative(abs) {
 function buildComposer(tab, handlers) {
   const ta = el("textarea", { rows: "1", "aria-label": "Message your company brain", placeholder: "Ask your company brain…" });
   const attach = el("button", { class: "ctool attach", title: "Attach a workspace file", "aria-label": "Attach a workspace file", text: "📎" });
+  // Real, versioned names — the picker IS the visible "active model" indicator, so there is no vague
+  // "default" option: a tab with no saved choice shows Sonnet 5, which is what actually runs (the
+  // driver's `defaultModel`, see wiring.ts). Keep this list in step with that allowlist.
   const model = el(
     "select",
     { class: "ctool modelsel", title: "Model", "aria-label": "Model" },
-    el("option", { value: "", text: "Model: default" }),
-    el("option", { value: "opus", text: "Opus" }),
-    el("option", { value: "sonnet", text: "Sonnet" }),
-    el("option", { value: "haiku", text: "Haiku" }),
+    el("option", { value: "sonnet", text: "Sonnet 5" }),
+    el("option", { value: "opus", text: "Opus 4.8" }),
+    el("option", { value: "haiku", text: "Haiku 4.5" }),
+    el("option", { value: "fable", text: "Fable 5" }),
   );
   const effort = el(
     "select",
@@ -67,7 +70,7 @@ function buildComposer(tab, handlers) {
   menu.style.display = "none";
   const root = el("div", { class: "composer" }, tab.systemAppend ? el("div", { class: "ctxchip" }) : null, menu, box);
 
-  model.value = tab.model || "";
+  model.value = tab.model || "sonnet"; // Sonnet 5 is the pinned default (see wiring defaultModel)
   effort.value = tab.effort || "";
   model.onchange = () => (tab.model = model.value || null);
   effort.onchange = () => (tab.effort = effort.value || null);

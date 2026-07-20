@@ -137,8 +137,10 @@ export function buildClientHandler(config: ClientConfig): Handler {
     clearTimer: (h) => realClock.clearTimer(h as TimerHandle),
   });
   const gate = new Gate(new PolicyEngine(composePreset(config.preset, config.roots)), broker);
-  // Allowlist the model aliases the composer can request (the --model security boundary).
-  const driver = new ClaudeCodeDriver({ spawn: nodeSpawnAgent, bin: config.claudeBin, allowedModels: ["opus", "sonnet", "haiku"], ...(config.agentConfigDir ? { configDir: config.agentConfigDir } : {}) });
+  // Allowlist the model aliases the composer can request (the --model security boundary), and pin
+  // Sonnet 5 as BuildEx's default so an unspecified model never falls through to the `claude` CLI's
+  // own default. The CLI resolves each alias to its current release (sonnet ⇒ Sonnet 5, etc.).
+  const driver = new ClaudeCodeDriver({ spawn: nodeSpawnAgent, bin: config.claudeBin, allowedModels: ["opus", "sonnet", "haiku", "fable"], defaultModel: "sonnet", ...(config.agentConfigDir ? { configDir: config.agentConfigDir } : {}) });
   const appBus = new AppBus({ idFactory: randomUUID });
   const sync = new SyncEngine({ now: Date.now, actor });
   // The writable (non-core) repo dirs - the only roots the sync loop may commit to (core is read-only).

@@ -202,3 +202,47 @@ describe("mdBlocks() - the incremental-render seam", () => {
     expect(b[2]).not.toBe(a[2]);
   });
 });
+
+describe("md() GFM tables", () => {
+  it("renders a header + separator + body rows into a <table>", () => {
+    const out = md("| Name | Tools |\n| --- | --- |\n| Asana | 46 |\n| Calendly | 36 |");
+    expect(out).toBe(
+      "<table><thead><tr><th>Name</th><th>Tools</th></tr></thead>" +
+        "<tbody><tr><td>Asana</td><td>46</td></tr><tr><td>Calendly</td><td>36</td></tr></tbody></table>",
+    );
+  });
+
+  it("keeps surrounding prose as its own paragraphs", () => {
+    const out = md("Here:\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\nDone.");
+    expect(out).toBe(
+      "<p>Here:</p>\n<table><thead><tr><th>A</th><th>B</th></tr></thead>" +
+        "<tbody><tr><td>1</td><td>2</td></tr></tbody></table>\n<p>Done.</p>",
+    );
+  });
+
+  it("honors column alignment from separator colons", () => {
+    const out = md("| L | C | R |\n| :-- | :-: | --: |\n| a | b | c |");
+    expect(out).toContain('<th style="text-align:left">L</th>');
+    expect(out).toContain('<th style="text-align:center">C</th>');
+    expect(out).toContain('<th style="text-align:right">R</th>');
+    expect(out).toContain('<td style="text-align:center">b</td>');
+  });
+
+  it("renders inline formatting inside cells", () => {
+    const out = md("| Field | Value |\n| --- | --- |\n| **bold** | `code` |");
+    expect(out).toContain("<td><strong>bold</strong></td>");
+    expect(out).toContain("<td><code>code</code></td>");
+  });
+
+  it("degrades gracefully mid-stream: a header with no separator yet stays a paragraph", () => {
+    // addText re-parses the full accumulated markdown on every chunk, so an incomplete table must
+    // not throw or emit a broken <table> before its separator row has arrived.
+    expect(md("| Name | Tools |")).toBe("<p>| Name | Tools |</p>");
+  });
+
+  it("does not mistake a pipe-bearing sentence for a table", () => {
+    expect(md("use a | b to pipe, and x - y to dash")).toBe(
+      "<p>use a | b to pipe, and x - y to dash</p>",
+    );
+  });
+});

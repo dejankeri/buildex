@@ -38,20 +38,46 @@ describe("KeychainOAuthProvider - OAuth persistence lives in the keychain seam",
 
   it("drops a cached DCR client whose registered redirect no longer matches (re-registers clean)", () => {
     const store = memStore();
-    const p = new KeychainOAuthProvider(opts(store)); // redirect = 127.0.0.1:4317
-    // A client registered earlier with a different redirect (e.g. before a 127.0.0.1→localhost switch).
-    p.saveClientInformation({ client_id: "c1", redirect_uris: ["http://localhost:4317/oauth/gmail/callback"] } as never);
-    p.saveTokens({ access_token: "stale", token_type: "Bearer" } as never);
-    expect(p.clientInformation()).toBeUndefined();        // stale → dropped, forces re-registration
+    // Registered earlier when our redirect was localhost:4317 ...
+    const earlier = new KeychainOAuthProvider({ ...opts(store), redirectUrl: "http://localhost:4317/oauth/gmail/callback" });
+    earlier.saveClientInformation({ client_id: "c1" } as never);
+    earlier.saveTokens({ access_token: "stale", token_type: "Bearer" } as never);
+    // ... now our redirect is 127.0.0.1:4317 (opts default) → genuine drift.
+    const now = new KeychainOAuthProvider(opts(store));
+    expect(now.clientInformation()).toBeUndefined();        // stale → dropped, forces re-registration
     expect(store.map.has("connector:gmail:oauth:client")).toBe(false);
     expect(store.map.has("connector:gmail:oauth:tokens")).toBe(false); // stale tokens cleared too
   });
 
-  it("keeps a cached client whose registered redirect still matches", () => {
+  it("keeps a cached client whose registered redirect still matches, and hides the internal marker", () => {
     const store = memStore();
     const p = new KeychainOAuthProvider(opts(store));
-    p.saveClientInformation({ client_id: "c1", redirect_uris: ["http://127.0.0.1:4317/oauth/gmail/callback"] } as never);
+    p.saveClientInformation({ client_id: "c1" } as never); // stamped with the current redirect
     expect(p.clientInformation()).toMatchObject({ client_id: "c1" });
+    expect(p.clientInformation()).not.toHaveProperty("__buildexRegisteredRedirect");
+  });
+
+  it("keeps the client when the server echoes foreign redirect_uris but our registered redirect is unchanged (HeyGen-style DCR)", () => {
+    const store = memStore();
+    const p = new KeychainOAuthProvider(opts(store)); // redirect 127.0.0.1:4317
+    // HeyGen ignores the requested redirect_uris and echoes a fixed allowlist that never contains ours.
+    // The drift guard must trust the redirect WE registered with (unchanged), not the server's echo.
+    p.saveClientInformation({
+      client_id: "hg",
+      redirect_uris: ["http://localhost:6274/oauth/callback", "https://chatgpt.com/connector/oauth/x"],
+    } as never);
+    expect(p.clientInformation()).toMatchObject({ client_id: "hg" });
+  });
+
+  it("legacy un-stamped client falls back to the redirect_uris echo comparison", () => {
+    const store = memStore();
+    const p = new KeychainOAuthProvider(opts(store)); // 127.0.0.1:4317
+    const key = "connector:gmail:oauth:client";
+    // Persisted before we stamped the redirect: only the server-echoed redirect_uris are available.
+    store.set(key, JSON.stringify({ client_id: "old", redirect_uris: ["http://localhost:4317/oauth/gmail/callback"] }));
+    expect(p.clientInformation()).toBeUndefined(); // echo doesn't include ours → dropped
+    store.set(key, JSON.stringify({ client_id: "old", redirect_uris: ["http://127.0.0.1:4317/oauth/gmail/callback"] }));
+    expect(p.clientInformation()).toMatchObject({ client_id: "old" }); // echo matches → kept
   });
 
   it("round-trips client registration + code verifier", async () => {

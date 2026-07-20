@@ -341,6 +341,30 @@ describe("chat — composer", () => {
     return e;
   };
 
+  // The picker IS the visible "active model" indicator, so it must name real, versioned models and
+  // default to the one that actually runs. This was lost once already when the composer was split
+  // out of chat.js — pinned here so a refactor can't quietly drop it again.
+  it("offers the real versioned model names, defaulting to the pinned Sonnet 5", () => {
+    const { doc, c } = loadConsole();
+    const t = composer(c, doc);
+    const sel = t.cmp.el.querySelector(".modelsel")!;
+    expect([...sel.querySelectorAll("option")].map((o: any) => o.value)).toEqual(["sonnet", "opus", "haiku", "fable"]);
+    expect([...sel.querySelectorAll("option")].map((o: any) => o.textContent)).toEqual([
+      "Sonnet 5",
+      "Opus 4.8",
+      "Haiku 4.5",
+      "Fable 5",
+    ]);
+    expect(sel.value).toBe("sonnet"); // no saved choice → the pinned default, never a vague blank
+  });
+
+  it("shows a tab's saved model choice rather than the default", () => {
+    const { doc, c } = loadConsole();
+    const tab: any = { id: "t1", sessionId: "s1", model: "opus", sent: [] };
+    const cmp = c.buildComposer(tab, { onSend() {}, onStop() {} });
+    expect(cmp.el.querySelector(".modelsel").value).toBe("opus");
+  });
+
   it("sends on Enter and keeps a newline on Shift+Enter", () => {
     const { doc, c } = loadConsole();
     const t = composer(c, doc);

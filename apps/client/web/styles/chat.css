@@ -61,9 +61,8 @@ pre.cb-open::after{content:"";display:inline-block;width:7px;height:1em;margin-l
 :root[data-theme="light"] .hljs-selector-id{color:#0550ae;}
 
 /* --- richer markdown --------------------------------------------------------------------- */
-.md table{border-collapse:collapse;margin:10px 0;font-size:13.5px;display:block;overflow-x:auto;max-width:100%;}
-.md th,.md td{border:1px solid var(--line);padding:6px 10px;text-align:left;}
-.md th{background:var(--panel-2);font-weight:650;}
+/* Table styling lives in middle.css (zebra rows + fit-content scroll), not here — this file only
+   adds the block types that stylesheet doesn't cover yet. */
 .md blockquote{margin:10px 0;padding:2px 0 2px 13px;border-left:3px solid var(--line-2);color:var(--muted);}
 .md blockquote p{margin:4px 0;}
 .md hr{border:0;border-top:1px solid var(--line);margin:16px 0;}
