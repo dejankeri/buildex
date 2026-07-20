@@ -20,12 +20,36 @@ const escAttr=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&
 // normalize to it), and only path characters — so any explicit scheme (javascript:, data:, file:)
 // or host-bearing value is refused → the raw markdown renders as plain text.
 const safeHref=u=>{u=String(u==null?"":u);const ok=/^(?:https?|mailto):/i.test(u)||/^(?![/\\])[A-Za-z0-9_./-]+$/.test(u);return ok?u.replace(/"/g,"&quot;").replace(/'/g,"&#39;"):null;};
+// GFM tables: a header row, a |---|:--:| separator (alignment colons optional), then body rows.
+// Runs after inline formatting (so cells hold bold/code/links) and before the paragraph splitter,
+// which whitelists <table>. Operates on the already-esc()'d string - cell text is inserted verbatim
+// (re-escaping would double-encode). Wrapping each table in blank lines makes it its own block. It
+// degrades gracefully mid-stream: until the separator row streams in, the lines stay a plain paragraph.
+function mdTables(h){
+  const cells=r=>{let s=r.trim();if(s[0]==="|")s=s.slice(1);if(s[s.length-1]==="|")s=s.slice(0,-1);return s.split("|").map(c=>c.trim());};
+  const isSep=r=>r.indexOf("|")>=0&&r.indexOf("-")>=0&&cells(r).every(c=>/^:?-+:?$/.test(c));
+  const lines=h.split("\n"),out=[];
+  for(let i=0;i<lines.length;i++){
+    const head=lines[i],sep=lines[i+1];
+    if(head.indexOf("|")>=0&&sep!=null&&isSep(sep)&&cells(head).length===cells(sep).length){
+      const cols=cells(head),al=cells(sep).map(c=>{const l=c[0]===":",r=c[c.length-1]===":";return l&&r?"center":r?"right":l?"left":"";});
+      const at=k=>al[k]?' style="text-align:'+al[k]+'"':"";
+      let t="<table><thead><tr>"+cols.map((c,k)=>"<th"+at(k)+">"+c+"</th>").join("")+"</tr></thead>";
+      const rows=[];let j=i+2;
+      for(;j<lines.length;j++){if(lines[j].indexOf("|")<0||lines[j].trim()==="")break;rows.push(cells(lines[j]));}
+      if(rows.length)t+="<tbody>"+rows.map(r=>"<tr>"+cols.map((_,k)=>"<td"+at(k)+">"+(r[k]==null?"":r[k])+"</td>").join("")+"</tr>").join("")+"</tbody>";
+      out.push("\n"+t+"</table>\n");i=j-1;
+    }else out.push(head);
+  }
+  return out.join("\n");
+}
 function md(src){src=String(src||"");const bl=[];src=src.replace(/```[a-z]*\n?([\s\S]*?)```/g,(m,c)=>{bl.push(c);return " "+(bl.length-1)+" ";});let h=esc(src);
   h=h.replace(/^####\s+(.+)$/gm,"<h4>$1</h4>").replace(/^###\s+(.+)$/gm,"<h3>$1</h3>").replace(/^##\s+(.+)$/gm,"<h2>$1</h2>").replace(/^#\s+(.+)$/gm,"<h1>$1</h1>");
   h=h.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>").replace(/(^|[^*])\*([^*\n]+)\*/g,"$1<em>$2</em>").replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,(m,t,u)=>{const href=safeHref(u);return href==null?m:'<a href="'+href+'" target="_blank" rel="noopener">'+t+'</a>';});
   h=h.replace(/(?:^|\n)((?:\s*[-*] .+(?:\n|$))+)/g,(m,it)=>"\n<ul>"+it.trim().split("\n").map(l=>"<li>"+l.replace(/^\s*[-*]\s+/,"")+"</li>").join("")+"</ul>");
   h=h.replace(/(?:^|\n)((?:\s*\d+\. .+(?:\n|$))+)/g,(m,it)=>"\n<ol>"+it.trim().split("\n").map(l=>"<li>"+l.replace(/^\s*\d+\.\s+/,"")+"</li>").join("")+"</ol>");
-  h=h.split(/\n{2,}/).map(b=>{b=b.trim();if(!b)return"";if(/^<(h\d|ul|ol|pre|blockquote)/.test(b)||b.indexOf("")===0)return b;return"<p>"+b.replace(/\n/g,"<br>")+"</p>";}).join("\n");
+  h=mdTables(h);
+  h=h.split(/\n{2,}/).map(b=>{b=b.trim();if(!b)return"";if(/^<(h\d|ul|ol|pre|blockquote|table)/.test(b)||b.indexOf("")===0)return b;return"<p>"+b.replace(/\n/g,"<br>")+"</p>";}).join("\n");
   return h.replace(/(\d+)/g,(m,i)=>"<pre><code>"+esc(bl[i]).replace(/\n$/,"")+"</code></pre>");}
 // Expose to the page's inline script and to tests. (Top-level consts are already visible to
 // other classic scripts, but the test suite imports this file as a module, where only the
