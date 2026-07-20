@@ -167,7 +167,13 @@ export class SyncEngine {
     // daemon. On non-zero exit / timeout this rejects; several probes (isAhead, remoteMainExists) are
     // expected to fail on a fresh remote and are caught by their callers. stderr is captured on the
     // rejected error (err.stderr) rather than leaking to the console.
-    const { stdout } = await execFileAsync("git", args, {
+    // Force line-ending-neutral git regardless of the operator's machine config. On a stock Windows
+    // install (core.autocrlf=true, the Git-for-Windows default) a checkout - reset --hard, rebase
+    // --abort - would materialize LF blobs as CRLF in the working tree, so the byte-for-byte conflict
+    // backup (backupAndReset) would NOT match the operator's LF file, breaching invariant 8. Pinning
+    // autocrlf=false + eol=lf keeps every checkout LF-canonical (git is the database; markdown renders
+    // identically) so backups are genuinely byte-for-byte on Windows and macOS alike.
+    const { stdout } = await execFileAsync("git", ["-c", "core.autocrlf=false", "-c", "core.eol=lf", ...args], {
       cwd,
       encoding: "utf8",
       timeout: GIT_TIMEOUT_MS,
