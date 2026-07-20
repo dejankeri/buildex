@@ -4,6 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { confinePath } from "./confine-path.js";
 
+// Create a DIRECTORY link that escapes confinement, using each platform's real, unprivileged link
+// primitive: a junction on Windows (skills are materialized as junctions - the actual Windows attack
+// surface - and, unlike symlinks, they need no Developer Mode / elevation), a POSIX symlink elsewhere.
+function linkDir(target: string, linkPath: string): void {
+  symlinkSync(target, linkPath, process.platform === "win32" ? "junction" : undefined);
+}
+
 let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "buildex-confine-"));
@@ -41,17 +48,19 @@ describe("confinePath - the one shared path-confinement implementation", () => {
   });
 
   it("rejects a symlink inside the base pointing outside it (existing target)", () => {
-    symlinkSync(join(dir, "team-evil"), join(dir, "team", "out"));
+    linkDir(join(dir, "team-evil"), join(dir, "team", "out"));
     expect(confinePath(join(dir, "team"), "out/evil.md")).toBeNull();
   });
 
   it("rejects a write path THROUGH an escaping symlinked dir when the target doesn't exist yet", () => {
-    symlinkSync(join(dir, "team-evil"), join(dir, "team", "out"));
+    linkDir(join(dir, "team-evil"), join(dir, "team", "out"));
     // The deepest existing ancestor (team/out) canonicalizes outside the base → refused.
     expect(confinePath(join(dir, "team"), "out/new.md")).toBeNull();
   });
 
-  it("rejects a dangling symlink (a write through it would land wherever it points)", () => {
+  // A junction is directory-only and can't dangle, so there's no unprivileged way to build this on
+  // Windows; the escaping-write refusal is still covered there by the junction cases above.
+  it.skipIf(process.platform === "win32")("rejects a dangling symlink (a write through it would land wherever it points)", () => {
     symlinkSync(join(dir, "nowhere", "ghost.md"), join(dir, "team", "dangle.md"));
     expect(confinePath(join(dir, "team"), "dangle.md")).toBeNull();
   });
@@ -60,7 +69,7 @@ describe("confinePath - the one shared path-confinement implementation", () => {
     // mkdtemp under tmpdir IS this case on macOS; emulate the alias explicitly so the test also
     // bites on Linux: the caller addresses the base through a symlink, files must still resolve.
     const alias = join(dir, "alias-to-team");
-    symlinkSync(join(dir, "team"), alias);
+    linkDir(join(dir, "team"), alias);
     expect(confinePath(alias, "notes/a.md")).toBe(join(alias, "notes", "a.md"));
     // …and escapes through the alias are still refused.
     expect(confinePath(alias, "../team-evil/evil.md")).toBeNull();

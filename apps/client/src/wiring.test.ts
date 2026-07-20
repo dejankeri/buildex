@@ -4,6 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildClientHandler } from "./wiring.js";
 
+// Escaping DIRECTORY link via each platform's real, unprivileged primitive: a junction on Windows
+// (skills are materialized as junctions - the actual Windows attack surface - needing no elevation),
+// a POSIX symlink elsewhere.
+function linkDir(target: string, linkPath: string): void {
+  symlinkSync(target, linkPath, process.platform === "win32" ? "junction" : undefined);
+}
+
 let ws: string;
 beforeEach(() => {
   ws = mkdtempSync(join(tmpdir(), "buildex-wire-"));
@@ -78,7 +85,7 @@ describe("buildClientHandler - the client composition root", () => {
   it("rejects a doc write through a symlink pointing outside the repo (400, nothing written)", async () => {
     const outside = mkdtempSync(join(tmpdir(), "buildex-outside-"));
     try {
-      symlinkSync(outside, join(ws, "team", "link"));
+      linkDir(outside, join(ws, "team", "link"));
       const app = handler();
       const res = await app(new Request("http://127.0.0.1/api/doc", {
         method: "POST",

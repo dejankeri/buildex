@@ -6,6 +6,13 @@ import { serveApp, brokerData } from "./app-serve.js";
 import { injectBridge, APP_BRIDGE } from "./app-bridge.js";
 import type { Root } from "../brain/graph.js";
 
+// Escaping DIRECTORY link via each platform's real, unprivileged primitive: a junction on Windows
+// (skills are materialized as junctions - the actual Windows attack surface - needing no elevation),
+// a POSIX symlink elsewhere.
+function linkDir(target: string, linkPath: string): void {
+  symlinkSync(target, linkPath, process.platform === "win32" ? "junction" : undefined);
+}
+
 let dir: string;
 let roots: Root[];
 
@@ -48,7 +55,10 @@ describe("serveApp - path-confined serving with bridge injection", () => {
     expect(serveApp(roots, "/apps-serve/team/crm-demo/../../notes.md")).toBeNull();
   });
 
-  it("refuses a symlink inside the app folder that points outside the workspace roots", () => {
+  // A FILE symlink can't be created unprivileged on Windows, and a junction is directory-only - so
+  // there's no unprivileged way to build this file-symlink case there; the escaping-file read is
+  // still covered on Windows by the junctioned-directory variant below.
+  it.skipIf(process.platform === "win32")("refuses a symlink inside the app folder that points outside the workspace roots", () => {
     // A file that lives entirely outside any workspace root (a separate temp dir).
     const outsideDir = mkdtempSync(join(tmpdir(), "buildex-outside-"));
     const secretPath = join(outsideDir, "secret.txt");
@@ -57,6 +67,20 @@ describe("serveApp - path-confined serving with bridge injection", () => {
     symlinkSync(secretPath, join(appDir, "leak.txt"));
     try {
       expect(serveApp(roots, "/apps-serve/team/crm-demo/leak.txt")).toBeNull();
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a file read THROUGH a directory link inside the app folder that escapes the workspace roots", () => {
+    // The escaping vector expressed with a directory link (junction on Windows): the app folder holds
+    // a link to a dir outside every root, and the requested file lives inside it.
+    const outsideDir = mkdtempSync(join(tmpdir(), "buildex-outside-"));
+    writeFileSync(join(outsideDir, "secret.txt"), "top secret");
+    const appDir = join(dir, "team", "apps", "crm-demo");
+    linkDir(outsideDir, join(appDir, "leak"));
+    try {
+      expect(serveApp(roots, "/apps-serve/team/crm-demo/leak/secret.txt")).toBeNull();
     } finally {
       rmSync(outsideDir, { recursive: true, force: true });
     }
