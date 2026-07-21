@@ -10,6 +10,10 @@
 
 const DAY_MS = 86400000;
 
+// The last /api/sync response, so the tray can paint the save card immediately (and the approvals
+// with it) while a fresh count is still being read off disk. null until the first one lands.
+let lastSync = null;
+
 // One pinned card above the approvals. Sending work to the company is an outward action, so this is
 // the right tray for it (invariant 5) - but it is a single action with no decline, so it is shaped
 // differently from the Approve/Deny pairs.
@@ -22,13 +26,16 @@ function saveCardHtml(sync, connected) {
   const stale = sync.unsaved.stale;
   const days = stale ? Math.max(1, Math.round((Date.now() - sync.unsaved.oldestAt) / DAY_MS)) : 0;
 
+  // No account yet: there is nowhere to save TO. State that plainly and offer no button - the
+  // console has no account-creation surface, so a "Connect an account" button promised something
+  // the product cannot do and led to the Apps tab.
   if (!connected) {
     return (
       '<div class="pcard save' + (stale ? " stale" : "") + '">' +
-      "<b>Save your work</b>" +
-      "<p>" + n + " " + noun + " " + are + " staying on this machine. Connect an account to keep them safe." +
+      "<b>This work is on this machine only</b>" +
+      "<p>" + n + " " + noun + " " + are + " saved here and nowhere else. If you lose this computer, " +
+      "you lose " + (n === 1 ? "it" : "them") + "." +
       "</p>" +
-      '<button class="pbtn" id="save-now" data-connect="1">Connect an account</button>' +
       "</div>"
     );
   }
@@ -55,6 +62,7 @@ async function rPending() {
     getJSON("/api/pending").then((d) => d.cards).catch(() => []),
     getJSON("/api/sync").catch(() => null),
   ]);
+  if (sync) lastSync = sync;
   renderPending(cards, sync);
 }
 
@@ -110,7 +118,10 @@ function renderPending(cards, sync) {
   // a11y: the tray is a live region so a screen reader announces a new approval card the moment
   // it arrives - the human gate (invariant 5) must be perceivable, not just visible. The approve/deny
   // buttons are named per tool so their purpose is clear out of visual context.
-  const saveHtml = sync ? saveCardHtml(sync, sync.status !== "local") : "";
+  // Connectivity comes from the daemon's view of the repositories (`unsaved.connected`), never from
+  // `sync.status` - that field starts at "ok" and only moves when the operator saves, so it says
+  // "connected" on a fresh install that has no account at all.
+  const saveHtml = sync ? saveCardHtml(sync, !!(sync.unsaved && sync.unsaved.connected)) : "";
   const kids = [];
   if (saveHtml) kids.push(el("div", { id: "savecard", html: saveHtml }));
   kids.push(
@@ -174,31 +185,45 @@ async function refreshPending() {
   } catch (e) {
     return;
   }
-  const sync = await getJSON("/api/sync").catch(() => null);
+  // The human gate paints FIRST, from the approvals alone. Counting unsaved work reads the
+  // repositories, so awaiting it here made an outward action wait on disk - the one surface that
+  // must never be slow. The save card is painted from the previous count and corrected when the
+  // fresh one lands.
   const b = $("#pbadge");
   if (cards.length) {
     b.style.display = "";
     b.textContent = cards.length;
   } else b.style.display = "none";
-  if (S.rightTab === "pending") renderPending(cards, sync);
+  if (S.rightTab === "pending") renderPending(cards, lastSync);
+  const sync = await getJSON("/api/sync").catch(() => null);
+  if (sync) {
+    lastSync = sync;
+    if (S.rightTab === "pending") renderPending(cards, sync);
+  }
 }
 
 /**
- * Wire the save card's button (if present): "Connect an account" routes to setup; otherwise it
- * posts the save and re-renders (the count then reads zero, or a failure shows up in the dot).
+ * Wire the save card's button (present only when there is somewhere to save to): post the save and
+ * re-render. A failure restores the button rather than leaving it stuck on "Saving…" - the operator
+ * must always be able to try again.
  */
 function wireSaveCard() {
   const saveBtn = $("#save-now");
   if (saveBtn) {
     saveBtn.onclick = async () => {
-      if (saveBtn.dataset.connect) return switchRight("apps"); // no account yet - send them to setup
+      const label = saveBtn.textContent;
       saveBtn.disabled = true;
       saveBtn.textContent = "Saving…";
       try {
         await fetch("/api/sync", { method: "POST" });
-      } finally {
-        rPending(); // re-render: the count is now zero, or the failure shows in the dot
+      } catch (e) {
+        // The save never reached the daemon. Leave the card exactly as it was, with a working
+        // button - re-rendering here would drop the card on the failed poll that follows.
+        saveBtn.disabled = false;
+        saveBtn.textContent = label;
+        return;
       }
+      rPending(); // re-render: the count is now zero, or the failure shows in the dot
     };
   }
 }

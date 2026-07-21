@@ -30,7 +30,10 @@ async function refreshProjects() {
       s.status === "needs-help" ? "help" :
       s.status === "queued" ? "queued" :
       s.status === "local" ? "local" :
-      s.unsaved && s.unsaved.files > 0 ? "unsaved" : "ok";
+      // Only amber when there is somewhere to save TO. Without an account (a fresh install, or the
+      // local-only demo sandbox) every file reads as unsaved, and a "click to save" dot would lead
+      // to a tray with nothing to click.
+      s.unsaved && s.unsaved.connected && s.unsaved.files > 0 ? "unsaved" : "ok";
   } catch (e) {}
   setSync(syncBusy ? "busy" : st);
   if (S.rightTab === "synclog") fillSyncLog();

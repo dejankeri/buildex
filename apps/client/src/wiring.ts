@@ -763,9 +763,18 @@ export function buildClientHandler(config: ClientConfig): Handler {
     syncStatus: () => lastSyncStatus,
     // What is waiting to be saved, for the pending tray's one card. The staleness comparison
     // happens here, once, against the real clock - the browser is never handed a comparison to make.
+    // `connected` is derived from the REPOSITORIES, not from the last sync status: that status
+    // initialises to "ok" and only ever moves when the operator publishes, so a fresh install with
+    // no account would otherwise read as connected forever - an amber dot, a card offering to save
+    // work "to your company" when there is no company, and a Save button that can do nothing.
+    // A remote is a local read (`git remote`), so this stays network-free.
     unsavedFn: async () => {
-      const u = await unsavedAcross(writableDirs());
-      return { ...u, stale: isStale(u.oldestAt, Date.now()) };
+      const dirs = writableDirs();
+      const [u, remotes] = await Promise.all([
+        unsavedAcross(dirs),
+        Promise.all(dirs.map((d) => sync.hasRemote(d).catch(() => false))),
+      ]);
+      return { ...u, stale: isStale(u.oldestAt, Date.now()), connected: remotes.some(Boolean) };
     },
   });
 }

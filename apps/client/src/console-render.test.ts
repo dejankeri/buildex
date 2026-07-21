@@ -92,6 +92,86 @@ describe("console renderers (jsdom) — pending approval tray", () => {
   });
 });
 
+describe("console renderers (jsdom) — the save card", () => {
+  /** A /api/sync response shaped like the daemon's. */
+  const sync = (unsaved: Record<string, unknown>, status = "ok") => ({ status, unsaved: { oldestAt: null, stale: false, connected: true, ...unsaved } });
+  const card = (doc: { querySelector(s: string): { textContent: string | null } | null }) => doc.querySelector("#savecard .pcard.save");
+
+  it("shows no card at all when nothing is waiting", () => {
+    const { doc, c } = loadConsole();
+    c.S.rightTab = "pending";
+    c.renderPending([], sync({ files: 0 }));
+    expect(card(doc)).toBeNull();
+    expect(doc.querySelector("#rl")).not.toBeNull(); // the approvals still render
+  });
+
+  it("says '1 change' in the singular and '2 changes' in the plural", () => {
+    const { doc, c } = loadConsole();
+    c.S.rightTab = "pending";
+    c.renderPending([], sync({ files: 1 }));
+    expect(card(doc)!.textContent).toContain("1 change ");
+    expect(card(doc)!.textContent).not.toContain("changes");
+    c.renderPending([], sync({ files: 2 }));
+    expect(card(doc)!.textContent).toContain("2 changes");
+  });
+
+  it("offers a save only when there is somewhere to save to", () => {
+    const { doc, c } = loadConsole();
+    c.S.rightTab = "pending";
+    c.renderPending([], sync({ files: 3, connected: true }));
+    expect(doc.querySelector("#save-now")).not.toBeNull();
+
+    // No account yet: the card states the truth and offers no button - there is no
+    // account-creation surface in the console, so a button here would promise what we cannot do.
+    c.renderPending([], sync({ files: 3, connected: false }));
+    expect(doc.querySelector("#save-now")).toBeNull();
+    const text = card(doc)!.textContent!;
+    expect(text).toContain("this machine only");
+    expect(text).not.toContain("Connect an account");
+    // ...and it agrees with itself grammatically: singular subject, singular pronoun.
+    c.renderPending([], sync({ files: 1, connected: false }));
+    expect(card(doc)!.textContent).toContain("you lose it.");
+    c.renderPending([], sync({ files: 2, connected: false }));
+    expect(card(doc)!.textContent).toContain("you lose them.");
+  });
+
+  it("escalates to the stakes, not a number, once work has gone stale", () => {
+    const { doc, c } = loadConsole();
+    c.S.rightTab = "pending";
+    const threeDaysAgo = Date.now() - 3 * 86400000;
+    c.renderPending([], sync({ files: 4, stale: false }));
+    expect(doc.querySelector("#savecard .pcard.save.stale")).toBeNull();
+    expect(card(doc)!.textContent).toContain("4 changes");
+
+    c.renderPending([], sync({ files: 4, stale: true, oldestAt: threeDaysAgo }));
+    expect(doc.querySelector("#savecard .pcard.save.stale")).not.toBeNull();
+    expect(card(doc)!.textContent).toContain("3 days");
+    expect(card(doc)!.textContent).toContain("It exists nowhere else.");
+  });
+
+  it("leaves the button usable after a failed save, rather than stuck on 'Saving…'", async () => {
+    const { doc, c } = loadConsole();
+    c.S.rightTab = "pending";
+    c.renderPending([], sync({ files: 2 }));
+    const btn = doc.querySelector("#save-now")! as unknown as { click(): void; disabled: boolean; textContent: string };
+    expect(btn.textContent).toBe("Save now");
+    // The harness's fetch always rejects (no network in renderer tests) - exactly the offline case.
+    btn.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(btn.disabled).toBe(false);
+    expect(btn.textContent).toBe("Save now"); // the operator can try again
+  });
+
+  it("does not treat 'no account' as connected just because the status field says ok", () => {
+    // The regression this guards: the daemon's status initialises to "ok" and only moves when the
+    // operator saves, so deriving connectivity from it made a fresh install look connected forever.
+    const { doc, c } = loadConsole();
+    c.S.rightTab = "pending";
+    c.renderPending([], { status: "ok", unsaved: { files: 3, oldestAt: null, stale: false, connected: false } });
+    expect(doc.querySelector("#save-now")).toBeNull();
+  });
+});
+
 describe("console a11y (jsdom) — right-rail tablist", () => {
   it("switchRight keeps the tablist aria-selected in step with the active panel", () => {
     const { doc, c } = loadConsole();
