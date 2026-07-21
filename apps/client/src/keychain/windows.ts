@@ -125,17 +125,41 @@ export function windowsKeychainAvailable(): boolean {
 
 /** The production runner: spawns Windows PowerShell (a native .exe, so plain spawn - no shell:true,
  *  unlike the .cmd shims) running the embedded advapi32 helper. The secret is piped via STDIN. */
-export function defaultWinCredRunner(): WinCredRunner {
-  const full = windowsPowerShellPath();
-  const psExe = existsSync(full) ? full : "powershell.exe";
+/** Ceiling for a single Credential Manager op. Generous, because every op pays PowerShell startup
+ *  plus an Add-Type C# compile (~0.5-2s) - the point is that a wedged PowerShell cannot block the
+ *  daemon's event loop forever, the same failure `engine.ts` engineered out of git with GIT_TIMEOUT_MS. */
+export const WIN_KEYCHAIN_TIMEOUT_MS = 15_000;
+
+export interface WinExecOptions {
+  env: NodeJS.ProcessEnv;
+  input?: string;
+  encoding: "utf8";
+  stdio: ("pipe" | "ignore")[];
+  timeout: number;
+  windowsHide: boolean;
+}
+
+/** The slice of execFileSync this module uses. Injected so the spawn options are assertable. */
+export type WinExec = (file: string, args: string[], options: WinExecOptions) => string;
+
+const nodeExec: WinExec = (file, args, options) => execFileSync(file, args, options);
+
+export function defaultWinCredRunner(exec: WinExec = nodeExec): WinCredRunner {
+  // Always the absolute System32 path, never a bare "powershell.exe": a bare name resolves through
+  // the CreateProcess search order (application dir, cwd, PATH), which would pipe the secret to
+  // whatever binary is planted there first. createKeychain already gates on this path existing, so
+  // failing closed here costs nothing real.
+  const psExe = windowsPowerShellPath();
   const encoded = Buffer.from(PS_SCRIPT, "utf16le").toString("base64"); // -EncodedCommand wants UTF-16LE base64
   return (op) => {
     try {
-      const stdout = execFileSync(psExe, ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], {
+      const stdout = exec(psExe, ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], {
         env: { ...process.env, BXK_ACTION: op.action, BXK_TARGET: op.target },
         ...(op.action === "write" ? { input: op.value } : {}),
         encoding: "utf8",
         stdio: ["pipe", "pipe", "ignore"],
+        timeout: WIN_KEYCHAIN_TIMEOUT_MS,
+        windowsHide: true, // the daemon lives in a GUI process; without this every op flashes a console
       });
       return { status: 0, stdout };
     } catch (e) {

@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { WindowsKeychain, WIN_NOT_FOUND, type WinCredRunner } from "./windows.js";
+import {
+  WindowsKeychain,
+  WIN_NOT_FOUND,
+  WIN_KEYCHAIN_TIMEOUT_MS,
+  defaultWinCredRunner,
+  windowsPowerShellPath,
+  type WinCredRunner,
+  type WinExec,
+  type WinExecOptions,
+} from "./windows.js";
 import { createKeychain } from "./keychain.js";
 
 // A stateful fake of Windows Credential Manager: an in-memory (target -> stored value) map that mirrors
@@ -180,6 +189,57 @@ describe("createKeychain factory - win32", () => {
     createKeychain({ mode: "system", workspace: "/ws/alpha", winRun: run, platform: "win32" }).set("connector:gmail", "a");
     createKeychain({ mode: "system", workspace: "/ws/beta", winRun: run, platform: "win32" }).set("connector:gmail", "b");
     expect(store.size).toBe(2); // two distinct service prefixes
+  });
+});
+
+describe("defaultWinCredRunner - how the helper process is actually launched", () => {
+  /** Capture the exec call instead of spawning PowerShell. */
+  function spyExec() {
+    const calls: { file: string; args: string[]; options: WinExecOptions }[] = [];
+    const exec: WinExec = (file, args, options) => {
+      calls.push({ file, args, options });
+      return "";
+    };
+    return { exec, calls };
+  }
+
+  it("bounds every op with a timeout - a wedged PowerShell must not freeze the event loop forever", () => {
+    // Each op is a synchronous spawn, and connectors.ts calls keychain.get per catalog entry, so an
+    // unbounded hang (AV interception, a stuck Credential Manager service) stalls the whole daemon.
+    const { exec, calls } = spyExec();
+    defaultWinCredRunner(exec)({ action: "read", target: "t" });
+    expect(calls[0]!.options.timeout).toBe(WIN_KEYCHAIN_TIMEOUT_MS);
+    expect(calls[0]!.options.timeout).toBeGreaterThan(0);
+  });
+
+  it("hides the console window - the packaged daemon is a GUI process", () => {
+    const { exec, calls } = spyExec();
+    defaultWinCredRunner(exec)({ action: "read", target: "t" });
+    expect(calls[0]!.options.windowsHide).toBe(true);
+  });
+
+  it("launches the absolute System32 PowerShell, never a bare name", () => {
+    // A bare "powershell.exe" resolves via the CreateProcess search order (application dir, cwd,
+    // PATH) - a binary-planting surface for a helper that receives the secret on stdin.
+    const { exec, calls } = spyExec();
+    defaultWinCredRunner(exec)({ action: "read", target: "t" });
+    expect(calls[0]!.file).toBe(windowsPowerShellPath());
+    expect(calls[0]!.file).toMatch(/[\\/]System32[\\/]WindowsPowerShell[\\/]v1\.0[\\/]powershell\.exe$/i);
+    expect(calls[0]!.file).not.toBe("powershell.exe");
+  });
+
+  it("passes the secret on stdin for writes, never as an argument", () => {
+    const { exec, calls } = spyExec();
+    defaultWinCredRunner(exec)({ action: "write", target: "t", value: "SECRET" });
+    expect(calls[0]!.options.input).toBe("SECRET");
+    expect(calls[0]!.args.join(" ")).not.toContain("SECRET");
+  });
+
+  it("maps a timeout kill (no numeric status) to a non-zero status, not a crash", () => {
+    const exec: WinExec = () => {
+      throw Object.assign(new Error("ETIMEDOUT"), { signal: "SIGTERM" }); // what execFileSync throws on timeout
+    };
+    expect(defaultWinCredRunner(exec)({ action: "read", target: "t" }).status).not.toBe(0);
   });
 });
 
