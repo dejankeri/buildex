@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+**/dist
+.git
+apps/client
+apps/site
+apps/connectors
+apps/toolkit
+packs
+docs
+scripts
+infra/.env
+*.log
