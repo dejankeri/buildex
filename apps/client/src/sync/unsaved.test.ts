@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -115,6 +115,66 @@ describe("unsavedIn", () => {
     mkdirSync(dir, { recursive: true });
     git(["init", "--initial-branch=main", "."], dir);
     expect(await unsavedIn(dir)).toEqual({ files: 0, oldestAt: null });
+  });
+
+  it("counts a new untracked directory of 2 files as 2 documents, not 1", async () => {
+    const dir = clone("a");
+    mkdirSync(join(dir, "notes"));
+    writeFileSync(join(dir, "notes", "a.md"), "one\n");
+    writeFileSync(join(dir, "notes", "b.md"), "two\n");
+    expect((await unsavedIn(dir)).files).toBe(2);
+  });
+
+  it("counts a nested untracked directory of 3 files as 3 documents", async () => {
+    const dir = clone("a");
+    mkdirSync(join(dir, "plans", "q1"), { recursive: true });
+    writeFileSync(join(dir, "plans", "one.md"), "1\n");
+    writeFileSync(join(dir, "plans", "q1", "two.md"), "2\n");
+    writeFileSync(join(dir, "plans", "q1", "three.md"), "3\n");
+    expect((await unsavedIn(dir)).files).toBe(3);
+  });
+
+  it("dates an uncommitted edit even when level with the remote - the nudge must be reachable", async () => {
+    const dir = clone("a");
+    writeFileSync(join(dir, "fresh.md"), "typed a second ago\n");
+    const u = await unsavedIn(dir);
+    expect(u.files).toBe(1);
+    expect(u.oldestAt).not.toBeNull();
+  });
+
+  it("dates from the older of an unsent commit and a newer dirty edit", async () => {
+    const dir = clone("a");
+    commitFile(dir, "one.md", "1\n");
+    const commitAt = (await unsavedIn(dir)).oldestAt;
+    expect(commitAt).not.toBeNull();
+    writeFileSync(join(dir, "two.md"), "dirty\n");
+    const recent = new Date(commitAt! + 60_000); // unambiguously after the commit
+    utimesSync(join(dir, "two.md"), recent, recent);
+    expect((await unsavedIn(dir)).oldestAt).toBe(commitAt);
+  });
+
+  it("counts a staged rename of a committed-but-unsent file as 1 document, not 2", async () => {
+    const dir = clone("a");
+    commitFile(dir, "doc.md", "changed\n");
+    git(["mv", "doc.md", "renamed.md"], dir);
+    expect((await unsavedIn(dir)).files).toBe(1);
+  });
+
+  it("counts a path with a space and a non-ASCII character correctly, without its quotes", async () => {
+    const dir = clone("a");
+    mkdirSync(join(dir, "café notes"));
+    writeFileSync(join(dir, "café notes", "idée reçue.md"), "body\n");
+    const u = await unsavedIn(dir);
+    // One document, and its on-disk mtime was found - which only happens if the path was parsed
+    // exactly (a quoted/escaped path would fail to stat and be silently skipped).
+    expect(u.files).toBe(1);
+    expect(u.oldestAt).not.toBeNull();
+  });
+
+  it("keeps oldestAt null when files is 0", async () => {
+    const dir = clone("a");
+    expect((await unsavedIn(dir)).files).toBe(0);
+    expect((await unsavedIn(dir)).oldestAt).toBeNull();
   });
 });
 

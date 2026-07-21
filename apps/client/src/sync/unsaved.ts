@@ -5,6 +5,8 @@
 // tray polls it, so it must be cheap; and it must never be the reason saving appears to fail.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { statSync } from "node:fs";
+import { join } from "node:path";
 import { pinnedGit } from "../lib/git-pin.js";
 import { INTERNAL } from "./engine.js";
 
@@ -52,19 +54,38 @@ function lines(out: string): string[] {
   return out.split("\n").map((s) => s.trim()).filter(Boolean);
 }
 
-/** Paths from `status --porcelain`. Entries are `XY path`, or `XY orig -> new` for a rename; the
- *  destination is the path that is actually unsaved. Quoted paths (non-ASCII) keep their quotes,
- *  which is harmless here because the result is only ever counted, never opened. */
-function porcelainPaths(out: string): string[] {
-  return out
-    .split("\n")
-    .filter((l) => l.length > 3)
-    .map((l) => {
-      const rest = l.slice(3);
-      const arrow = rest.indexOf(" -> ");
-      return (arrow >= 0 ? rest.slice(arrow + 4) : rest).trim();
-    })
-    .filter(Boolean);
+/** One entry from `git status --porcelain -uall -z`. `path` is the file this record is actually
+ *  about - the destination for a rename/copy, the file itself otherwise. `orig` is set only for a
+ *  rename or copy (status code starting with `R` or `C`): the same document under its old name, so
+ *  a caller must not also count it. */
+interface PorcelainRecord {
+  path: string;
+  orig?: string;
+}
+
+/** Parse `git status --porcelain -uall -z`. Verified empirically against real git in a scratch
+ *  repo: each record is a single NUL-terminated field `XY<space><path>`, and for a rename or copy
+ *  (code starting with `R`/`C`, e.g. plain `R ` or the rename+modify combo `RM`) the *next*
+ *  NUL-terminated field is the original path, with no prefix of its own. Unlike porcelain v1, `-z`
+ *  never quotes or C-escapes paths - confirmed by round-tripping a path with a space and a
+ *  non-ASCII character - so this needs no arrow-splitting or unquoting. */
+function parsePorcelainZ(out: string): PorcelainRecord[] {
+  const fields = out.split("\0");
+  const records: PorcelainRecord[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i];
+    if (!field) continue; // the split leaves a trailing empty field after the final NUL
+    const code = field.slice(0, 2);
+    const path = field.slice(3);
+    if (!path) continue;
+    if (code[0] === "R" || code[0] === "C") {
+      const orig = fields[++i];
+      records.push(orig ? { path, orig } : { path });
+    } else {
+      records.push({ path });
+    }
+  }
+  return records;
 }
 
 async function remoteMainExists(dir: string): Promise<boolean> {
@@ -91,6 +112,10 @@ export async function unsavedIn(dir: string): Promise<Unsaved> {
   const upstream = committed ? await remoteMainExists(dir) : false;
 
   const paths = new Set<string>();
+  // Working-tree paths with genuinely uncommitted work (unstaged, staged, or untracked) - as
+  // opposed to paths that only appear because an earlier commit is unsent. Only these have an
+  // on-disk mtime worth trusting as "when this became unsaved".
+  const dirtyPaths = new Set<string>();
 
   if (committed) {
     // With an upstream, "unsaved" is everything the company's copy does not have. Without one - a
@@ -102,23 +127,55 @@ export async function unsavedIn(dir: string): Promise<Unsaved> {
   }
 
   // Edits made since the last checkpoint are genuinely unsaved too, so a count taken mid-burst is
-  // never misleadingly low.
-  for (const rel of porcelainPaths(await git(["status", "--porcelain"], dir))) paths.add(rel);
+  // never misleadingly low. `-uall` expands an untracked directory into its individual files
+  // rather than collapsing it to one entry, and `-z` gives unquoted, unambiguous paths plus the
+  // origin path of a rename - so a renamed document is not also counted under its old name.
+  const porcelainOut = await git(["status", "--porcelain", "-uall", "-z"], dir);
+  for (const rec of parsePorcelainZ(porcelainOut)) {
+    if (rec.orig) paths.delete(rec.orig); // same document under its old name - not a second one
+    paths.add(rec.path);
+    dirtyPaths.add(rec.path);
+  }
 
   for (const rel of [...paths]) if (isInternal(rel)) paths.delete(rel);
+  for (const rel of [...dirtyPaths]) if (isInternal(rel)) dirtyPaths.delete(rel);
   if (paths.size === 0) return NOTHING;
 
-  return { files: paths.size, oldestAt: await oldestUnsavedAt(dir, committed, upstream) };
+  return { files: paths.size, oldestAt: await oldestUnsavedAt(dir, committed, upstream, dirtyPaths) };
 }
 
-async function oldestUnsavedAt(dir: string, committed: boolean, upstream: boolean): Promise<number | null> {
-  if (!committed) return null; // only edits on disk, nothing checkpointed yet
-  const range = upstream ? "origin/main..HEAD" : "HEAD";
-  const out = await git(["log", "--format=%ct", "--reverse", range], dir);
-  const first = lines(out)[0];
-  if (!first) return null;
-  const secs = Number(first);
-  return Number.isFinite(secs) ? secs * 1000 : null;
+/** The oldest moment any unsaved work has been waiting, from whichever of its two sources exist:
+ *  a committed-but-unsent change is dated by its commit time; work never checkpointed at all is
+ *  dated by its on-disk mtime, since git has no timestamp for it. Only null when there is nothing
+ *  in either source - callers only reach this once `files > 0`, so that means one source is empty,
+ *  not both. A file that vanished between listing and stat-ing is skipped, not thrown over. */
+async function oldestUnsavedAt(
+  dir: string,
+  committed: boolean,
+  upstream: boolean,
+  dirtyPaths: ReadonlySet<string>,
+): Promise<number | null> {
+  const candidates: number[] = [];
+
+  if (committed) {
+    const range = upstream ? "origin/main..HEAD" : "HEAD";
+    const out = await git(["log", "--format=%ct", "--reverse", range], dir);
+    const first = lines(out)[0];
+    if (first) {
+      const secs = Number(first);
+      if (Number.isFinite(secs)) candidates.push(secs * 1000);
+    }
+  }
+
+  for (const rel of dirtyPaths) {
+    try {
+      candidates.push(statSync(join(dir, rel)).mtimeMs);
+    } catch {
+      // Listed a moment ago, gone now (e.g. an editor swap file) - not unsaved work we can date.
+    }
+  }
+
+  return candidates.length > 0 ? Math.min(...candidates) : null;
 }
 
 /** What is waiting across every writable root, collapsed into the one number the tray shows. A root
