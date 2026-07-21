@@ -179,27 +179,24 @@ function renderPending(cards, sync) {
  * @returns {Promise<void>}
  */
 async function refreshPending() {
-  let cards;
-  try {
-    cards = (await getJSON("/api/pending")).cards;
-  } catch (e) {
-    return;
-  }
-  // The human gate paints FIRST, from the approvals alone. Counting unsaved work reads the
-  // repositories, so awaiting it here made an outward action wait on disk - the one surface that
-  // must never be slow. The save card is painted from the previous count and corrected when the
-  // fresh one lands.
+  // Both requests fire together (not one-then-the-other) so the render below waits on the slower
+  // of the two, not their sum - the human gate still isn't held up by counting unsaved work, it just
+  // no longer needs a second, separate render to fold that count in.
+  const cardsP = getJSON("/api/pending").then((d) => d.cards).catch(() => null);
+  const syncP = getJSON("/api/sync").catch(() => null);
+  const cards = await cardsP;
+  if (cards === null) return;
   const b = $("#pbadge");
   if (cards.length) {
     b.style.display = "";
     b.textContent = cards.length;
   } else b.style.display = "none";
-  if (S.rightTab === "pending") renderPending(cards, lastSync);
-  const sync = await getJSON("/api/sync").catch(() => null);
-  if (sync) {
-    lastSync = sync;
-    if (S.rightTab === "pending") renderPending(cards, sync);
-  }
+  const sync = await syncP;
+  if (sync) lastSync = sync;
+  // Render exactly once per poll. Rendering twice (once from cached lastSync, once from the fresh
+  // fetch) rebuilt the whole tray twice on every tick - including a Save button that was mid-POST,
+  // which reset it back to its idle label out from under the operator's own click.
+  if (S.rightTab === "pending") renderPending(cards, sync || lastSync);
 }
 
 /**
