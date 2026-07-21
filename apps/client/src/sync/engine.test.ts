@@ -233,3 +233,122 @@ describe("offline queue: unpushed commits survive and a later sync pushes them",
     expect(existsSync(join(verify, "queued.md"))).toBe(true);
   });
 });
+
+describe("checkpoint", () => {
+  it("commits local work and reports that it did", async () => {
+    const dir = clone("cp");
+    writeFileSync(join(dir, "doc.md"), "mine\n");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.checkpoint(dir)).toBe("committed");
+    expect(git(["status", "--porcelain"], dir).trim()).toBe("");
+  });
+
+  it("reports no-change when there is nothing to record", async () => {
+    const dir = clone("cp2");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.checkpoint(dir)).toBe("no-change");
+  });
+
+  it("reports no-change when only workspace-internal paths changed", async () => {
+    const dir = clone("cp3");
+    mkdirSync(join(dir, ".conflicts", "1"), { recursive: true });
+    writeFileSync(join(dir, ".conflicts", "1", "doc.md"), "backup\n");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.checkpoint(dir)).toBe("no-change");
+  });
+});
+
+describe("receive", () => {
+  it("brings a teammate's work in without sending ours", async () => {
+    const mine = clone("mine");
+    const theirs = clone("theirs");
+    writeFileSync(join(theirs, "theirs.md"), "from them\n");
+    git(["add", "-A"], theirs);
+    git(["commit", "-m", "theirs"], theirs);
+    git(["push", "origin", "HEAD:main"], theirs);
+
+    writeFileSync(join(mine, "mine.md"), "from me\n");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    await engine.checkpoint(mine);
+    expect(await engine.receive(mine)).toBe("ok");
+
+    expect(existsSync(join(mine, "theirs.md"))).toBe(true);
+    // Ours stayed home: the bare remote has no knowledge of mine.md.
+    expect(git(["ls-tree", "-r", "--name-only", "main"], remote)).not.toContain("mine.md");
+  });
+
+  it("reports local when there is no account yet", async () => {
+    const dir = join(root, "noremote");
+    mkdirSync(dir, { recursive: true });
+    git(["init", "--initial-branch=main", "."], dir);
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.receive(dir)).toBe("local");
+  });
+
+  it("reports offline when the remote cannot be reached", async () => {
+    const dir = clone("gone");
+    git(["remote", "set-url", "origin", `file://${join(root, "does-not-exist.git")}`], dir);
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.receive(dir)).toBe("offline");
+  });
+});
+
+describe("publish", () => {
+  it("sends local work to the remote", async () => {
+    const dir = clone("pub");
+    writeFileSync(join(dir, "doc.md"), "mine\n");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.publish(dir)).toBe("ok");
+    expect(git(["show", "main:doc.md"], remote)).toContain("mine");
+  });
+
+  it("records work and reports queued when the remote is unreachable", async () => {
+    const dir = clone("pubq");
+    git(["remote", "set-url", "origin", `file://${join(root, "does-not-exist.git")}`], dir);
+    writeFileSync(join(dir, "doc.md"), "mine\n");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.publish(dir)).toBe("queued");
+    // The work is safe locally even though it could not be sent (invariant 8).
+    expect(git(["log", "--format=%s", "-1"], dir)).toContain("op: update");
+  });
+
+  it("reports local when there is no account yet, having still recorded the work", async () => {
+    const dir = join(root, "pubnoremote");
+    mkdirSync(dir, { recursive: true });
+    git(["init", "--initial-branch=main", "."], dir);
+    writeFileSync(join(dir, "doc.md"), "mine\n");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.publish(dir)).toBe("local");
+    expect(git(["log", "--format=%s", "-1"], dir)).toContain("op: update");
+  });
+
+  it("reports no-change when there is nothing to send", async () => {
+    const dir = clone("pubclean");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.publish(dir)).toBe("no-change");
+  });
+});
+
+describe("SYNC-SAFETY INVARIANT [release-gate:sync-safety]: recording work never sends it", () => {
+  it("checkpoint leaves the remote untouched", async () => {
+    const dir = clone("never-sends");
+    const before = git(["rev-parse", "main"], remote).trim();
+
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    for (let i = 0; i < 5; i++) {
+      writeFileSync(join(dir, `doc${i}.md`), `edit ${i}\n`);
+      expect(await engine.checkpoint(dir)).toBe("committed");
+    }
+
+    expect(git(["rev-parse", "main"], remote).trim()).toBe(before);
+  });
+
+  it("checkpoint succeeds even when the remote is unreachable, proving it never touches the network", async () => {
+    const dir = clone("no-network");
+    git(["remote", "set-url", "origin", `file://${join(root, "does-not-exist.git")}`], dir);
+    writeFileSync(join(dir, "doc.md"), "mine\n");
+
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.checkpoint(dir)).toBe("committed");
+  });
+});

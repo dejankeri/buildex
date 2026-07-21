@@ -20,6 +20,10 @@ const GIT_TIMEOUT_MS = 30_000;
 const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 
 export type SyncResult = "ok" | "needs-help" | "queued" | "no-change" | "local";
+/** Recording work locally. No network, so no offline case exists. */
+export type CheckpointResult = "committed" | "no-change";
+/** Taking other people's work in. Never sends anything. */
+export type ReceiveResult = "ok" | "needs-help" | "offline" | "local";
 
 export interface SyncDeps {
   now: () => number;
@@ -43,46 +47,66 @@ export class SyncEngine {
     await this.git(["reset", "--hard", "origin/main"], dir);
   }
 
-  /** Writable repos (team/private): commit → rebase → push, with never-lose conflict backup. */
-  async syncWritable(dir: string): Promise<SyncResult> {
+  /** Record local work as a checkpoint. NO NETWORK - this is the operation that made automatic
+   *  publishing possible when it was fused with push, and keeping it network-free is what makes
+   *  "your work leaves only when you say so" true rather than aspirational. */
+  async checkpoint(dir: string): Promise<CheckpointResult> {
     assertNotCloudSynced(dir);
     await this.stage(dir);
-    if (await this.isDirty(dir)) {
-      await this.git(["commit", "-m", await this.commitMessage(dir)], dir);
-    }
+    const staged = await this.stagedFiles(dir);
+    if (staged.length === 0) return "no-change";
+    await this.git(["commit", "-m", this.commitMessage(staged)], dir);
+    return "committed";
+  }
 
-    // Local-only stub repo - no account opened yet, so no remote is configured. The operator's work
-    // is safely committed to local git (git is the database, invariant #2); there is simply nothing
-    // to sync *to*. Report "local" so the loop no-ops cleanly and the dot shows a neutral not-synced
-    // state - never "queued", which means a remote exists but is offline and should be retried.
+  /** Take other people's work in: fetch, then rebase our checkpoints on top. Sends nothing. On a
+   *  real conflict the operator's version is backed up before anything is reset (invariant 8). */
+  async receive(dir: string): Promise<ReceiveResult> {
+    assertNotCloudSynced(dir);
+    // No account yet - nothing to receive from. Not an error, and never "offline", which means a
+    // remote exists but could not be reached.
     if (!(await this.hasRemote(dir))) return "local";
-
-    // Fetch to learn the remote head; if we're offline (or the remote is wedged - the git timeout
-    // fires), retain any local commits (offline queue).
     try {
       await this.git(["fetch", "origin"], dir);
     } catch {
-      return (await this.isAhead(dir)) ? "queued" : "no-change";
+      return "offline";
     }
+    // A freshly-provisioned remote has no main branch yet, so there is nothing to rebase onto.
+    if (!(await this.remoteMainExists(dir))) return "ok";
+    try {
+      await this.git(["rebase", "origin/main"], dir);
+    } catch {
+      await this.backupAndReset(dir);
+      return "needs-help";
+    }
+    return "ok";
+  }
 
-    // Rebase local commits onto the remote - but only if the remote has a main branch yet. A
-    // freshly-provisioned repo is empty (no origin/main), so there is nothing to rebase onto; we
-    // just push the initial commit. On a real conflict, never lose the local version.
-    if (await this.remoteMainExists(dir)) {
-      try {
-        await this.git(["rebase", "origin/main"], dir);
-      } catch {
-        return this.backupAndReset(dir);
-      }
-    }
+  /** Send everything to the company's copy. The ONLY operation that pushes, and the only one the
+   *  operator triggers - nothing schedules it. */
+  async publish(dir: string): Promise<SyncResult> {
+    assertNotCloudSynced(dir);
+    await this.checkpoint(dir);
+
+    if (!(await this.hasRemote(dir))) return "local";
+
+    const received = await this.receive(dir);
+    if (received === "needs-help") return "needs-help";
+    // Offline: any checkpoints are retained locally and go out on the next attempt.
+    if (received === "offline") return (await this.isAhead(dir)) ? "queued" : "no-change";
 
     if (!(await this.isAhead(dir))) return "no-change";
     try {
       await this.git(["push", "origin", "HEAD:main"], dir);
     } catch {
-      return "queued"; // push failed (offline / wedged) - commit retained, will push on the next sync
+      return "queued";
     }
     return "ok";
+  }
+
+  /** @deprecated Repointed in Task 3 and deleted there. Identical to `publish`. */
+  async syncWritable(dir: string): Promise<SyncResult> {
+    return this.publish(dir);
   }
 
   // --- internals ---
@@ -97,10 +121,6 @@ export class SyncEngine {
         /* path not present - fine */
       }
     }
-  }
-
-  private async isDirty(dir: string): Promise<boolean> {
-    return (await this.git(["status", "--porcelain"], dir)).trim().length > 0;
   }
 
   private async isAhead(dir: string): Promise<boolean> {
@@ -126,11 +146,16 @@ export class SyncEngine {
     }
   }
 
-  private async commitMessage(dir: string): Promise<string> {
-    const files = (await this.git(["diff", "--cached", "--name-only"], dir))
+  /** Files staged for the next checkpoint. Empty means there is genuinely nothing to record - which
+   *  `status --porcelain` cannot tell us, because it also reports the internal paths we just unstaged. */
+  private async stagedFiles(dir: string): Promise<string[]> {
+    return (await this.git(["diff", "--cached", "--name-only"], dir))
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean);
+  }
+
+  private commitMessage(files: string[]): string {
     const shown = files.slice(0, 5).join(", ");
     const more = files.length > 5 ? ` (+${files.length - 5} more)` : "";
     return `${this.deps.actor}: update ${shown}${more}`;
