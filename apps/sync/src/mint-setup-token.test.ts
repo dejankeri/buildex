@@ -150,6 +150,67 @@ describe("onboard", () => {
     expect(caught?.message).toMatch(/internal error/);
   });
 
+  it("fires onIds synchronously before the first network call, so a partial failure still surfaces both ids", async () => {
+    const calls: RecordedCall[] = [];
+    // /s2s/operators fails - simulates the exact partial-onboard scenario from the review: company
+    // created, operator step never lands.
+    const fetchImpl = fakeFetch(calls, (call) => {
+      if (call.url.endsWith("/s2s/operators")) return { status: 500, body: { error: "boom" } };
+      return { status: 201, body: { ok: true } };
+    });
+    const deps: MintDeps = { baseUrl: BASE, serviceKey: KEY, fetchImpl };
+
+    const seenIds: { companyId: string; operatorId: string }[] = [];
+    await expect(
+      onboard(
+        deps,
+        { companySlug: "acme", companyName: "Acme Labs", email: "operator@example.test" },
+        (ids) => seenIds.push(ids),
+      ),
+    ).rejects.toThrow();
+
+    // The ids must have been reported even though the overall onboard rejected.
+    expect(seenIds).toHaveLength(1);
+    expect(seenIds[0]!.companyId).toMatch(/^co_/);
+    expect(seenIds[0]!.operatorId).toMatch(/^op_/);
+    // And the company call must have gone out using exactly that companyId.
+    const companyBody = calls[0]!.body as { id: string };
+    expect(companyBody.id).toBe(seenIds[0]!.companyId);
+  });
+
+  it("attaches an operator to an existing company when companyId is supplied, skipping company creation", async () => {
+    const calls: RecordedCall[] = [];
+    const fetchImpl = fakeFetch(calls, (call) => {
+      if (call.url.endsWith("/s2s/setup-tokens")) return { status: 200, body: { setupToken: "xsetup_attach" } };
+      return { status: 201, body: { ok: true } };
+    });
+    const deps: MintDeps = { baseUrl: BASE, serviceKey: KEY, fetchImpl };
+
+    const out = await onboard(deps, {
+      companySlug: "unused",
+      companyName: "unused",
+      email: "operator@example.test",
+      companyId: "co_existing",
+    });
+
+    // Only /s2s/operators and /s2s/setup-tokens should fire - no /s2s/companies call at all.
+    expect(calls.map((c) => c.url)).toEqual([`${BASE}/s2s/operators`, `${BASE}/s2s/setup-tokens`]);
+    const operatorBody = calls[0]!.body as { companyId: string };
+    expect(operatorBody.companyId).toBe("co_existing");
+    expect(out.companyId).toBe("co_existing");
+    expect(out.setupToken).toBe("xsetup_attach");
+  });
+
+  it("mentions --company-id in the duplicate-slug guidance", async () => {
+    const calls: RecordedCall[] = [];
+    const fetchImpl = fakeFetch(calls, () => ({ status: 500, body: { error: "internal error" } }));
+    const deps: MintDeps = { baseUrl: BASE, serviceKey: KEY, fetchImpl };
+
+    await expect(
+      onboard(deps, { companySlug: "acme", companyName: "Acme Labs", email: "operator@example.test" }),
+    ).rejects.toThrow(/--company-id/);
+  });
+
   it("propagates a network rejection from fetchImpl untouched - no slug framing invented", async () => {
     const fetchImpl: typeof fetch = () => Promise.reject(new Error("fetch failed: ECONNREFUSED"));
     const deps: MintDeps = { baseUrl: BASE, serviceKey: KEY, fetchImpl };

@@ -7,6 +7,11 @@
 //
 //   npx tsx scripts/mint-setup-token.ts --base-url https://<host> --operator-id <id>
 //
+// If a company already exists (e.g. a prior --onboard created it but a later step failed), attach a
+// new operator to it instead of creating a duplicate:
+//   npx tsx scripts/mint-setup-token.ts --base-url https://<host> --onboard --company-id <id> \
+//     --email operator@example.test
+//
 // The service key is read from BUILDEX_SERVICE_KEY - never passed as an argument, which would put it
 // in the shell history and the process list.
 import { randomUUID } from "node:crypto";
@@ -39,28 +44,44 @@ async function s2s(deps: MintDeps, path: string, body: unknown): Promise<unknown
   return res.json();
 }
 
-/** Create a company + operator, then mint their setup token. Returns the token. */
+/**
+ * Create (or, given `companyId`, attach to an existing) company + operator, then mint their setup
+ * token. Returns the token.
+ *
+ * `onIds`, if given, fires synchronously right after ids are generated and BEFORE the first network
+ * call. This is what makes a partial run recoverable: if `/s2s/companies` succeeds but
+ * `/s2s/operators` then fails, the generated companyId was already printed, so a retry can pass
+ * `--company-id <id>` to attach an operator to the company that already exists instead of hitting
+ * the duplicate-slug 500 with no id to fall back on.
+ */
 export async function onboard(
   deps: MintDeps,
-  opts: { companySlug: string; companyName: string; email: string },
+  opts: { companySlug: string; companyName: string; email: string; companyId?: string },
+  onIds?: (ids: { companyId: string; operatorId: string }) => void,
 ): Promise<{ companyId: string; operatorId: string; setupToken: string }> {
-  const companyId = `co_${randomUUID()}`;
+  const companyId = opts.companyId ?? `co_${randomUUID()}`;
   const operatorId = `op_${randomUUID()}`;
-  try {
-    await s2s(deps, "/s2s/companies", { id: companyId, slug: opts.companySlug, name: opts.companyName });
-  } catch (err) {
-    // A 500 is the shape a UNIQUE violation on companies.slug takes (it falls through the server's
-    // catch-all). Every other failure - a 401 from a bad service key, a validation error, a network
-    // rejection - is not consistent with a duplicate slug, so it must propagate untouched rather than
-    // mislead the operator with an invented diagnosis.
-    if (err instanceof S2sError && err.status === 500) {
-      throw new Error(
-        `could not create company "${opts.companySlug}" - a company with that slug probably already ` +
-          `exists (companies.slug is unique). If the operator already exists, re-issue their token with ` +
-          `--operator-id <id> instead of --onboard. Original error: ${err.message}`,
-      );
+  onIds?.({ companyId, operatorId });
+
+  if (!opts.companyId) {
+    try {
+      await s2s(deps, "/s2s/companies", { id: companyId, slug: opts.companySlug, name: opts.companyName });
+    } catch (err) {
+      // A 500 is the shape a UNIQUE violation on companies.slug takes (it falls through the server's
+      // catch-all). Every other failure - a 401 from a bad service key, a validation error, a network
+      // rejection - is not consistent with a duplicate slug, so it must propagate untouched rather than
+      // mislead the operator with an invented diagnosis.
+      if (err instanceof S2sError && err.status === 500) {
+        throw new Error(
+          `could not create company "${opts.companySlug}" - a company with that slug probably already ` +
+            `exists (companies.slug is unique). If the company already exists, re-run with ` +
+            `--company-id <id> to attach a new operator to it instead of creating another company. If ` +
+            `the operator already exists too, re-issue their token with --operator-id <id> instead of ` +
+            `--onboard. Original error: ${err.message}`,
+        );
+      }
+      throw err;
     }
-    throw err;
   }
   await s2s(deps, "/s2s/operators", { id: operatorId, companyId, email: opts.email });
   const { setupToken } = (await s2s(deps, "/s2s/setup-tokens", { operatorId })) as { setupToken: string };
@@ -96,12 +117,25 @@ async function main(): Promise<void> {
     const companySlug = arg("company-slug");
     const companyName = arg("company-name");
     const email = arg("email");
-    if (!companySlug || !companyName || !email) {
-      throw new Error("--onboard requires --company-slug, --company-name and --email");
+    const companyId = arg("company-id");
+    if (!email) throw new Error("--onboard requires --email");
+    if (!companyId && (!companySlug || !companyName)) {
+      throw new Error(
+        "--onboard requires --company-slug and --company-name, or --company-id to attach an operator " +
+          "to a company that already exists",
+      );
     }
-    const out = await onboard(deps, { companySlug, companyName, email });
-    console.log(`company:  ${out.companyId}`);
-    console.log(`operator: ${out.operatorId}`);
+    // Printed as soon as ids are generated - before the first network call - so a partial failure
+    // (company created, operator step fails) still leaves the operator with the companyId needed to
+    // retry via --company-id, instead of the only escape being a direct database query.
+    const out = await onboard(
+      deps,
+      { companySlug: companySlug ?? "", companyName: companyName ?? "", email, companyId },
+      (ids) => {
+        console.log(`company:  ${ids.companyId}`);
+        console.log(`operator: ${ids.operatorId}`);
+      },
+    );
     console.log(`\nsetup token (one-time, expires in 10 minutes):\n${out.setupToken}`);
     return;
   }
