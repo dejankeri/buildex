@@ -116,7 +116,7 @@ describe("console renderers (jsdom) — Brain view", () => {
   it("ESCAPES a hostile repo-root name in the agent-health strip", () => {
     const { doc, c } = loadConsole();
     doc.querySelector("#rpanel")!.innerHTML = '<div id="agenthealth"></div>'; // strip's host isn't in index.html
-    c.S.showAgentFiles = true;
+    c.S.showAllFiles = true;
     c.S.agentView = { summary: { skills: { total: 1, byRoot: { [XSS]: 1 } }, mcp: { total: 0 }, policyOk: true, claudeMdOk: true } };
     c.renderAgentHealth();
     expect(doc.querySelector("#agenthealth img")).toBeNull();

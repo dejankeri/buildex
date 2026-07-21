@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, symlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildClientHandler } from "./wiring.js";
@@ -97,6 +97,65 @@ describe("buildClientHandler - the client composition root", () => {
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
+  });
+
+  // --- the Files panel's create/delete surface (/api/fs/*) ------------------------------------
+  const fs = (app: (r: Request) => Promise<Response> | Response, route: string, body: unknown) =>
+    app(new Request("http://127.0.0.1/api/fs/" + route, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
+
+  it("creates a folder with a .gitkeep, so an empty folder survives the sync to another machine", async () => {
+    const app = handler();
+    expect(((await (await fs(app, "folder", { path: "team/clients" })).json()) as { ok: boolean }).ok).toBe(true);
+    expect(existsSync(join(ws, "team", "clients", ".gitkeep"))).toBe(true);
+  });
+
+  it("creates a document, and refuses to overwrite one that already exists", async () => {
+    const app = handler();
+    await fs(app, "file", { path: "team/notes.md", content: "# Notes\n" });
+    expect(existsSync(join(ws, "team", "notes.md"))).toBe(true);
+    const again = await fs(app, "file", { path: "team/notes.md", content: "clobber" });
+    expect(again.status).toBe(400); // creating is never destructive
+    const doc = (await (await app(new Request("http://127.0.0.1/api/doc?path=team/notes.md"))).json()) as { content: string };
+    expect(doc.content).toContain("# Notes"); // the original is untouched
+  });
+
+  it("writes an upload's real BYTES (base64), not its text", async () => {
+    const app = handler();
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]); // a PNG header
+    await fs(app, "file", { path: "team/logo.png", base64: bytes.toString("base64") });
+    expect(readFileSync(join(ws, "team", "logo.png")).equals(bytes)).toBe(true);
+  });
+
+  it("deletes a folder and everything inside it", async () => {
+    const app = handler();
+    await fs(app, "folder", { path: "team/tmp" });
+    await fs(app, "file", { path: "team/tmp/a.md", content: "a" });
+    expect(((await (await fs(app, "delete", { path: "team/tmp" })).json()) as { ok: boolean }).ok).toBe(true);
+    expect(existsSync(join(ws, "team", "tmp"))).toBe(false);
+  });
+
+  it("REFUSES the shared core library, a repo root itself, a dot-name, and traversal", async () => {
+    const app = buildClientHandler({
+      workspace: ws,
+      roots: [{ name: "core", dir: join(ws, "core") }, { name: "team", dir: join(ws, "team") }],
+      preset: { allow: ["Read"], ask: ["Bash"], deny: [], default: "ask" },
+      claudeBin: "claude",
+    });
+    mkdirSync(join(ws, "core"), { recursive: true });
+    expect((await fs(app, "file", { path: "core/rules.md", content: "x" })).status).toBe(400); // read-only library
+    expect((await fs(app, "delete", { path: "team" })).status).toBe(400); // a brain is not deletable from a file tree
+    expect((await fs(app, "file", { path: "team/.secret", content: "x" })).status).toBe(400); // would be invisible
+    expect((await fs(app, "folder", { path: "team/../team-anything" })).status).toBe(400); // sibling-prefix traversal
+    expect(existsSync(join(ws, "core", "rules.md"))).toBe(false);
+    expect(existsSync(join(ws, "team-anything"))).toBe(false);
+    expect(existsSync(join(ws, "team"))).toBe(true);
+  });
+
+  it("caps an upload rather than committing a video into every machine in the company", async () => {
+    const app = handler();
+    const res = await fs(app, "file", { path: "team/huge.bin", base64: "A".repeat(12_000_001) });
+    expect(res.status).toBe(400);
+    expect(existsSync(join(ws, "team", "huge.bin"))).toBe(false);
   });
 
   it("teaches a verb: POST /api/skill writes+links it, GET reads it back, /api/skills lists it", async () => {

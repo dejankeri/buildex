@@ -139,6 +139,13 @@ export interface DaemonDeps {
   vault?: VaultReader;
   /** Write a markdown doc into the brain (path-guarded) and commit it. Powers the markdown editor. */
   saveDoc?: (path: string, content: string) => void;
+  /** Create/delete files and folders from the Files panel (path-guarded, commits like any write).
+   *  Each op throws a human-readable Error the route turns into a 400 the panel can show verbatim. */
+  fsOps?: {
+    mkdir(path: string): void;
+    create(path: string, content: string, base64?: string): void;
+    remove(path: string): void;
+  };
   /** The mini-app bridge - relays agent commands to an open mini-app window. */
   appBus?: AppBus;
   /** The Apps surface catalog - deterministic list rendered from repo state (invariant 9). */
@@ -154,7 +161,9 @@ export interface DaemonDeps {
   /** The App Store - the capability-pack catalog + one-click install (composes app/skill/mcp/policy). */
   packStore?: {
     list(): PackMeta[];
-    install(id: string, target: string): InstallResult;
+    /** Install a pack. No target: the app face goes to the operator's private root, the skills and
+     *  policy to the team brain as company rules (see brain/catalog.ts installPack). */
+    install(id: string): InstallResult;
     uninstall(id: string, target: string): InstallResult;
     /** Save (key set) or clear (key null) a pack's API key in the keychain and re-pin its MCP entry.
      *  For a `mcp-bearer` pack this switches it between OAuth (gateway) and the pasted-key direct pin. */
@@ -348,20 +357,23 @@ export function createDaemon(deps: DaemonDeps): Handler {
     }
     if (method === "POST" && deps.packStore && (path === "/api/catalog/install" || path === "/api/catalog/uninstall")) {
       const b = await body<{ id?: string; target?: string }>(req, { id: "string", target: "string" });
-      if (!b.id || (b.target !== "team" && b.target !== "private")) {
-        return json({ error: "id and target (team|private) required" }, 400);
-      }
       const installing = path.endsWith("/install");
+      // Install takes NO target: the scope is fixed by the model, not chosen per install (the app face
+      // is yours, the skills + policy are the company's - see installPack). Uninstall still names the
+      // root to clean, and defaults to the operator's own; "core" stays rejected before any approval.
+      const target = b.target ?? "private";
+      if (!b.id || (target !== "team" && target !== "private")) {
+        return json({ error: installing ? "id required" : "id and target (team|private) required" }, 400);
+      }
       // Human-gate every pack mutation through the approval broker (invariant 5) - so no loopback
       // caller (incl. the agent) can install/uninstall without the operator's tap in the Pending tray.
       const { decision } = deps.broker.request({
         name: installing ? "Install app pack" : "Uninstall app pack",
-        input: { id: b.id, target: b.target },
+        input: installing ? { id: b.id } : { id: b.id, target },
       });
       if ((await decision) !== "approve") return json({ error: installing ? "install declined" : "uninstall declined" }, 403);
       try {
-        const run = installing ? deps.packStore.install : deps.packStore.uninstall;
-        return json(run(b.id, b.target));
+        return json(installing ? deps.packStore.install(b.id) : deps.packStore.uninstall(b.id, target));
       } catch (e) {
         const msg = e instanceof Error ? e.message : "install failed";
         return json({ error: msg }, /^unknown pack:/.test(msg) ? 404 : 400);
@@ -548,6 +560,23 @@ export function createDaemon(deps: DaemonDeps): Handler {
         return json({ ok: true, path: b.path });
       } catch (e) {
         return json({ error: e instanceof Error ? e.message : "save failed" }, 400);
+      }
+    }
+    // The Files panel's create/delete surface. One shape for all three: {path} plus, for a new file,
+    // either `content` (a new document) or `base64` (an upload). Failures come back as a 400 whose
+    // message is written for the operator, because the panel shows it as-is.
+    if (method === "POST" && deps.fsOps && (path === "/api/fs/folder" || path === "/api/fs/file" || path === "/api/fs/delete")) {
+      const b = await body<{ path: string; content?: string; base64?: string }>(req, { path: "string!", content: "string", base64: "string" });
+      // ~9 MB of bytes. A brain is documents; a cap keeps one stray drag-and-drop from committing a
+      // video into a repo that syncs to every machine in the company.
+      if (b.base64 && b.base64.length > 12_000_000) return json({ error: "that file is too large (9 MB max)" }, 400);
+      try {
+        if (path === "/api/fs/folder") deps.fsOps.mkdir(b.path);
+        else if (path === "/api/fs/file") deps.fsOps.create(b.path, b.content ?? "", b.base64);
+        else deps.fsOps.remove(b.path);
+        return json({ ok: true, path: b.path });
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "failed" }, 400);
       }
     }
     if (method === "GET" && deps.vault && path === "/api/history") {
@@ -817,7 +846,7 @@ class BodyError extends Error {}
 // daemon depends on those modules by interface only, so the literal lists live here.
 const PROJECT_ITEM_SHAPE: BodyShape = {
   type: { enum: ["chat", "browser", "doc", "map", "app"], required: true },
-  sessionId: "string", url: "string", path: "string", title: "string", repo: "string", name: "string",
+  sessionId: "string", url: "string", path: "string", title: "string", repo: "string", name: "string", app: "string",
 };
 const CADENCES = ["hourly", "daily", "weekly"] as const;
 

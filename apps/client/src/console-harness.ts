@@ -70,26 +70,31 @@ const bundle = scriptSrcs
 const EXPOSE = [
   // shared state + micro-helpers (const/let) + the safe DOM builder (dom.js)
   "S", "tabSeq", "$", "$$", "elt", "ago", "esc", "escAttr", "md", "mdBlocks", "IS_MAC", "ADD_ACTIONS", "el", "txt", "frag",
-  "SLASH_COMMANDS", "REATTACH_POLL_MS",
+  "SLASH_COMMANDS", "REATTACH_POLL_MS", "APPS_VISIBLE",
   // function declarations (all of them)
   "activateTab", "addTab", "addToActiveProject", "agentTurn", "appConn", "boot", "brainNodes", "btime",
   "buildAppPane", "buildBrainSvg", "buildBrowserPane", "buildChatPane", "buildComposer", "buildStorePane",
   "chatTitle", "checkOnboarding", "clockTime", "copyText", "editAndResend", "enhanceCode", "flashLabel",
   "follower", "mdInto", "reattach", "repoRelative", "retryLast", "stopTurn", "userTurn",
-  "closeMenus", "closeTab", "confirmPending", "connectApp", "ensureDefaultProject", "fillSyncLog",
-  "findPendingCard", "flattenTree", "fmtNext", "fmtReset", "folderPaths", "getJSON", "hideProjectStart",
+  "closeMenus", "closeTab", "requestCloseTab", "confirmAction", "deleteChatFromSession", "confirmPending", "connectApp", "ensureDefaultProject", "fillSyncLog",
+  "findPendingCard", "flattenTree", "fmtNext", "fmtReset", "getJSON", "hideProjectStart",
   "injectApproval", "kbdLabel", "loadAgentView", "loadBrain", "loadDoc", "loadMap", "loadSession", "loadStorePane",
   "loadTree", "navGo", "navRecord", "navUpdate", "newConversation", "newProject", "offerConnect",
   "onAddShortcut", "openAddAppForm", "openAddMenu", "openAppTab", "openAutomationEditor",
   "openBrainTab", "openBrowserTab", "openChatTab", "openConnectorEditor", "openDocTab", "openFilesSettings",
-  "openFolderPicker", "openMapTab", "openMarkdownEditor", "openMcpEditor", "openProjectItem", "openSaveMenu",
-  "openSkillEditor", "openSkillTab", "openStoreTab", "parseSkill", "pickTarget", "postJSON", "projectMenu",
+  "openMapTab", "openMarkdownEditor", "openMcpEditor", "openProjectItem", "openSaveMenu", "openSaveDialog", "locationLabel",
+  "openSkillEditor", "openSkillTab", "openStoreTab", "parseSkill", "postJSON", "projectMenu",
   "refreshOrgs", "renderOrgSwitcher", "toggleOrgMenu", "switchOrg", "createOrg",
-  "projectRename", "rApps", "rAuto", "rFiles", "rGateway", "rPending", "rSkills", "rSyncLog", "refreshApps",
-  "refreshPending", "refreshProjects", "refreshUsage", "removeProjectItem", "renderAgentHealth", "renderBrain",
+  "projectRename", "projectStatus", "rAuto", "rFiles", "rGateway", "rPending", "rSkills", "rSyncLog", "refreshApps",
+  "refreshPending", "refreshProjects", "refreshUsage", "removeProjectItem", "renderAgentHealth", "rootSlot", "toggleTreeNode", "treeActions", "wireTreeActions", "openFileMenu", "openTreeMoreMenu", "uploadIntoFolder", "fsDo", "promptAction", "toast", "renderBrain",
   "renderBrainRail", "renderConnectorEditor", "renderHistory", "renderMcpEditor", "renderPending",
   "renderTabbar", "renderTree", "reorderTab", "resolveCard", "runSkill", "sendPrompt", "setMsg", "setSync",
   "showProjectStart", "startApiKey", "clearApiKey", "startAppHost", "startBrainFlow", "startInstall", "startUninstall", "storeNotice",
+  // Apps & Tools rail: manual order, the visible cap, edit mode, and the chat-side connect gate.
+  "appOrderKey", "savedAppOrder", "saveAppOrder", "orderApps", "renderApps", "appRow", "wireAppDrag", "toggleAppsEdit",
+  "openAppChat", "openConnectDialog", "appConnectRoutes", "connectAppApi",
+  "appGateActive", "renderAppGate", "clearAppGate", "syncAppConn", "renderCtxChip",
+  "appGlyph", "mountAppLogo", "openAppSettings", "appSettingsBody",
   "stripFrontmatter", "switchRight", "switchToProject", "wireAppBridge", "wysiInline", "wysiToMd",
 ];
 const SHIM = ";globalThis.__c = { " + EXPOSE.join(", ") + " };";

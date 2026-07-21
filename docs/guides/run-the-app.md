@@ -35,12 +35,13 @@ npm run demo:app
 
 ## What you'll see
 
-- **Left rail — Sessions**: your work, grouped into projects. Each holds chats, open docs, and the map.
+- **Left rail — Sessions**: your work, grouped into sessions. A session lists its **chats**; docs,
+  browsers and the map you open in it are tabs in the center, not rail entries.
 - **Center**: the active session — a chat with your company brain, or a rendered/editable document.
 - **Left rail — Apps**: the tools installed for this company, and the **Store** to add more.
 - **Right rail**: **Pending** (outward actions waiting for your approval), **Files** (the whole
-  brain), **Skills** (verbs the agent can run), and **Apps & connectors** — a pointer to the Store;
-  you manage installed apps from the ⊕ **Store** in the left rail.
+  brain), and **Skills** (verbs the agent can run). Apps are managed in the left rail and the
+  ⊕ **Store** - there is no separate apps panel on the right.
 
 Open a session, edit a document, watch the **History** on any doc — every change is a git commit.
 

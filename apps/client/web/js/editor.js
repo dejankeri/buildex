@@ -1,10 +1,10 @@
 "use strict";
-// Doc viewer + the WYSIWYG markdown editor (folder picker, save menu).
+// Doc viewer + the WYSIWYG markdown editor (Save dialog: folder tree + name).
 //
 // Part of the operator console (web/index.html). Classic script — loaded in order via
 // <script src>, sharing one global scope. NOT an ES module.
-// State it reads on the shared global `S`: `S.config` (roots, for the folder list), `S.tree` (the
-// file tree the folder picker walks), `S.rightTab` (which right panel is showing, to know whether
+// State it reads on the shared global `S`: `S.config` (roots, for the default folder), `S.tree` (the
+// file tree the Save dialog walks), `S.rightTab` (which right panel is showing, to know whether
 // the file tree needs a repaint after a save).
 
 /* doc pane */
@@ -126,10 +126,11 @@ async function openMarkdownEditor(path, content) {
   tab.pane.className = "pane mdeditpane on";
   const roots = (S.config.roots || []).map((r) => r.name).filter((n) => n !== "core");
   let folder = (tab.path ? tab.path.slice(0, tab.path.lastIndexOf("/")) : (roots[0] || ""));
-  // new docs get a folder picker + name input; existing docs just show their path.
-  const pathRow = isNew
-    ? '<div class="mdpath"><button class="folderbtn" title="Choose a folder"><span class="ficon">📁</span><span class="foldertxt">' + esc(folder || "choose folder") + '</span><span class="fcaret">▾</span></button><span class="pslash">/</span><input class="f-name" placeholder="untitled.md"></div>'
-    : '<div class="mdpath"><span class="mono">' + esc(path) + '</span></div>';
+  // The header states WHAT this document is, and nothing else. An unsaved document is "New document";
+  // a saved one shows its name. Where it lives is a question for the moment you save it - asking it
+  // up front, as a folder-path field, made the first thing an operator saw a thing they couldn't answer.
+  const pathRow = '<div class="mdpath"><span class="mdname">' + esc(isNew ? "New document" : path.split("/").pop()) + "</span>"
+    + '<span class="mdwhere">' + (isNew ? "not saved yet" : esc(locationLabel(path.slice(0, path.lastIndexOf("/"))))) + "</span></div>";
   const tb = '<div class="mdtoolbar">'
     + '<button class="mtb" data-md="para" title="Normal text">¶</button><button class="mtb" data-md="h1" title="Heading 1">H1</button><button class="mtb" data-md="h2" title="Heading 2">H2</button><button class="mtb" data-md="h3" title="Heading 3">H3</button><span class="mtsep"></span>'
     + '<button class="mtb" data-md="bold" title="Bold (⌘B)"><b>B</b></button><button class="mtb" data-md="italic" title="Italic (⌘I)"><i>I</i></button><button class="mtb" data-md="code" title="Inline code">&lt;&gt;</button><span class="mtsep"></span>'
@@ -203,71 +204,133 @@ async function openMarkdownEditor(path, content) {
       await loadTree();
       if (S.rightTab === "files") renderTree();
       const head = $(".mdpath", tab.pane);
-      if (head) head.innerHTML = '<span class="mono">' + esc(savePath) + '</span>'; // becomes an existing file
+      if (head) head.innerHTML = '<span class="mdname">' + esc(savePath.split("/").pop()) + '</span><span class="mdwhere">' + esc(locationLabel(folder)) + "</span>";
     } catch (e) {
       setMsg(tab, String(e && e.message || e), "bad");
     }
   };
 
-  /**
-   * Resolve the target path for a fresh document from the folder picker + name input.
-   * @returns {string|null} the path to save to, or null (with a status message set) if incomplete.
-   */
-  const newPath = () => {
-    if (tab.path) return tab.path;
-    if (!folder) { setMsg(tab, "Choose a folder.", "bad"); return null; }
-    let rel = ($(".f-name", tab.pane).value || "").trim();
-    if (!rel) { setMsg(tab, "Enter a file name.", "bad"); return null; }
-    if (!/\.md$/.test(rel)) rel += ".md";
-    return folder + "/" + rel;
+  // Save on a document that has never been saved asks WHERE, the way every editor does: a dialog with
+  // the folder tree and a name. A document that already has a home just saves.
+  $(".save", tab.pane).onclick = () => {
+    if (tab.path) return doSave(tab.path);
+    openSaveDialog({ folder, name: "", onSave: doSave });
   };
-  $(".save", tab.pane).onclick = () => { const p = newPath(); if (p) doSave(p); };
-  $(".savecaret", tab.pane).onclick = (e) => { e.stopPropagation(); openSaveMenu(tab, e.currentTarget, () => folder, doSave); };
-  const fb = $(".folderbtn", tab.pane);
-  if (fb) fb.onclick = (e) => { e.stopPropagation(); openFolderPicker(e.currentTarget, folder, (chosen) => { folder = chosen; $(".foldertxt", tab.pane).textContent = chosen; }); };
+  $(".savecaret", tab.pane).onclick = (e) => {
+    e.stopPropagation();
+    openSaveMenu(tab, e.currentTarget, () => folder, doSave);
+  };
 }
 
 /**
- * Collect every directory path in a file-tree, depth-first, into `out`.
- * @param {object[]} nodes - tree nodes ({type, path, children}).
- * @param {string[]} out - the accumulator, returned for convenience.
- * @returns {string[]} `out`, with all dir paths pushed onto it.
+ * Human-readable location for a repo-relative folder: the brain it belongs to, then the path inside
+ * it. The operator never sees the repo's real name ("team-acme") - the Files panel doesn't show it
+ * either, and a save dialog is the worst possible place to introduce a word they don't know.
+ * @param {string} folder - repo-relative folder path ("team-acme/clients/globex").
+ * @returns {string} e.g. "Company · clients/globex", or just "Company" at the root.
  */
-function folderPaths(nodes, out) {
-  (nodes || []).forEach((n) => {
-    if (n.type === "dir") { out.push(n.path); folderPaths(n.children, out); }
-  });
-  return out;
+function locationLabel(folder) {
+  if (!folder) return "";
+  const parts = String(folder).split("/");
+  const brain = { team: "Company", private: "Private", core: "BuildEx library" }[rootSlot(parts[0])] || parts[0];
+  const rest = parts.slice(1).join("/");
+  return rest ? brain + " · " + rest : brain;
 }
 
 /**
- * Open a searchable folder-picker dropdown anchored to `anchor`.
- * @param {HTMLElement} anchor - the element the dropdown is appended beside.
- * @param {string} current - the currently-selected folder (highlighted in the list).
- * @param {function(string)} onPick - called with the chosen folder path.
+ * The Save dialog: pick a folder from the tree, type a name, save. This is the ONE place a document's
+ * location is decided, and it is deliberately the same shape every desktop app uses - the brains are
+ * named ("Company", "Private"), the read-only library is absent (saving there would be refused), and
+ * an existing name is called out BEFORE the save rather than after it overwrites something.
+ * @param {{folder?:string, name?:string, onSave:(path:string)=>void}} o
  */
-function openFolderPicker(anchor, current, onPick) {
+function openSaveDialog(o) {
   closeMenus();
-  const folders = folderPaths(S.tree, []).filter((p) => p.split("/")[0] !== "core");
-  const m = elt("div", "dropdown folderpick");
-  m.innerHTML = '<input class="ffind" placeholder="Find a folder…"><div class="flist"></div>';
-  const list = $(".flist", m), inp = $(".ffind", m);
-  // (re)draw the list, filtered by the typed substring `f`.
-  const draw = (f) => {
-    list.innerHTML = "";
-    const shown = folders.filter((p) => !f || p.toLowerCase().includes(f));
-    if (!shown.length) { list.innerHTML = '<div class="amini">No folders. Type a path when you name the file.</div>'; }
-    shown.forEach((p) => {
-      const b = elt("button", (p === current ? "sel" : null), '<span class="ficon">📁</span>' + esc(p));
-      b.onclick = () => { onPick(p); closeMenus(); };
-      list.appendChild(b);
-    });
+  const bd = elt("div", "ovbackdrop");
+  bd.innerHTML = '<div class="ovcard savedlg"><h3 class="ovh">Save document</h3>'
+    + '<div class="sd-tree"></div>'
+    + '<label class="ovlabel">File name<input class="ovinput sd-name" placeholder="untitled.md"></label>'
+    + '<p class="sd-where"></p>'
+    + '<div class="ovrow"><button class="mini ghost ovno">Cancel</button><button class="mini ovyes">Save</button></div></div>';
+  document.body.appendChild(bd);
+  const host = $(".sd-tree", bd), nameEl = $(".sd-name", bd), whereEl = $(".sd-where", bd);
+  // Writable brains only - core is read-only, and the derived agent surface isn't a place at all.
+  const writable = (S.tree || []).filter((n) => rootSlot(n.name) !== "core");
+  let folder = o.folder && writable.some((r) => String(o.folder).split("/")[0] === r.name) ? o.folder : (writable[0] || {}).name || "";
+  const open = {}; // which folders are expanded in THIS dialog (independent of the Files panel)
+  String(folder).split("/").reduce((acc, seg) => { const p = acc ? acc + "/" + seg : seg; open[p] = true; return p; }, "");
+
+  /** Find a node by path anywhere in the tree (the dialog needs the chosen folder's children). */
+  const findNode = (nodes, path) => {
+    for (const n of nodes || []) {
+      if (n.path === path) return n;
+      const hit = n.children ? findNode(n.children, path) : null;
+      if (hit) return hit;
+    }
+    return null;
   };
-  inp.oninput = () => draw(inp.value.toLowerCase().trim());
-  draw("");
-  anchor.parentElement.appendChild(m);
-  m.dataset.menu = "1";
-  setTimeout(() => inp.focus(), 0);
+  /** Would saving replace something? Saving IS an overwrite (/api/doc writes), so say so first. */
+  const exists = () => {
+    const nm = fileName();
+    const dir = findNode(S.tree, folder);
+    return !!(nm && dir && (dir.children || []).some((c) => c.type === "file" && c.name === nm));
+  };
+  const fileName = () => {
+    const v = (nameEl.value || "").trim();
+    if (!v) return "";
+    return /\.[a-z0-9]+$/i.test(v) ? v : v + ".md";
+  };
+  const paint = () => {
+    host.innerHTML = "";
+    const draw = (nodes, parent, depth) => {
+      (nodes || []).filter((n) => n.type === "dir").forEach((n) => {
+        const kids = (n.children || []).filter((c) => c.type === "dir");
+        const row = elt("div", "sd-row" + (n.path === folder ? " on" : ""));
+        row.style.paddingLeft = 6 + depth * 14 + "px";
+        // A root is labelled by its brain; everything under it by its own folder name.
+        row.innerHTML = '<span class="sd-caret">' + (kids.length ? (open[n.path] ? "▼" : "▸") : "") + "</span>"
+          + '<span class="sd-n">' + esc(depth === 0 ? locationLabel(n.name) : n.name) + "</span>";
+        $(".sd-caret", row).onclick = (e) => {
+          e.stopPropagation();
+          open[n.path] = !open[n.path];
+          paint();
+        };
+        row.onclick = () => {
+          folder = n.path;
+          open[n.path] = true;
+          paint();
+        };
+        parent.appendChild(row);
+        if (open[n.path] && kids.length) draw(kids, parent, depth + 1);
+      });
+    };
+    draw(writable, host, 0);
+    const nm = fileName();
+    whereEl.className = "sd-where" + (exists() ? " warn" : "");
+    whereEl.textContent = exists()
+      ? "“" + nm + "” already exists in " + locationLabel(folder) + " - saving replaces it."
+      : "Saving to " + locationLabel(folder) + (nm ? " / " + nm : "");
+  };
+  const close = () => bd.remove();
+  const go = () => {
+    const nm = fileName();
+    if (!nm) return nameEl.focus();
+    close();
+    o.onSave(folder + "/" + nm);
+  };
+  nameEl.value = o.name || "";
+  nameEl.oninput = paint;
+  nameEl.onkeydown = (e) => {
+    if (e.key === "Enter") go();
+    if (e.key === "Escape") close();
+  };
+  bd.onclick = (e) => {
+    if (e.target === bd) close();
+  };
+  $(".ovno", bd).onclick = close;
+  $(".ovyes", bd).onclick = go;
+  paint();
+  nameEl.focus();
 }
 
 /**
@@ -286,7 +349,8 @@ function openSaveMenu(tab, anchor, getFolder, doSave) {
     b.onclick = () => { closeMenus(); fn(); };
     m.appendChild(b);
   };
-  item("Save as…", () => openFolderPicker(anchor, getFolder(), (chosen) => { const base = tab.path ? tab.path.split("/").pop() : "untitled.md"; const name = window.prompt("Save as - file name", base); if (!name) return; let rel = name.trim(); if (!/\.md$/.test(rel)) rel += ".md"; doSave(chosen + "/" + rel); }));
+  // "Save as…" is the same dialog, pre-filled with where this document already lives.
+  item("Save as…", () => openSaveDialog({ folder: getFolder(), name: tab.path ? tab.path.split("/").pop() : "", onSave: doSave }));
   anchor.parentElement.appendChild(m);
   m.dataset.menu = "1";
 }

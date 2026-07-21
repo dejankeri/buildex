@@ -13,6 +13,26 @@
   .tree{font-size:12.5px;} .tnode{user-select:none;} .trow{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:6px;cursor:pointer;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;} .trow:hover{background:var(--panel-2);color:var(--ink);} .trow .tg{width:14px;text-align:center;color:var(--faint);flex:none;} .tchildren{margin-left:12px;border-left:1px solid var(--line);padding-left:4px;} .tnode.closed>.tchildren{display:none;} .tnode.closed>.trow .caret{transform:rotate(-90deg);} .trow .caret{font-size:8px;color:var(--faint);width:9px;transition:transform .1s;}
   .trow .tnote{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint);background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:0 5px;flex:none;}
   .tnode.agent>.trow{color:var(--brand);font-weight:600;}
+  /* Repo roots render as SECTIONS, not folders: the boundary between what the team can see and what
+     only the operator can see is the most important fact in this panel, so it is a heading with the
+     rule spelled out - never a directory name like "team-acme" the operator has to decode. */
+  .tsec{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 7px;margin:14px 2px 4px;padding-bottom:5px;border-bottom:1px solid var(--line);}
+  .tsec:first-child{margin-top:2px;}
+  .tsec .tsec-t{font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:700;color:var(--ink);}
+  .tsec .tsec-s{font-size:10.5px;color:var(--faint);}
+  .tsec-b{margin-top:2px;}
+  /* Create/delete affordances. They hide until the row is hovered (or one of them has focus, so the
+     keyboard reaches them too) - a file tree should read as content, not as a toolbar. */
+  .tacts{margin-left:auto;display:flex;align-items:center;gap:1px;flex:none;opacity:0;transition:opacity .1s;}
+  .trow:hover .tacts,.tsec:hover .tacts,.tacts:focus-within{opacity:1;}
+  .tact{width:20px;height:19px;border:0;background:none;border-radius:5px;color:var(--faint);font-size:12px;line-height:1;padding:0;display:grid;place-items:center;cursor:pointer;}
+  .tact:hover{background:var(--elevate);color:var(--ink);}
+  .tact svg{width:13px;height:13px;display:block;}
+  .tsec .tacts{margin-left:auto;}
+  /* the machinery sections (core, .claude) sit behind the "Show everything" switch - dimmed, because
+     they are things to inspect, not files to work in */
+  .tsec.tsec-sys .tsec-t{color:var(--muted);}
+  .tsec.tsec-sys+.tsec-b{opacity:.82;}
   .aghealth{margin:8px 0 6px;padding:8px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--panel-2);font-size:11.5px;color:var(--muted);display:flex;flex-direction:column;gap:3px;} .aghealth b{color:var(--ink);font-weight:650;} .aghealth .agline{white-space:normal;line-height:1.5;}
   .ovtoggle{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);margin:2px 0 6px;cursor:pointer;} .ovtoggle input{width:15px;height:15px;accent-color:var(--brand);} .ovtoggle code{font-family:var(--mono);font-size:.9em;background:var(--panel-2);padding:1px 5px;border-radius:4px;}
   .rcard{border:1px solid var(--line);border-radius:10px;background:var(--panel-2);padding:11px 12px;margin-bottom:8px;} .rcard .cn{font-weight:650;font-size:13px;display:flex;align-items:center;gap:7px;} .rcard .cd{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.5;} .pill{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:5px;background:var(--elevate);color:var(--muted);} .pill.ok{background:var(--brand-tint);color:var(--brand);}

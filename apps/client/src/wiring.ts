@@ -210,6 +210,54 @@ export function buildClientHandler(config: ClientConfig): Handler {
     scheduler.touch(repoDir); // schedule a debounced commit+push - the file is already saved on disk
   };
 
+  // --- The Files panel's create/delete surface -------------------------------------------------
+  // The operator organises their own brain from the console: new folder, new document, upload, and
+  // delete. Every op resolves through the SAME confinement as reads (splitRepoPath + resolveWithin)
+  // and then commits via the scheduler, so a file created here is a git commit like any other.
+  //
+  // Three refusals, all deliberate:
+  //  - `core` is the shared BuildEx library: it ships with the app and is regenerated, so a write
+  //    there would be silently reverted. Better to say no than to lose the operator's work.
+  //  - a repo root itself is never deletable - that's an org-level act, not a file-manager one.
+  //  - names starting with "." are refused: the tree hides dotfiles, so such a file would vanish
+  //    the instant it was created (invariant #8 - never leave the operator's work invisible).
+  const fsTarget = (docPath: string): { repoDir: string; rel: string; full: string } => {
+    const { repoDir, rel } = splitRepoPath(config.roots, docPath);
+    if (!repoDir) throw new Error(`path must be inside a repo (e.g. team/notes.md): ${docPath}`);
+    if (!rel) throw new Error("that is a repo, not a file or folder inside one");
+    if (docPath.split("/")[0] === "core") throw new Error("the shared BuildEx library is read-only");
+    if (rel.split("/").some((seg) => seg.startsWith("."))) throw new Error("names cannot start with a dot");
+    return { repoDir, rel, full: resolveWithin(repoDir, rel) };
+  };
+  const fsOps = {
+    /** Create a folder. A `.gitkeep` goes with it: git tracks files, not directories, so without one
+     *  an empty folder would exist locally and be gone on the next machine that syncs. */
+    mkdir: (path: string): void => {
+      const { repoDir, full } = fsTarget(path);
+      if (existsSync(full)) throw new Error("that already exists");
+      mkdirSync(full, { recursive: true });
+      writeFileSync(join(full, ".gitkeep"), "");
+      scheduler.touch(repoDir);
+    },
+    /** Create a file. Refuses to overwrite - creating is never destructive; editing is a separate act.
+     *  `base64` carries an upload's bytes; otherwise `content` is written as text. */
+    create: (path: string, content: string, base64?: string): void => {
+      const { repoDir, full } = fsTarget(path);
+      if (existsSync(full)) throw new Error("that already exists");
+      mkdirSync(dirname(full), { recursive: true });
+      writeFileSync(full, base64 != null ? Buffer.from(base64, "base64") : content);
+      scheduler.touch(repoDir);
+    },
+    /** Delete a file or a whole folder. The commit that follows is the undo: the content stays in
+     *  git history, so "delete" here is never the last copy going away. */
+    remove: (path: string): void => {
+      const { repoDir, full } = fsTarget(path);
+      if (!existsSync(full)) throw new Error("that no longer exists");
+      rmSync(full, { recursive: true, force: true });
+      scheduler.touch(repoDir);
+    },
+  };
+
   const catalog: Catalog = {
     skills: () => listSkills(join(config.workspace, ".claude", "skills")),
     connectors: () => listConnectors(config.roots),
@@ -310,6 +358,13 @@ export function buildClientHandler(config: ClientConfig): Handler {
       writeFileSync(f, JSON.stringify(policy, null, 2) + "\n");
     },
   };
+  /** Schedule a commit+push for each named root (real repo names, duplicates and absentees ignored). */
+  const touchRoots = (...names: Array<string | undefined>): void => {
+    for (const name of [...new Set(names)]) {
+      const root = name ? config.roots.find((r) => r.name === name) : undefined;
+      if (root) scheduler.touch(root.dir);
+    }
+  };
   // Late-bound (assigned in the connector-gateway block below, which is set up after packStore): when
   // a pack with a gateway-routable MCP face is installed/removed, reconcile the gateway's providers so
   // its tools connect (or leave) immediately. Undefined when the gateway is off - then packs fall back
@@ -366,20 +421,22 @@ export function buildClientHandler(config: ClientConfig): Handler {
       keychain.delete(provisionKeychainKey(id));
       keychain.delete(provisionBaseKeychainKey(id));
     },
-    install: (id: string, target: string) => {
-      const res = installPack(catalogSource, config.roots, { id, target }, installDeps);
-      const root = config.roots.find((r) => r.name === target);
+    install: (id: string) => {
+      const res = installPack(catalogSource, config.roots, { id }, installDeps);
       regenConfig();
       void syncGatewayProviders?.(); // register the pack's MCP as a gateway provider
-      if (root) scheduler.touch(root.dir); // debounced commit+push of the new app/skill/policy files
+      // An install now writes to TWO roots (the app face to private, the company rules to team), so
+      // both are scheduled. Match on the REAL root names installPack returns, never on the slot the
+      // caller used: a provisioned workspace names its roots "team-acme"/"private-you", so a slot
+      // lookup found nothing and the install silently missed its commit+push until the next pull tick.
+      touchRoots(res.target, res.rulesTarget); // debounced commit+push of the new app/skill/policy files
       return res;
     },
     uninstall: (id: string, target: string) => {
       const res = uninstallPack(catalogSource, config.roots, { id, target }, installDeps);
-      const root = config.roots.find((r) => r.name === target);
       regenConfig();
       void syncGatewayProviders?.(); // drop the pack's gateway provider
-      if (root) scheduler.touch(root.dir);
+      touchRoots(res.target);
       return res;
     },
     setApiKey: (id: string, key: string | null) => {
@@ -718,6 +775,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
     usageFn,
     vault,
     saveDoc,
+    fsOps,
     catalog,
     skillEditor,
     automations,
