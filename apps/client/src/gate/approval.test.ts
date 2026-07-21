@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ApprovalBroker } from "./approval.js";
+import { ApprovalBroker, type ApprovalEvent, type CardOrigin } from "./approval.js";
 
 function makeBroker() {
   let n = 0;
@@ -72,6 +72,60 @@ function makeTtlBroker(ttlMs: number) {
   });
   return { broker, fireAll: () => [...timers.values()].forEach((fn) => fn()), armed: () => timers.size };
 }
+
+describe("ApprovalBroker active origin (which chat a card belongs to)", () => {
+  const chat = (sessionId: string): CardOrigin => ({ kind: "chat", sessionId });
+
+  it("stamps a card with the single active origin", () => {
+    const { broker } = makeBroker();
+    broker.pushOrigin(chat("s1"));
+    const { card } = broker.request({ name: "Bash", input: {} });
+    expect(card.origin).toEqual({ kind: "chat", sessionId: "s1" });
+  });
+
+  it("leaves origin undefined when nothing is active", () => {
+    const { broker } = makeBroker();
+    const { card } = broker.request({ name: "Bash", input: {} });
+    expect(card.origin).toBeUndefined();
+  });
+
+  it("leaves origin undefined when two runs overlap (ambiguous → tray-only, never misrouted)", () => {
+    const { broker } = makeBroker();
+    const a = chat("s1");
+    const b = chat("s2");
+    broker.pushOrigin(a);
+    broker.pushOrigin(b);
+    expect(broker.request({ name: "Bash", input: {} }).card.origin).toBeUndefined();
+    broker.popOrigin(b); // one run ends; the other is now unambiguous again
+    expect(broker.request({ name: "Bash", input: {} }).card.origin).toEqual({ kind: "chat", sessionId: "s1" });
+  });
+
+  it("an explicit origin on request overrides the active stack", () => {
+    const { broker } = makeBroker();
+    broker.pushOrigin(chat("s1"));
+    const { card } = broker.request({ name: "Bash", input: {} }, { kind: "automation", sessionId: "auto1" });
+    expect(card.origin).toEqual({ kind: "automation", sessionId: "auto1" });
+  });
+});
+
+describe("ApprovalBroker event subscription (drives the SSE push)", () => {
+  it("emits open on request and resolve on resolve, and stops after unsubscribe", async () => {
+    const { broker } = makeBroker();
+    const events: ApprovalEvent[] = [];
+    const off = broker.subscribe((ev) => events.push(ev));
+
+    const { card, decision } = broker.request({ name: "WebFetch", input: {} });
+    expect(events).toEqual([{ type: "open", card }]);
+
+    broker.resolve(card.id, "approve");
+    await decision;
+    expect(events).toEqual([{ type: "open", card }, { type: "resolve", id: card.id, verdict: "approve" }]);
+
+    off();
+    broker.request({ name: "Bash", input: {} });
+    expect(events).toHaveLength(2); // no further delivery after unsubscribe
+  });
+});
 
 describe("ApprovalBroker TTL auto-deny", () => {
   it("auto-denies a card whose timer fires before any operator taps", async () => {

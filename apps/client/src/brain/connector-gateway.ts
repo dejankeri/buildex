@@ -1,10 +1,12 @@
 // Client-side wiring of the connector MCP gateway. The gateway's "human tap" for a gated
-// (outward) tool call IS the existing ApprovalBroker - so an agent's `gmail__send` opens a real
-// Pending card, and the send happens only when the operator approves it (invariant 5, unchanged).
+// (outward) tool call IS the existing ApprovalBroker - so an agent's `gmail__send` raises a real
+// approval card, and the send happens only when the operator approves it (revised invariant 5:
+// wide autonomy, a few outward actions gated).
 //
 // The hub is the lifecycle: connect a provider over OAuth+MCP, register its tools into the gateway
-// (reads pass, writes gate), and write the per-workspace .mcp.json so the operator's agent picks up
-// the gateway. Transport + OAuth are injected (openProvider) so this is hermetically testable.
+// (routine calls pass, outward calls gate by intent), and write the per-workspace .mcp.json so the
+// operator's agent picks up the gateway. Transport + OAuth are injected (openProvider) so this is
+// hermetically testable.
 import {
   completeAuth,
   ConnectorGateway,
@@ -43,7 +45,12 @@ export interface ProviderSpec {
   /** The provider's MCP endpoint (streamable HTTP). */
   url: string;
   scopes?: string[];
+  /** The OPERATOR's tighten/widen overrides. Persisted in the keychain (see SPECS_KEY). */
   policy?: ConnectorPolicy;
+  /** The pack-shipped classification baseline. Deliberately NOT persisted: it is re-read from the
+   *  bundled catalog on every sync, so a pack update that tightens a gate reaches providers that are
+   *  already connected instead of being frozen at whatever shipped when the operator first connected. */
+  basePolicy?: ConnectorPolicy;
 }
 
 export interface ConnectorStatus {
@@ -136,6 +143,7 @@ export class ConnectorGatewayHub {
       name: spec.name,
       url: spec.url,
       ...(spec.policy ? { policy: spec.policy } : {}),
+      ...(spec.basePolicy ? { basePolicy: spec.basePolicy } : {}),
       authProvider,
     };
     const res = await open(config);
@@ -211,8 +219,9 @@ export class ConnectorGatewayHub {
     return this.gateway.listInventory();
   }
 
-  /** Reclassify a tool (tighten-only, enforced in the engine). On success the new override is folded
-   *  into the persisted spec - in the keychain, never an agent-writable file - so it survives restart. */
+  /** Reclassify a tool (operator-adjustable both ways, enforced in the engine). On success the new
+   *  override is folded into the persisted spec - in the keychain, never an agent-writable file - so
+   *  it survives restart. */
   setPolicy(name: string, tool: string, kind: ToolState): { ok: boolean; reason?: string; policy?: ConnectorPolicy } {
     const r = this.gateway.setToolPolicy(name, tool, kind);
     if (r.ok) {
@@ -245,9 +254,22 @@ export class ConnectorGatewayHub {
     }
   }
 
+  /** Re-apply a pack's shipped baseline to a live provider (and its in-memory spec). The baseline is
+   *  never persisted, so this is how a catalog update reaches an already-connected provider. */
+  setBasePolicy(name: string, basePolicy: ConnectorPolicy | undefined): void {
+    const spec = this.specs.get(name);
+    if (spec) {
+      if (basePolicy) spec.basePolicy = basePolicy;
+      else delete spec.basePolicy;
+    }
+    this.gateway.setBasePolicy(name, basePolicy);
+  }
+
   private persistSpecs(): void {
     try {
-      this.deps.store.set(SPECS_KEY, JSON.stringify([...this.specs.values()]));
+      // basePolicy is stripped: it belongs to the bundled catalog, not the operator's trust store.
+      const persistable = [...this.specs.values()].map(({ basePolicy: _drop, ...s }) => s);
+      this.deps.store.set(SPECS_KEY, JSON.stringify(persistable));
     } catch {
       /* best-effort - a failed persist only costs reconnect-on-restart, never the live session */
     }

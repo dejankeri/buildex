@@ -15,7 +15,10 @@ export interface ProviderServerConfig {
   name: string;
   /** The provider's MCP endpoint (streamable HTTP). */
   url: string;
+  /** The operator's persisted overrides. */
   policy?: ConnectorPolicy;
+  /** The pack-shipped baseline, refreshed from the catalog on each sync (never persisted). */
+  basePolicy?: ConnectorPolicy;
   authProvider?: OAuthClientProvider;
 }
 
@@ -37,7 +40,7 @@ export async function openProvider(config: ProviderServerConfig, deps: OpenDeps 
     if (e instanceof UnauthorizedError) return { status: "needs-auth", transport };
     throw e;
   }
-  const connection = await providerFromClient(config.name, client, config.policy);
+  const connection = await providerFromClient(config.name, client, config.policy, config.basePolicy);
   return { status: "connected", connection, transport };
 }
 
@@ -63,5 +66,5 @@ export async function completeAuth(
   await (transport as StreamableHTTPClientTransport).finishAuth(code);
   const client = (deps.makeClient ?? (() => new Client({ name: "buildex-gateway", version: "0.0.0" })))();
   await client.connect(transport);
-  return providerFromClient(config.name, client, config.policy);
+  return providerFromClient(config.name, client, config.policy, config.basePolicy);
 }

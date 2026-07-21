@@ -28,12 +28,17 @@ describe("packs/core - every shipped verb passes the promotion checklist", () =>
 });
 
 describe("packs/core - the policy preset is well-formed", () => {
-  it("has allow/ask/deny lists and a default decision", () => {
+  it("is wide by default with only a few outward/destructive gates", () => {
     const preset = JSON.parse(readFileSync(join(CORE, "policy", "preset.json"), "utf8"));
     expect(Array.isArray(preset.allow)).toBe(true);
+    expect(Array.isArray(preset.ask)).toBe(true);
+    expect(Array.isArray(preset.deny)).toBe(true);
+    // wide autonomy: reads AND ordinary bash flow, unknown tools default to allow
     expect(preset.allow).toContain("Read");
-    expect(preset.ask).toContain("Bash");
-    expect(preset.deny).toContain("Bash(rm:*)");
-    expect(["allow", "ask", "deny"]).toContain(preset.default);
+    expect(preset.allow).toContain("Bash");
+    expect(preset.default).toBe("allow");
+    // only irreversible-destruction bash still waits for a human; nothing is hard-denied
+    expect(preset.ask).toContain("Bash(git reset --hard:*)");
+    expect(preset.deny).toEqual([]);
   });
 });

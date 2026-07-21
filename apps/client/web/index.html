@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="styles/layout.css">
 <link rel="stylesheet" href="styles/left-rail.css">
 <link rel="stylesheet" href="styles/middle.css">
+<link rel="stylesheet" href="styles/chat.css">
 <link rel="stylesheet" href="styles/doc-editor.css">
 <link rel="stylesheet" href="styles/panes.css">
 <link rel="stylesheet" href="styles/right-rail.css">
@@ -95,6 +96,10 @@
 
 <script src="md.js"></script>
 <script src="dom.js"></script>
+<!-- Vendored third party (BSD-3-Clause), served from 'self' because the CSP forbids a CDN. Every
+     call site guards on `typeof hljs`, so the console works with this file absent — see
+     web/vendor/README.md for the version, license, and integrity hash. -->
+<script src="vendor/highlight.min.js"></script>
 <script src="js/core.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/usage.js"></script>
@@ -108,6 +113,8 @@
 <script src="js/apps.js"></script>
 <script src="js/store.js"></script>
 <script src="js/navmenu.js"></script>
+<script src="js/chat-turn.js"></script>
+<script src="js/composer.js"></script>
 <script src="js/chat.js"></script>
 <script src="js/editor.js"></script>
 <script src="js/browser.js"></script>
@@ -117,6 +124,7 @@
 <script src="js/skills.js"></script>
 <script src="js/connectors.js"></script>
 <script src="js/pending.js"></script>
+<script src="js/approvals.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

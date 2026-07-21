@@ -23,7 +23,11 @@ export function createGatewayServer(
       name: t.name,
       description:
         (t.description ?? t.name) +
-        (t.kind === "gated" ? " - needs human approval (outward action; waits in the Pending tray)" : ""),
+        (t.kind === "gated"
+          ? t.conditional
+            ? " - some actions need human approval (outward action; waits in the Pending tray)"
+            : " - needs human approval (outward action; waits in the Pending tray)"
+          : ""),
       inputSchema: (t.inputSchema as { type: "object" } | undefined) ?? { type: "object" as const },
       annotations: { readOnlyHint: t.kind === "read" },
     })),

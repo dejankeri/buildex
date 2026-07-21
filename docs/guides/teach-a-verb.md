@@ -37,7 +37,7 @@ description: Use when the operator asks for the weekly review — so it's ground
 
 ## Rules
 - Ground every claim in a file; never invent numbers.
-- Writing to the brain is fine; anything outward waits for approval.
+- Writing to the brain is fine; the sharp edges — messaging people, publishing, spending — wait for approval.
 ```
 
 Because it's just a file, you can also create or edit it in any editor and commit it — the agent

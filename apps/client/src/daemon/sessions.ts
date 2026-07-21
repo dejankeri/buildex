@@ -9,6 +9,18 @@ import type { UiEvent } from "../agent/types.js";
 
 export type SessionStatus = "idle" | "running" | "needs-attention" | "error";
 
+/**
+ * A UiEvent as the store keeps it. Two fields the driver seam does not (and should not) carry:
+ *  - `at`: when the store received it, so a replayed thread can show real timestamps instead of
+ *    pretending every past message arrived just now.
+ *  - `role`: set only on the operator's own message. The console used to reconstruct who said what
+ *    by a heuristic ("the first text after a `done` is the operator's"), which broke on any turn
+ *    that ended without a `done`. Recording it removes the guess; the heuristic stays in the console
+ *    purely as the fallback for transcripts written before this field existed.
+ * Both are optional so every pre-existing session file still parses.
+ */
+export type StoredEvent = UiEvent & { at?: number; role?: "user" };
+
 export interface SessionMeta {
   id: string;
   folder: string;
@@ -19,7 +31,7 @@ export interface SessionMeta {
 }
 
 interface SessionFile extends SessionMeta {
-  events: UiEvent[];
+  events: StoredEvent[];
   claudeSessionId?: string;
 }
 
@@ -69,11 +81,15 @@ export class FileSessionStore {
     return out.sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
-  append(id: string, event: UiEvent): void {
+  /** Append an event, stamping it with the arrival time. `role` (when the caller sets it) rides
+   *  along untouched. The left-rail preview tracks the AGENT's last words, not the operator's own
+   *  message echoed back at them. */
+  append(id: string, event: StoredEvent): void {
     const s = this.load(id);
-    s.events.push(event);
-    s.updatedAt = this.now();
-    if (event.kind === "text") s.preview = event.text.slice(0, 80);
+    const at = this.now();
+    s.events.push({ ...event, at });
+    s.updatedAt = at;
+    if (event.kind === "text" && event.role !== "user") s.preview = event.text.slice(0, 80);
     this.write(s);
   }
 
@@ -100,7 +116,7 @@ export class FileSessionStore {
   }
 
   /** Browser-facing read: metadata + events, without the underlying claude session id. */
-  read(id: string): SessionMeta & { events: UiEvent[] } {
+  read(id: string): SessionMeta & { events: StoredEvent[] } {
     const s = this.load(id);
     return { id: s.id, folder: s.folder, title: s.title, status: s.status, updatedAt: s.updatedAt, ...(s.preview ? { preview: s.preview } : {}), events: s.events };
   }

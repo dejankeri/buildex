@@ -34,3 +34,31 @@ describe("PolicyEngine.decide", () => {
     expect(engine.decide({ name: "SomeMcpTool", input: {} })).toBe("ask");
   });
 });
+
+// Mirrors the shipped packs/core/policy/preset.json posture: wide autonomy, only irreversible
+// destruction gated, nothing hard-denied, unknown tools allowed.
+describe("PolicyEngine - shipped wide-by-default preset", () => {
+  const shipped = new PolicyEngine({
+    allow: ["Read", "Edit", "Write", "WebFetch", "WebSearch", "Bash"],
+    ask: ["Bash(rm -rf:*)", "Bash(git push --force:*)", "Bash(git reset --hard:*)"],
+    deny: [],
+    default: "allow",
+  });
+
+  it("runs ordinary work autonomously", () => {
+    expect(shipped.decide({ name: "Read", input: {} })).toBe("allow");
+    expect(shipped.decide({ name: "WebSearch", input: {} })).toBe("allow");
+    expect(shipped.decide({ name: "Bash", input: { command: "npm test" } })).toBe("allow");
+    expect(shipped.decide({ name: "Bash", input: { command: "git push origin main" } })).toBe("allow");
+  });
+
+  it("asks only for irreversible destruction", () => {
+    expect(shipped.decide({ name: "Bash", input: { command: "rm -rf build" } })).toBe("ask");
+    expect(shipped.decide({ name: "Bash", input: { command: "git reset --hard HEAD~3" } })).toBe("ask");
+    expect(shipped.decide({ name: "Bash", input: { command: "git push --force origin main" } })).toBe("ask");
+  });
+
+  it("allows unknown tools (MCP calls gate at the connector gateway, not here)", () => {
+    expect(shipped.decide({ name: "mcp__protocolcrm__message", input: {} })).toBe("allow");
+  });
+});

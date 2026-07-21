@@ -4,7 +4,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, cpSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { confinePath } from "./lib/confine-path.js";
 import { createDaemon, type Handler, type VaultReader, type Catalog, type TreeNode, type SkillEditor, type AutomationEngine, type ConnectorControl, type ConnectorGatewayView } from "./daemon/daemon.js";
 import { startGatewayHttp, writeGatewayRegistration, writeMcpEntries } from "@buildex/connectors";
@@ -12,7 +12,8 @@ import { ConnectorGatewayHub } from "./brain/connector-gateway.js";
 import { readSkill, writeSkillFile, composeSkill, validateSkill, skillTemplate } from "./brain/skills.js";
 import { listApps, writeAppManifest, type AppManifest } from "./brain/apps.js";
 import { reconciledPackMcpEntries, composePreset } from "./brain/pack-config.js";
-import { listPacks, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, type InstallDeps } from "./brain/catalog.js";
+import { listPacks, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, provisionKeychainKey, provisionBaseKeychainKey, type InstallDeps } from "./brain/catalog.js";
+import { ProvisionFlow } from "./brain/provision.js";
 import { emptyCatalogSource, type CatalogSource } from "./brain/catalog-source.js";
 import { buildAgentView } from "./brain/agent-view.js";
 import { serveApp, brokerData } from "./server/app-serve.js";
@@ -137,8 +138,13 @@ export function buildClientHandler(config: ClientConfig): Handler {
     clearTimer: (h) => realClock.clearTimer(h as TimerHandle),
   });
   const gate = new Gate(new PolicyEngine(composePreset(config.preset, config.roots)), broker);
-  // Allowlist the model aliases the composer can request (the --model security boundary).
-  const driver = new ClaudeCodeDriver({ spawn: nodeSpawnAgent, bin: config.claudeBin, allowedModels: ["opus", "sonnet", "haiku"], ...(config.agentConfigDir ? { configDir: config.agentConfigDir } : {}) });
+  // Allowlist the model aliases the composer can request (the --model security boundary), and pin
+  // Sonnet 5 as BuildEx's default so an unspecified model never falls through to the `claude` CLI's
+  // own default. The CLI resolves each alias to its current release (sonnet ⇒ Sonnet 5, etc.).
+  // Late-bound so the driver can be built here while the keychain + catalog are wired below. Read
+  // fresh on every run, so a credential the operator provisions mid-session works without a restart.
+  let provisionedEnv: () => NodeJS.ProcessEnv = () => ({});
+  const driver = new ClaudeCodeDriver({ spawn: nodeSpawnAgent, bin: config.claudeBin, allowedModels: ["opus", "sonnet", "haiku", "fable"], defaultModel: "sonnet", extraEnv: () => provisionedEnv(), ...(config.agentConfigDir ? { configDir: config.agentConfigDir } : {}) });
   const appBus = new AppBus({ idFactory: randomUUID });
   const sync = new SyncEngine({ now: Date.now, actor });
   // The writable (non-core) repo dirs - the only roots the sync loop may commit to (core is read-only).
@@ -309,9 +315,57 @@ export function buildClientHandler(config: ClientConfig): Handler {
   // its tools connect (or leave) immediately. Undefined when the gateway is off - then packs fall back
   // to the direct pin, unchanged.
   let syncGatewayProviders: (() => void | Promise<void>) | undefined;
+  // The escape-hatch flow: a browser round-trip that mints a credential the MCP connection can't carry.
+  // Never runs at install - the operator grants it when the work needs it (see PackProvision).
+  const provisionFlow = new ProvisionFlow({
+    fetch: (...a: Parameters<typeof fetch>) => fetch(...a),
+    host: () => hostname().replace(/[^A-Za-z0-9-]/g, "-"),
+  });
+  const provisionRedirectBase = config.connectorsMcp?.redirectBase ?? "http://127.0.0.1:4317";
+  // Every provisioned credential, as the environment the agent runs with. Read from the keychain on
+  // each call so a fresh grant (or a revoke) takes effect on the next prompt, not the next restart.
+  provisionedEnv = () => {
+    const env: NodeJS.ProcessEnv = {};
+    for (const p of listPacks(catalogSource, config.roots)) {
+      if (!p.provision || !p.installed) continue;
+      const key = keychain.get(provisionKeychainKey(p.id));
+      if (!key) continue;
+      env[p.provision.envKey] = key;
+      const base = p.provision.envBase ? keychain.get(provisionBaseKeychainKey(p.id)) : undefined;
+      if (p.provision.envBase && base) env[p.provision.envBase] = base;
+    }
+    return env;
+  };
   const packStore = {
-    list: () => listPacks(catalogSource, config.roots).map((p) =>
-      p.apiKey && keychain.get(apiKeyKeychainKey(p.id)) ? { ...p, apiKeyConnected: true } : p),
+    list: () => listPacks(catalogSource, config.roots).map((p) => ({
+      ...p,
+      ...(p.apiKey && keychain.get(apiKeyKeychainKey(p.id)) ? { apiKeyConnected: true } : {}),
+      ...(p.provision && keychain.get(provisionKeychainKey(p.id)) ? { provisioned: true } : {}),
+    })),
+    /** Start the escape-hatch grant: mint a one-time state and hand back the provider's consent URL
+     *  plus what the operator is about to grant. Nothing is stored until the callback completes. */
+    beginProvision: (id: string) => {
+      const pack = listPacks(catalogSource, config.roots).find((p) => p.id === id);
+      if (!pack?.provision) throw new Error(`pack "${id}" has no escape-hatch connection`);
+      if (!pack.installed) throw new Error(`install "${id}" before granting it extra access`);
+      return provisionFlow.begin(id, pack.provision, provisionRedirectBase);
+    },
+    /** Finish it from the loopback callback: validate + consume the state, exchange the single-use
+     *  code server-to-server, and store the credential in the keychain (never the repo). */
+    finishProvision: async (id: string, params: URLSearchParams) => {
+      const pack = listPacks(catalogSource, config.roots).find((p) => p.id === id);
+      if (!pack?.provision) throw new Error(`pack "${id}" has no escape-hatch connection`);
+      const res = await provisionFlow.finish(id, pack.provision, params);
+      keychain.set(provisionKeychainKey(id), res.key);
+      if (res.apiBase) keychain.set(provisionBaseKeychainKey(id), res.apiBase);
+      return { id, name: pack.name };
+    },
+    /** Drop a provisioned credential locally. The provider's own key is NOT revoked - say so in the UI
+     *  rather than implying this undoes the grant. */
+    clearProvision: (id: string) => {
+      keychain.delete(provisionKeychainKey(id));
+      keychain.delete(provisionBaseKeychainKey(id));
+    },
     install: (id: string, target: string) => {
       const res = installPack(catalogSource, config.roots, { id, target }, installDeps);
       const root = config.roots.find((r) => r.name === target);
@@ -456,10 +510,17 @@ export function buildClientHandler(config: ClientConfig): Handler {
       const known = new Set(hub.persistedSpecs().map((s) => s.name));
       for (const [name, spec] of want) {
         packProviderNames.add(name);
-        if (!known.has(name) && spec) {
-          try { await gatewayView!.add(spec); }
-          catch (e) { console.warn(`[gateway] pack provider "${name}" connect failed:`, e instanceof Error ? e.message : e); }
+        if (!spec) continue;
+        if (known.has(name)) {
+          // Already connected: re-apply the catalog's current baseline. The baseline is never
+          // persisted, so this is the path by which a pack update that TIGHTENS a gate reaches a
+          // provider the operator connected before the update - a security fix must not wait for a
+          // reconnect. The operator's own overrides are untouched.
+          hub.setBasePolicy(name, spec.basePolicy);
+          continue;
         }
+        try { await gatewayView!.add(spec); }
+        catch (e) { console.warn(`[gateway] pack provider "${name}" connect failed:`, e instanceof Error ? e.message : e); }
       }
       for (const name of [...packProviderNames]) {
         if (!want.has(name)) { gatewayView!.remove(name); packProviderNames.delete(name); }

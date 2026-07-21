@@ -5,6 +5,7 @@
 // "must have >=1 face" rule) and catches the drift a type can't: unknown keys, id/folder mismatch,
 // dangling skill references, orphan skill dirs.
 import { describe, it, expect } from "vitest";
+import { validateSkill } from "./skills.js";
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -12,9 +13,13 @@ import { dirname, join } from "node:path";
 // apps/client/src/brain → repo root → packs/core/catalog
 const CATALOG = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "packs", "core", "catalog");
 const NAME_RE = /^[a-z][a-z0-9-]*$/; // must match catalog.ts
-const PACK_KEYS = new Set(["id", "name", "icon", "summary", "app", "mcp", "apiKey", "skills", "policy"]);
-const MCP_KEYS = new Set(["kind", "url", "command", "args", "env", "scopes", "direct"]);
+const PACK_KEYS = new Set(["id", "name", "icon", "summary", "app", "mcp", "apiKey", "provision", "skills", "policy"]);
+const MCP_KEYS = new Set(["kind", "url", "command", "args", "env", "scopes", "direct", "policy"]);
 const APIKEY_KEYS = new Set(["transport", "header", "prefix", "apiBase", "docsUrl", "hint"]);
+const PROVISION_KEYS = new Set([
+  "authorizeUrl", "exchangeUrl", "codeParam", "codeField", "hostField",
+  "keyPath", "apiBasePath", "envKey", "envBase", "grants", "docsUrl",
+]);
 
 const packDirs = readdirSync(CATALOG).filter((n) => existsSync(join(CATALOG, n, "pack.json")));
 
@@ -150,4 +155,127 @@ describe("catalog cleanup - connection decisions", () => {
       expect((m.apiKey as Record<string, unknown>)?.transport, `${id} should be a rest key`).toBe("rest");
     }
   });
+});
+
+describe("catalog packs - the escape-hatch (provision) face", () => {
+  for (const id of packDirs) {
+    const m = JSON.parse(readFileSync(join(CATALOG, id, "pack.json"), "utf8")) as Record<string, unknown>;
+    const pv = m.provision as Record<string, unknown> | undefined;
+    if (!pv) continue;
+    describe(id, () => {
+      it("declares only known keys", () => {
+        for (const k of Object.keys(pv)) expect(PROVISION_KEYS.has(k), `unknown provision key: ${k}`).toBe(true);
+      });
+      it("requires the fields the daemon drives the flow from", () => {
+        for (const k of ["authorizeUrl", "exchangeUrl", "keyPath", "envKey", "grants", "docsUrl"]) {
+          expect(typeof pv[k], `${k} must be a non-empty string`).toBe("string");
+          expect((pv[k] as string).trim().length).toBeGreaterThan(0);
+        }
+      });
+      it("carries this credential over https only", () => {
+        // Broader than the MCP connection - it never rides plaintext.
+        for (const k of ["authorizeUrl", "exchangeUrl", "docsUrl"]) {
+          expect((pv[k] as string).startsWith("https://"), `${k} must be https`).toBe(true);
+        }
+      });
+      it("templates both loopback placeholders into the authorize URL", () => {
+        // Without these the consent page has no way to send the operator back, and the CSRF nonce
+        // never makes the round trip.
+        expect(pv.authorizeUrl as string).toContain("{redirect_uri}");
+        expect(pv.authorizeUrl as string).toContain("{state}");
+      });
+      it("says what the grant actually allows, at length", () => {
+        // The operator sees this BEFORE the browser opens. A one-word `grants` would defeat the point.
+        expect((pv.grants as string).length).toBeGreaterThan(40);
+      });
+    });
+  }
+});
+
+describe("catalog packs - pack-shipped classifier corrections (mcp.policy)", () => {
+  for (const id of packDirs) {
+    const m = JSON.parse(readFileSync(join(CATALOG, id, "pack.json"), "utf8")) as Record<string, unknown>;
+    const pol = (m.mcp as Record<string, unknown> | undefined)?.policy as Record<string, unknown> | undefined;
+    if (!pol) continue;
+    describe(id, () => {
+      it("declares only read / gated / hidden", () => {
+        for (const k of Object.keys(pol)) expect(["read", "gated", "hidden"].includes(k), `unknown policy key: ${k}`).toBe(true);
+      });
+      it("uses bare names or {tool, when} rules with non-empty value lists", () => {
+        for (const k of ["read", "gated"] as const) {
+          for (const e of (pol[k] as unknown[] | undefined) ?? []) {
+            if (typeof e === "string") { expect(e.trim().length).toBeGreaterThan(0); continue; }
+            const r = e as { tool?: unknown; when?: Record<string, unknown> };
+            expect(typeof r.tool).toBe("string");
+            for (const vals of Object.values(r.when ?? {})) {
+              expect(Array.isArray(vals)).toBe(true);
+              expect((vals as unknown[]).length).toBeGreaterThan(0);
+            }
+          }
+        }
+      });
+      it("keeps `hidden` to bare tool names", () => {
+        for (const e of (pol.hidden as unknown[] | undefined) ?? []) expect(typeof e).toBe("string");
+      });
+    });
+  }
+});
+
+describe("catalog cleanup - Protocol", () => {
+  const m = JSON.parse(readFileSync(join(CATALOG, "protocol", "pack.json"), "utf8")) as Record<string, unknown>;
+  const mcp = m.mcp as Record<string, unknown>;
+
+  it("points at the API host, never the app host", () => {
+    // app.protocolcrm.com is a static S3 site: it answers /mcp with an HTML 200, so an MCP client gets
+    // a garbage body instead of a clean failure and the pack looks connected while being dead.
+    expect(mcp.url).toBe("https://api.protocolcrm.com/mcp");
+  });
+
+  it("gates the two verbs that can reach a real client, by action", () => {
+    // Protocol's outward intent lives in an `action` argument, not the tool name, so the gateway's
+    // name heuristic cannot see it: `schedule` and `manage_automations` both read as routine.
+    const gated = (mcp.policy as { gated?: { tool: string; when?: Record<string, string[]> }[] }).gated ?? [];
+    const byTool = Object.fromEntries(gated.map((r) => [r.tool, r.when?.action ?? []]));
+    expect(byTool["schedule"]).toEqual(expect.arrayContaining(["send_reminder", "reminder"]));
+    expect(byTool["manage_automations"]).toEqual(expect.arrayContaining(["run"]));
+  });
+
+  it("does not gate the actions that stay inside the building", () => {
+    // Verified against Protocol's source: `cancel` never notifies the client (the cancellation-email
+    // service was never ported) and `activate` cannot fire an automation - only `run` dispatches.
+    const gated = (mcp.policy as { gated?: { tool: string; when?: Record<string, string[]> }[] }).gated ?? [];
+    const byTool = Object.fromEntries(gated.map((r) => [r.tool, r.when?.action ?? []]));
+    expect(byTool["schedule"]).not.toContain("cancel");
+    expect(byTool["schedule"]).not.toContain("create");
+    expect(byTool["manage_automations"]).not.toContain("activate");
+  });
+
+  it("widens `message`, which only reads despite its name", () => {
+    expect((mcp.policy as { read?: string[] }).read).toContain("message");
+  });
+});
+
+// Until now a catalog pack's skills were only checked for "a non-empty SKILL.md" - the teach-a-verb
+// checklist ran over `packs/core/skills` alone. A pack skill the agent can't discover (no trigger in
+// its description) is a skill that silently never fires, so hold every shipped pack to the same bar.
+describe("catalog packs - skills meet the teach-a-verb checklist", () => {
+  for (const id of packDirs) {
+    const skillsRoot = join(CATALOG, id, "skills");
+    if (!existsSync(skillsRoot)) continue;
+    for (const name of readdirSync(skillsRoot).filter((d) => statSync(join(skillsRoot, d)).isDirectory())) {
+      const file = join(skillsRoot, name, "SKILL.md");
+      if (!existsSync(file)) continue;
+      it(`${id}/${name}`, () => {
+        const r = validateSkill(readFileSync(file, "utf8"));
+        expect(r.ok, `${id}/${name}: ${r.issues.join("; ")}`).toBe(true);
+      });
+      it(`${id}/${name} declares a frontmatter name matching its directory`, () => {
+        // The directory name is what installs into the operator's repo and what siblings cross-
+        // reference by relative path; a mismatch makes those links dangle.
+        const fm = readFileSync(file, "utf8").match(/^---\n([\s\S]*?)\n---/);
+        expect(fm, "missing frontmatter").toBeTruthy();
+        expect(fm![1]!.match(/^name:\s*(.+)$/m)?.[1]?.trim()).toBe(name);
+      });
+    }
+  }
 });

@@ -67,3 +67,49 @@ describe("FileSessionStore", () => {
     expect(new FileSessionStore(dir).read(id).events).toHaveLength(2);
   });
 });
+
+// The console replays a thread from these records, so what the store keeps has to be enough to
+// render it faithfully: WHO said each thing, and WHEN. Both were missing before the chat-polish
+// pass - the console guessed the speaker from turn boundaries and showed no times at all.
+describe("FileSessionStore - stored event metadata", () => {
+  it("stamps every appended event with its arrival time", () => {
+    const clock = { t: 1_700_000_000_000 };
+    const s = new FileSessionStore(dir, () => (clock.t += 1000));
+    const id = s.create();
+    s.append(id, { kind: "text", text: "q", role: "user" });
+    s.append(id, { kind: "text", text: "a" });
+    const [first, second] = s.read(id).events;
+    expect(first!.at).toBe(1_700_000_002_000);
+    expect(second!.at).toBe(1_700_000_003_000);
+  });
+
+  it("preserves the operator role so replay never has to guess who spoke", () => {
+    const id = store.create();
+    store.append(id, { kind: "text", text: "what is our runway?", role: "user" });
+    store.append(id, { kind: "text", text: "About 14 months." });
+    const events = store.read(id).events;
+    expect(events[0]!.role).toBe("user");
+    expect(events[1]!.role).toBeUndefined();
+  });
+
+  it("previews the AGENT's last words, not the operator's own message echoed back", () => {
+    const id = store.create();
+    store.append(id, { kind: "text", text: "what is our runway?", role: "user" });
+    expect(store.list()[0]!.preview).toBeUndefined();
+    store.append(id, { kind: "text", text: "About 14 months." });
+    expect(store.list()[0]!.preview).toBe("About 14 months.");
+    store.append(id, { kind: "text", text: "and after that?", role: "user" });
+    expect(store.list()[0]!.preview).toBe("About 14 months."); // unchanged by the operator's turn
+  });
+
+  it("still reads a session file written before `at`/`role` existed", () => {
+    const id = store.create();
+    writeFileSync(
+      join(dir, `${id}.json`),
+      JSON.stringify({ id, folder: "Conversations", title: "old", status: "idle", updatedAt: 1, events: [{ kind: "text", text: "legacy" }] }),
+    );
+    const events = store.read(id).events;
+    expect(events[0]!.at).toBeUndefined();
+    expect(events[0]!.role).toBeUndefined();
+  });
+});

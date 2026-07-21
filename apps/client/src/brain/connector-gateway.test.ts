@@ -82,7 +82,7 @@ describe("ConnectorGatewayHub", () => {
     expect(reg.mcpServers["buildex-connectors"].url).toBe(deps.gatewayUrl);
   });
 
-  it("inventory() lists tools incl. baseline; setPolicy tightens and is reflected live and refuses ungating", async () => {
+  it("inventory() lists tools incl. baseline; setPolicy tightens AND widens, reflected live", async () => {
     const deps = hubDeps({
       open: async (): Promise<OpenResult> => ({ status: "connected", connection: connectedConn("gmail"), transport: {} as never }),
     });
@@ -97,10 +97,10 @@ describe("ConnectorGatewayHub", () => {
     expect(t.ok).toBe(true);
     expect(hub.listTools().find((x) => x.name === "gmail__search")!.kind).toBe("gated");
 
-    // ungating an outward tool is refused (invariant 5)
-    const bad = hub.setPolicy("gmail", "send", "read");
-    expect(bad.ok).toBe(false);
-    expect(hub.listTools().find((x) => x.name === "gmail__send")!.kind).toBe("gated");
+    // the operator can also WIDEN an outward tool to run autonomously (revised invariant 5)
+    const wide = hub.setPolicy("gmail", "send", "read");
+    expect(wide.ok).toBe(true);
+    expect(hub.listTools().find((x) => x.name === "gmail__send")!.kind).toBe("read");
   });
 
   it("surfaces needs-auth without registering tools or writing .mcp.json", async () => {

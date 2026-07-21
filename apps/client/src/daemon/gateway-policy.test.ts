@@ -5,8 +5,8 @@ import { PolicyEngine } from "../gate/policy.js";
 import { ApprovalBroker } from "../gate/approval.js";
 import type { UiEvent } from "../agent/types.js";
 
-// A stub gateway view that records setPolicy calls and enforces the same tighten-only rule the engine
-// does, so we exercise the route's validation + wiring without standing up the real gateway.
+// A stub gateway view that records setPolicy calls and mirrors the hub's ok/err contract, so we
+// exercise the route's validation + wiring without standing up the real gateway.
 function makeDaemon() {
   const calls: { name: string; tool: string; kind: string }[] = [];
   const gatewayView: ConnectorGatewayView = {
@@ -19,7 +19,8 @@ function makeDaemon() {
     remove: () => {},
     setPolicy: (name, tool, kind) => {
       calls.push({ name, tool, kind });
-      if (kind === "read" && tool === "send") return { ok: false, reason: "the human gate can't be removed from an outward tool" };
+      // the real hub returns ok:false for an unknown tool - used to exercise the route's 400 path
+      if (tool !== "search" && tool !== "send") return { ok: false, reason: `unknown tool: ${tool}` };
       return { ok: true };
     },
     finishAuth: async () => ({ connected: true, tools: 2 }),
@@ -41,7 +42,7 @@ function makeDaemon() {
 const post = (path: string, b: unknown) =>
   new Request("http://127.0.0.1" + path, { method: "POST", body: JSON.stringify(b) });
 
-describe("POST /api/connectors/gateway/<name>/policy - tighten-only tool reclassification", () => {
+describe("POST /api/connectors/gateway/<name>/policy - operator-adjustable tool reclassification", () => {
   it("tools() exposes the effective kind + intrinsic baseline (the trust surface)", async () => {
     const { daemon } = makeDaemon();
     const res = await daemon(new Request("http://127.0.0.1/api/connectors/gateway"));
@@ -57,11 +58,19 @@ describe("POST /api/connectors/gateway/<name>/policy - tighten-only tool reclass
     expect(calls).toContainEqual({ name: "gmail", tool: "search", kind: "gated" });
   });
 
-  it("propagates the engine's refusal to un-gate an outward tool as a 400", async () => {
-    const { daemon } = makeDaemon();
+  it("accepts widening an outward tool (send→read) and forwards it to the view", async () => {
+    const { daemon, calls } = makeDaemon();
     const res = await daemon(post("/api/connectors/gateway/gmail/policy", { tool: "send", kind: "read" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(calls).toContainEqual({ name: "gmail", tool: "send", kind: "read" });
+  });
+
+  it("propagates a view error (unknown tool) as a 400", async () => {
+    const { daemon } = makeDaemon();
+    const res = await daemon(post("/api/connectors/gateway/gmail/policy", { tool: "ghost", kind: "read" }));
     expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: string }).error).toMatch(/gate|outward/i);
+    expect(((await res.json()) as { error: string }).error).toMatch(/unknown tool/i);
   });
 
   it("rejects an unknown kind before touching the view", async () => {

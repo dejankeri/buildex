@@ -8,7 +8,7 @@
   },
   "mcp": {
     "kind": "http",
-    "url": "https://mcp.asana.com/v2/mcp"
+    "url": "https://mcp.asana.com/mcp"
   },
   "skills": [
     "asana-search",

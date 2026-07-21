@@ -11,4 +11,7 @@ declare global {
   function escAttr(s: unknown): string;
   /** Render the console's markdown subset to HTML. Every interpolation is escaped; link targets are scheme-allowlisted. */
   function md(src: unknown): string;
+  /** The same render, split into one HTML string per top-level block — the seam the chat pane uses to
+   *  diff a streamed answer and touch only the DOM of the block that actually changed. */
+  function mdBlocks(src: unknown): string[];
 }

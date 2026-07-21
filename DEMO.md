@@ -81,7 +81,7 @@ The demo also boots with one approval already waiting in the **Pending** tray - 
 Globex's Dana that would send email outward. Approve or deny it to watch the gate close the loop.
 
 As the agent works, the **live map** highlights the files it touches, the **Files** tree shows every
-doc with its history, and any outward action waits in the **Pending** tray for your tap.
+doc with its history, and the big outward moves — sending, posting, paying — wait in the **Pending** tray for your tap.
 
 Then try the right-rail panels: **Teach** a new skill, or **Connect**
 a source and hit **Sync now** to watch it file email/chat/docs into the brain.

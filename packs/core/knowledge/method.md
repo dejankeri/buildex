@@ -13,7 +13,8 @@ Every recurring piece of company work is one loop:
   into `sources/`.
 - **Policy** - what the company decided to do about this kind of thing (its conventions, its verbs).
 - **Tools** - the agent does the work directly on the brain's files.
-- **Quality gate** - anything outward or irreversible waits for a human tap. Reads and drafts flow.
+- **Quality gate** - the sharp edges (money, messages to real people, publishing, anything
+  irreversible) wait for a human tap; everything else - reads, drafts, routine work - flows.
 - **Learning** - the outcome and any new decision are captured back into the brain.
 
 The brain is the one shared substrate all the loops turn around. It only gets better.

@@ -5,7 +5,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join, normalize, sep } from "node:path";
 import type { Gate } from "../gate/gate.js";
-import type { ApprovalBroker } from "../gate/approval.js";
+import type { ApprovalBroker, ApprovalEvent } from "../gate/approval.js";
 import type { ToolInvocation } from "../gate/policy.js";
 import type { UiEvent } from "../agent/types.js";
 import type { Graph, Root } from "../brain/graph.js";
@@ -14,7 +14,7 @@ import type { PackMeta, InstallResult } from "../brain/catalog.js";
 import type { UsageReport } from "../brain/usage.js";
 import type { HistoryEntry, ChangeEntry } from "../brain/history.js";
 import type { AppBus, AppCommand } from "../miniapp/app-bus.js";
-import type { SessionMeta, SessionStatus } from "./sessions.js";
+import type { SessionMeta, SessionStatus, StoredEvent } from "./sessions.js";
 import type { Project, ProjectItem } from "./projects.js";
 
 /** Task containers holding a mix of tabs (chats, browsers, docs) - the console's left rail. */
@@ -31,8 +31,8 @@ export interface ProjectStore {
 export interface SessionStore {
   list(): SessionMeta[];
   create(meta?: { folder?: string; title?: string }): string;
-  read(id: string): SessionMeta & { events: UiEvent[] };
-  append(id: string, e: UiEvent): void;
+  read(id: string): SessionMeta & { events: StoredEvent[] };
+  append(id: string, e: StoredEvent): void;
   setStatus(id: string, s: SessionStatus): void;
   setTitle(id: string, title: string): void;
   getClaudeSessionId(id: string): string | undefined;
@@ -159,6 +159,12 @@ export interface DaemonDeps {
     /** Save (key set) or clear (key null) a pack's API key in the keychain and re-pin its MCP entry.
      *  For a `mcp-bearer` pack this switches it between OAuth (gateway) and the pasted-key direct pin. */
     setApiKey(id: string, key: string | null): void;
+    /** Start a pack's escape-hatch grant - returns the provider's consent URL and what it grants. */
+    beginProvision?(id: string): { authorizeUrl: string; grants: string };
+    /** Finish it from the loopback callback (validate + consume state, exchange the code). */
+    finishProvision?(id: string, params: URLSearchParams): Promise<{ id: string; name: string }>;
+    /** Forget a provisioned credential locally (does NOT revoke it at the provider). */
+    clearProvision?(id: string): void;
   };
   /** The workspace catalog (verbs, connectors, routines). */
   catalog?: Catalog;
@@ -231,6 +237,32 @@ export function createDaemon(deps: DaemonDeps): Handler {
     if (method === "GET" && deps.recentChanges && path === "/api/changes")
       return json({ changes: deps.recentChanges() });
     if (method === "GET" && path === "/api/pending") return json({ cards: deps.broker.pending() });
+    // Live approval feed (SSE). The console opens one EventSource and routes each event to the chat
+    // whose session matches the card's origin (inline approval), while the tray still lists them all.
+    if (method === "GET" && path === "/api/approvals/stream") {
+      const enc = new TextEncoder();
+      let unsub: (() => void) | undefined;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const send = (ev: ApprovalEvent) => {
+            try {
+              controller.enqueue(enc.encode(`data: ${JSON.stringify(ev)}\n\n`));
+            } catch {
+              /* client gone - the cancel() below unsubscribes */
+            }
+          };
+          // Replay open cards first so a fresh (or reconnected) subscriber catches up, then stream live.
+          for (const card of deps.broker.pending()) send({ type: "open", card });
+          unsub = deps.broker.subscribe(send);
+        },
+        cancel() {
+          unsub?.();
+        },
+      });
+      return new Response(stream, {
+        headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" },
+      });
+    }
 
     if (deps.sessions) {
       if (method === "GET" && path === "/api/sessions") return json({ sessions: deps.sessions.list() });
@@ -345,6 +377,24 @@ export function createDaemon(deps: DaemonDeps): Handler {
       deps.packStore.setApiKey(b.id, key);
       return json({ ok: true, connected: key !== null });
     }
+    // Begin an escape-hatch grant. Like OAuth connect and the API-key route, this is the operator
+    // authorizing their OWN workspace, so it is not approval-gated - but unlike them it hands back
+    // `grants` so the UI states what is being granted BEFORE the browser opens.
+    if (method === "POST" && deps.packStore?.beginProvision && path === "/api/catalog/provision") {
+      const b = await body<{ id?: string }>(req, { id: "string" });
+      if (!b.id) return json({ error: "id required" }, 400);
+      try {
+        return json(deps.packStore.beginProvision(b.id));
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "provision failed" }, 400);
+      }
+    }
+    if (method === "POST" && deps.packStore?.clearProvision && path === "/api/catalog/provision/clear") {
+      const b = await body<{ id?: string }>(req, { id: "string" });
+      if (!b.id) return json({ error: "id required" }, 400);
+      deps.packStore.clearProvision(b.id);
+      return json({ ok: true });
+    }
     if (deps.gatewayView) {
       const gw = deps.gatewayView;
       if (method === "GET" && path === "/api/connectors/gateway") {
@@ -392,6 +442,19 @@ export function createDaemon(deps: DaemonDeps): Handler {
         } catch (e) {
           return oauthPage("Could not complete authorization: " + (e instanceof Error ? e.message : "error"), 400);
         }
+      }
+    }
+    // The escape-hatch loopback callback. Its own /oauth/provision/<id>/ namespace so it can never
+    // collide with the MCP gateway's /oauth/<name>/callback or the file connectors'. The one-time
+    // state is validated and consumed inside finishProvision before the code is exchanged.
+    const pcb = path.match(/^\/oauth\/provision\/([a-z0-9-]+)\/callback$/);
+    if (method === "GET" && pcb && deps.packStore?.finishProvision) {
+      if (url.searchParams.get("error")) return oauthPage("Connection cancelled - nothing was granted.", 400);
+      try {
+        const r = await deps.packStore.finishProvision(pcb[1]!, url.searchParams);
+        return oauthPage(`Granted extra access to “${r.name}” ✓ - you can close this tab and return to buildex.`);
+      } catch (e) {
+        return oauthPage("Could not complete the connection: " + (e instanceof Error ? e.message : "error"), 400);
       }
     }
     if (deps.connectorHub) {
@@ -641,6 +704,21 @@ function serveStatic(webRoot: string, urlPath: string): Response | null {
   });
 }
 
+/**
+ * Name a conversation from its first message. A hard slice mid-word ("Can you check whether the Q3
+ * inv…") reads like a truncation bug to a non-technical operator, so this takes the first sentence,
+ * strips markdown punctuation, and cuts at a word boundary. Deterministic - no model call, in
+ * keeping with invariant 9 (trust surfaces render from repo state with zero LLM).
+ */
+export function sessionTitle(prompt: string): string {
+  const clean = prompt.replace(/[`*_#>]/g, "").replace(/\s+/g, " ").trim();
+  const sentence = clean.split(/(?<=[.!?])\s/)[0] || clean;
+  if (sentence.length <= 48) return sentence || "New chat";
+  const cut = sentence.slice(0, 48);
+  const space = cut.lastIndexOf(" ");
+  return (space > 20 ? cut.slice(0, space) : cut) + "…";
+}
+
 function streamPrompt(deps: DaemonDeps, prompt: string, resume: string | undefined, sessionId?: string, model?: string, effort?: string, systemPromptAppend?: string): Response {
   const enc = new TextEncoder();
   const store = deps.sessions;
@@ -650,9 +728,10 @@ function streamPrompt(deps: DaemonDeps, prompt: string, resume: string | undefin
     // Name the conversation from its first message.
     const s = store.read(sessionId);
     if ((s.title === "New chat" || !s.title) && s.events.length === 0) {
-      store.setTitle(sessionId, prompt.length > 48 ? prompt.slice(0, 48) + "…" : prompt);
+      store.setTitle(sessionId, sessionTitle(prompt));
     }
-    store.append(sessionId, { kind: "text", text: prompt }); // (user turn recorded by the UI too; harmless)
+    // `role: "user"` is what lets the console replay a thread without guessing who said what.
+    store.append(sessionId, { kind: "text", text: prompt, role: "user" });
     store.setStatus(sessionId, "running");
   }
   // A turn is cancelled when the client goes away (tab closed / navigated - the node adapter cancels
@@ -674,6 +753,11 @@ function streamPrompt(deps: DaemonDeps, prompt: string, resume: string | undefin
           clientGone = true;
         }
       };
+      // Mark this chat run in flight so any approval card it raises mid-turn (bash gate, connector
+      // gateway, pack install) is attributed to THIS session - which is how the card renders inline in
+      // the right chat. Popped in finally so it spans the whole run (incl. cancel/error).
+      const origin = sessionId ? { kind: "chat" as const, sessionId } : undefined;
+      if (origin) deps.broker.pushOrigin(origin);
       try {
         for await (const e of deps.runPrompt({ prompt, workspace: deps.workspace, signal: ac.signal, ...(claudeResume ? { resume: claudeResume } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(systemPromptAppend ? { systemPromptAppend } : {}) })) {
           send(e);
@@ -693,6 +777,7 @@ function streamPrompt(deps: DaemonDeps, prompt: string, resume: string | undefin
           if (store && sessionId) store.setStatus(sessionId, "error");
         }
       } finally {
+        if (origin) deps.broker.popOrigin(origin);
         try {
           controller.close();
         } catch {

@@ -2,21 +2,48 @@
   "id": "protocol",
   "name": "Protocol",
   "icon": "🏋️",
-  "summary": "Coaching CRM - clients, programs, and check-ins, drivable by the agent.",
+  "summary": "Coaching CRM - clients, programs, check-ins, and scheduling, drivable by the agent.",
   "app": {
     "url": "https://app.protocolcrm.com"
   },
   "mcp": {
     "kind": "http",
-    "url": "https://app.protocolcrm.com/mcp"
+    "url": "https://api.protocolcrm.com/mcp",
+    "policy": {
+      "read": ["message"],
+      "gated": [
+        { "tool": "schedule", "when": { "action": ["send_reminder", "reminder"] } },
+        { "tool": "manage_automations", "when": { "action": ["run"] } }
+      ]
+    }
   },
   "apiKey": {
     "transport": "mcp-bearer",
-    "docsUrl": "https://app.protocolcrm.com",
-    "hint": "Agent key from Settings → Developers"
+    "docsUrl": "https://help.protocolcrm.com/ai-agent/connecting",
+    "hint": "Agent key (pk_…) from the AI Agent page"
+  },
+  "provision": {
+    "authorizeUrl": "https://app.protocolcrm.com/workspace-connect?redirect_uri={redirect_uri}&state={state}",
+    "exchangeUrl": "https://api.protocolcrm.com/v1/workspace/connect/exchange",
+    "codeParam": "code",
+    "codeField": "code",
+    "hostField": "host",
+    "keyPath": "data.protocolApiKey",
+    "apiBasePath": "data.apiBaseUrl",
+    "envKey": "PROTOCOL_API_KEY",
+    "envBase": "PROTOCOL_API_URL",
+    "grants": "Full coach-level access to your whole Protocol account over its REST API - broader than the MCP connection above. Only needed for the few things MCP deliberately cannot do: billing, permanent deletes, and messaging clients. Requires you to be the account owner, and replaces any previous key issued to this machine.",
+    "docsUrl": "https://help.protocolcrm.com/ai-agent/connecting"
   },
   "skills": [
-    "protocol-client-lookup",
-    "protocol-build-program"
+    "protocol-reference",
+    "protocol-client-review",
+    "protocol-onboard-client",
+    "protocol-build-program",
+    "protocol-nutrition",
+    "protocol-checkin-cycle",
+    "protocol-inbox-triage",
+    "protocol-scheduling",
+    "protocol-rest-escape"
   ]
 }
