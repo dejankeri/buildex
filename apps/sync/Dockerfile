@@ -41,8 +41,11 @@ FROM --platform=linux/amd64 node:22-alpine AS runtime
 # ca-certificates: litestream needs TLS to reach object storage.
 RUN apk add --no-cache git ca-certificates
 
-# Litestream wraps the node process (see ENTRYPOINT): on a Fly machine there is one container, so it
-# cannot be a compose sidecar. Wrapping also gives restore-before-serve ordering on a cold start.
+# Litestream wraps the node process (see ENTRYPOINT / entrypoint.sh): on a Fly machine there is one
+# container, so it cannot be a compose sidecar. `litestream replicate -exec` itself never restores -
+# it only ships the live db to the replica - so entrypoint.sh runs `litestream restore` first and
+# `exec`s into `litestream replicate -exec ...` second. That ordering, not the wrapping alone, is
+# what makes a cold boot on an empty volume recover from the replica instead of overwriting it.
 ARG LITESTREAM_VERSION=0.3.13
 RUN wget -qO /tmp/litestream.tar.gz \
       "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-v${LITESTREAM_VERSION}-linux-amd64.tar.gz" \
@@ -52,6 +55,8 @@ RUN wget -qO /tmp/litestream.tar.gz \
 WORKDIR /app
 COPY --from=build /app/apps/sync/dist ./dist
 COPY infra/litestream.yml /etc/litestream.yml
+COPY apps/sync/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # The runtime stage ships no package.json (there is no node_modules to anchor it to), so without
 # this marker Node 22 would fall back to auto-detecting whether dist/*.js is ESM or CommonJS. The
@@ -65,4 +70,4 @@ ENV NODE_ENV=production \
 EXPOSE 8080
 VOLUME ["/srv/buildex"]
 
-ENTRYPOINT ["litestream", "replicate", "-config", "/etc/litestream.yml", "-exec", "node /app/dist/main.js"]
+ENTRYPOINT ["/app/entrypoint.sh"]

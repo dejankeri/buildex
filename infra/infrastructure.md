@@ -18,13 +18,17 @@
 - **Image:** `apps/sync/Dockerfile`, multi-stage, build context = repository root. The runtime stage
   carries no `node_modules` (apps/sync has zero dependencies) plus `git` (spawned for smart-HTTP)
   and `litestream`.
-- **Litestream** runs as the container entrypoint wrapping the node process - a Fly machine runs one
-  container, so it cannot be a sidecar, and wrapping gives restore-before-serve on a cold start.
+- **Litestream** runs as the container entrypoint (`apps/sync/entrypoint.sh`) - a Fly machine runs one
+  container, so it cannot be a sidecar. `litestream replicate -exec` alone never restores anything;
+  entrypoint.sh runs `litestream restore -if-db-not-exists -if-replica-exists` first, then `exec`s into
+  `litestream replicate -exec "node ..."`, which is what actually gives restore-before-serve ordering
+  on a cold start. Replicates both `control.db` and `schedules.db` (`infra/litestream.yml`).
   Target: Cloudflare R2 (S3-compatible, zero egress).
 - **Local development:** `infra/compose.yml`, one service, no proxy, no sidecar.
 - **Deploy:** `task deploy:plan` (build only) → `task deploy` (prompted).
 - **Onboarding:** `task mint-setup-token -- --base-url https://<host> --onboard ...`.
-- **Backups:** Litestream (control.db, continuous) → R2. **Repo snapshots are still outstanding** -
+- **Backups:** Litestream (control.db + schedules.db, continuous) → R2. **Repo snapshots are still
+  outstanding** -
   `/srv/buildex/repos` has no automated backup yet; Fly volume snapshots are the interim answer.
 - **Cost ledger (placeholders - public repo):** one shared-cpu machine + one small volume + object
   storage at the free tier. Order of magnitude: single-digit USD per month.
@@ -46,6 +50,7 @@ sync (one Fly.io machine, one volume; Fly terminates TLS - see infra/fly.toml)
   ├─ BuildEx sync service (identity JWT · git smart-HTTP over bare repos · permission matrix
   │                     · core-pack publish · admin console)
   ├─ SQLite (WAL): /srv/buildex/control.db      ← Litestream (continuous) → R2
+  ├─ SQLite (WAL): /srv/buildex/schedules.db    ← Litestream (continuous) → R2
   └─ bare repos:   /srv/buildex/repos           ← no automated backup yet (outstanding, see below)
 
 client (Electron, per operator machine)
