@@ -51,11 +51,16 @@ describe("console renderers (jsdom) — apps left rail (refreshApps)", () => {
     expect(doc.querySelectorAll("#applist .aiapp")).toHaveLength(0);
     expect(doc.querySelectorAll("#applist .aweb")).toHaveLength(2);
     expect(typeof (doc.querySelector("#applist .aitem") as any).onclick).toBe("function");
-    // needsAuth app → a "not connected" badge; the connected app carries none.
+    // needsAuth app → a "not connected" badge; the connected app carries a green dot instead. One
+    // mark or the other, never both: the badge is an errand, the dot is only reassurance.
     const badges = doc.querySelectorAll("#applist .aconn");
     expect(badges).toHaveLength(1);
     expect(badges[0]!.textContent).toContain("not connected");
     expect(doc.querySelectorAll("#applist .albl")[0]!.textContent).toBe("Protocol");
+    const dots = doc.querySelectorAll("#applist .acdot");
+    expect(dots).toHaveLength(1);
+    expect((dots[0]!.parentElement as any).querySelector(".albl").textContent).toBe("Notion");
+    expect((dots[0]! as any).getAttribute("aria-label")).toBe("connected");
   });
 
   it("an app whose tools need no gateway auth carries no 'not connected' badge", async () => {
@@ -67,6 +72,9 @@ describe("console renderers (jsdom) — apps left rail (refreshApps)", () => {
     await c.refreshApps();
     expect(doc.querySelector("#applist .aitem")).not.toBeNull();
     expect(doc.querySelector("#applist .aconn")).toBeNull(); // ready - no sign-in needed
+    // …and no green dot either: there is no gateway connection to report on, so the row stays bare
+    // rather than claiming a link it does not have.
+    expect(doc.querySelector("#applist .acdot")).toBeNull();
   });
 
   it("shows the empty affordance (pointing at the Store) when no apps are installed", async () => {

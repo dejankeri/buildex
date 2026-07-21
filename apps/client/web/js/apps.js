@@ -172,8 +172,18 @@ function appRow(a, editing) {
     return row;
   }
   row.title = "Start an AI chat to work with " + a.title;
+  // Two states worth a mark, and no third: the app is wired up (a quiet green dot - reassurance, not
+  // an errand), or its tools are dead until someone signs in (the amber chip, which is an errand).
+  // Apps with no gateway entry at all carry nothing; there is nothing to connect.
+  const live = !!(c && c.connected);
+  const mark = needsAuth
+    ? '<button class="aconn" title="' + escAttr(a.title) + ' isn’t connected - the agent can’t use its tools yet">not connected</button>'
+    : live
+      ? '<span class="acdot" role="img" aria-label="connected" title="' + escAttr(a.title) + " is connected - "
+        + (c.tools || 0) + " tool" + (c.tools === 1 ? "" : "s") + ' live for the agent"></span>'
+      : "";
   row.innerHTML = '<span class="aemoji">' + glyph + '</span><span class="albl">' + esc(a.title) + "</span>"
-    + (needsAuth ? '<button class="aconn" title="' + escAttr(a.title) + ' isn’t connected - the agent can’t use its tools yet">not connected</button>' : "")
+    + mark
     + '<button class="aweb" title="Open ' + escAttr(a.title) + '’s interface">🌐</button>';
   mountAppLogo($(".aemoji", row), a.name);
   // The row IS the AI chat. Not connected → the Connect dialog first (never drop the operator into a

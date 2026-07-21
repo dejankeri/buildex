@@ -66,6 +66,9 @@
   .aitem .aemoji .alogo{max-width:18px;max-height:18px;width:auto;height:auto;object-fit:contain;display:block;}
   .aitem .albl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;}
   .aitem .arepo{font-size:10px;color:var(--faint);font-family:var(--mono);}
+  /* An app carries one mark or none. Amber chip: its tools are dead until someone signs in - loud on
+     purpose, because it is the one thing in this rail the operator can fix. Green dot: wired up,
+     nothing to do; a dot, not a word, so "fine" never competes with "broken" for attention. */
   .aitem .aconn{font-size:10px;font-weight:650;color:var(--gate);background:color-mix(in srgb,var(--gate) 16%,transparent);border:1px solid color-mix(in srgb,var(--gate) 35%,transparent);border-radius:5px;padding:1px 6px;flex:none;cursor:pointer;} .aitem .aconn:hover{background:color-mix(in srgb,var(--gate) 26%,transparent);}
   .aitem .acdot{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none;}
   .connbanner{display:flex;align-items:center;gap:10px;padding:9px 14px;background:color-mix(in srgb,var(--gate) 12%,var(--panel));border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink);flex:none;} .connbanner .cbtxt{flex:1;} .connbanner .connbtn{flex:none;}
@@ -79,7 +82,7 @@
   .left .hd button.hdstore:hover{background:color-mix(in srgb,var(--brand) 15%,transparent);color:var(--brand);}
   .left .hd button.hdedit{width:auto;padding:0 8px;font-size:11px;font-weight:650;color:var(--muted);}
   .left .hd button.hdedit:hover{background:var(--panel-2);color:var(--ink);}
-  .left .hd button.hdedit.on{color:var(--brand);background:color-mix(in srgb,var(--brand) 15%,transparent);}
+  .left .hd button.hdedit.on{color:var(--ink);background:color-mix(in srgb,var(--brand) 15%,transparent);}
   /* The ROW is the primary action: it opens an AI chat about this app (BuildEx is an integrator +
      chat, so talking to a tool is the main use case). The 🌐 button opens the app's own interface,
      and a "not connected" badge diverts to the Connect dialog rather than a chat with dead tools. */
