@@ -27,8 +27,10 @@ export interface SyncDeps {
   actor: string;
 }
 
-/** Workspace-internal paths that must never be committed (invariant: secrets/backups stay local). */
-const INTERNAL = [".conflicts", ".sync-needs-help", ".sessions", ".agent"];
+/** Workspace-internal paths that must never be committed, and must never be counted as unsaved work
+ *  (invariant: secrets/backups stay local). Exported so `unsaved.ts` filters by the same list rather
+ *  than keeping a second copy that could drift. */
+export const INTERNAL = [".conflicts", ".sync-needs-help", ".sessions", ".agent"];
 const CLOUD_DIRS = /(Dropbox|Google Drive|iCloud|Mobile Documents|CloudStorage|OneDrive)/i;
 
 export class SyncEngine {
