@@ -315,8 +315,33 @@ test greps the entire workspace, every `.git/config`, and `account.json` for the
 prefix. This is the invariant the `GIT_CONFIG_*` approach exists to protect, so a regression to a
 credential helper or a URL-embedded token must fail the build.
 
-`apps/sync` remains excluded from the Windows CI lane (a pre-existing SQLite handle issue in
-teardown); the client account modules are not excluded and must pass there.
+**This gate lives in the `apps/client` suite, not in the cross-module smoke.** The distinction is
+load-bearing. The Windows lane runs `npm run test --workspace @buildex/client` and does not run
+`scripts/cross-module-smoke.ts`, so a gate placed in the smoke would never execute on Windows -
+the one platform where the invariant is most fragile, because it has a different keychain backend
+(Credential Manager rather than `security`), different path semantics, and a different git build.
+
+So the gate drives account-open against an injected `fetch` and `file://` bare repos rather than a
+live service. That keeps it hermetic, keeps it fast, and makes it run on all three platforms. The
+full flow against the real `apps/sync` handler over a real socket stays in the cross-module smoke on
+Ubuntu and macOS, where it verifies the wire rather than the disk.
+
+### Windows
+
+Windows is a supported client runtime and this work must not weaken that. `apps/sync` stays excluded
+from the Windows lane - it is the Linux-only cloud service, shipped as a container, and its suite has
+a pre-existing Windows-only teardown failure (EBUSY on `rmSync`; Windows holds the SQLite handle
+after `close()`). Nothing in this spec asks anyone to run the server on Windows.
+
+Everything an operator runs is covered there:
+
+- `GIT_CONFIG_*` injection needs no `.cmd` shim, unlike `GIT_ASKPASS` - one of the reasons for
+  decision 2.
+- The token lands in Credential Manager via the existing `keychain/windows.ts` backend, DPAPI-encrypted
+  with `LOCAL_MACHINE` persist, which is invariant 6's per-machine token. A machine token is far below
+  the 2560-byte blob cap, so it is a single atomic write and the chunking path never engages.
+- `attach`'s divergent-`core` path depends on `backupAndReset()` preserving the operator's files
+  byte-for-byte, which is exactly what `lib/git-pin.ts` exists to guarantee on Windows.
 
 ## Out of scope
 
