@@ -220,8 +220,18 @@ export class WindowsKeychain implements Keychain {
   // base64 secret - with no header left to describe them, so the retry computes oldN = 0 and a
   // revoked token stays readable by any same-user process. Verified: they decode back to the original.
 
+  /** Mirrors SystemKeychain.get: a backend that cannot run at all (Constrained Language Mode blocking
+   *  Add-Type on managed Windows) reads as "no value", so connector routes degrade to "not connected"
+   *  instead of hard-failing. set() still throws, so real persistence failures stay loud. */
   get(key: string): string | undefined {
-    const target = this.target(key);
+    try {
+      return this.readValue(this.target(key));
+    } catch {
+      return undefined;
+    }
+  }
+
+  private readValue(target: string): string | undefined {
     const head = this.readRaw(target);
     if (head === undefined) return undefined;
     if (!head.startsWith(HEADER_PREFIX)) return decode(head); // raw value (the common case)
@@ -255,7 +265,13 @@ export class WindowsKeychain implements Keychain {
 
   delete(key: string): void {
     const target = this.target(key);
-    const oldN = this.currentChunkCount(target);
+    let oldN = 0;
+    try {
+      oldN = this.currentChunkCount(target);
+    } catch {
+      // Fire-and-forget, like the macOS peer: a failing pre-read must not block a revocation. The
+      // prune below still probes and removes whatever it can reach.
+    }
     this.pruneChunks(target, 0, oldN);
     this.deleteRaw(target); // header last = the commit
   }

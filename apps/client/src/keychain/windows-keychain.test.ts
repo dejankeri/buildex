@@ -87,9 +87,11 @@ describe("WindowsKeychain - Credential Manager persistence", () => {
     expect(() => new WindowsKeychain("buildex-test", failing).set("k", "v")).toThrow(/keychain write failed/);
   });
 
-  it("throws when a read fails (a real backend error, not a missing key)", () => {
+  it("set() refuses on a real backend error, even when the failure is in its pre-read", () => {
+    // get()'s former "throws on a read failure" contract was SUPERSEDED by macOS parity - see the
+    // parity suite below. The write path deliberately stays strict, so a set can never silently no-op.
     const failing: WinCredRunner = () => ({ status: 5, stdout: "" });
-    expect(() => new WindowsKeychain("buildex-test", failing).get("k")).toThrow(/keychain read failed/);
+    expect(() => new WindowsKeychain("buildex-test", failing).set("k", "v")).toThrow(/keychain/);
   });
 
   describe("chunking (values larger than one 2560-byte credential blob)", () => {
@@ -178,6 +180,26 @@ describe("createKeychain factory - win32", () => {
     createKeychain({ mode: "system", workspace: "/ws/alpha", winRun: run, platform: "win32" }).set("connector:gmail", "a");
     createKeychain({ mode: "system", workspace: "/ws/beta", winRun: run, platform: "win32" }).set("connector:gmail", "b");
     expect(store.size).toBe(2); // two distinct service prefixes
+  });
+});
+
+describe("WindowsKeychain - macOS contract parity when the backend itself fails", () => {
+  // A machine where the helper cannot run at all: PowerShell Constrained Language Mode blocks
+  // Add-Type on managed/enterprise Windows, so every op exits non-zero and non-WIN_NOT_FOUND.
+  const broken: WinCredRunner = () => ({ status: 5, stdout: "" });
+
+  it("get() degrades to undefined instead of throwing (SystemKeychain.get swallows all non-zero)", () => {
+    // Otherwise every connector route hard-fails on such a machine, where macOS would simply show
+    // "not connected" - and mode:"auto" picks this backend happily, since availability is existence-only.
+    expect(new WindowsKeychain("svc", broken).get("k")).toBeUndefined();
+  });
+
+  it("set() still throws, so an explicit persistence failure stays loud (macOS set throws too)", () => {
+    expect(() => new WindowsKeychain("svc", broken).set("k", "v")).toThrow();
+  });
+
+  it("delete() tolerates a failing pre-read, like the macOS peer's fire-and-forget delete", () => {
+    expect(() => new WindowsKeychain("svc", broken).delete("k")).not.toThrow();
   });
 });
 
