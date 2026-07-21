@@ -103,11 +103,11 @@ try {
   git(["clone", `file://${remote}`, op1], base);
   git(["clone", `file://${remote}`, op2], base);
   writeFileSync(join(op1, "notes.md"), "op1: rewrote the goal\n");
-  const r1 = await new SyncEngine({ now: () => 1, actor: "op1" }).syncWritable(op1);
+  const r1 = await new SyncEngine({ now: () => 1, actor: "op1" }).publish(op1);
   check(r1 === "ok", "op1's edit synced (ok)");
   const precious = "op2: my precious unsynced edit\n";
   writeFileSync(join(op2, "notes.md"), precious);
-  const r2 = await new SyncEngine({ now: () => 1700000000000, actor: "op2" }).syncWritable(op2);
+  const r2 = await new SyncEngine({ now: () => 1700000000000, actor: "op2" }).publish(op2);
   check(r2 === "needs-help", "op2 hit a conflict → needs-help (never a merge prompt)");
   const backup = join(op2, ".conflicts", "1700000000000", "notes.md");
   check(existsSync(backup) && readFileSync(backup, "utf8") === precious, "op2's version preserved byte-for-byte in .conflicts/<ts>/");

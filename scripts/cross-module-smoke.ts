@@ -86,7 +86,7 @@ try {
   // the agent edits the team brain (simulated edit - the real-agent path is proven in the client live smoke)
   writeFileSync(join(m1, "team-northwind", "conventions.md"), "# Northwind conventions\n\nWe ship weekly. Decisions live in decisions/.\n");
   const teamDir = join(m1, "team-northwind");
-  const r1 = await new SyncEngine({ now: () => 1, actor: "dan" }).syncWritable(teamDir);
+  const r1 = await new SyncEngine({ now: () => 1, actor: "dan" }).publish(teamDir);
   check(r1 === "ok", "the agent's edit committed + pushed to the team brain");
 
   // ============================================================
@@ -106,7 +106,7 @@ try {
   });
   await runConnectorSync(gmail, { workspaceDir: teamDir, now: () => Date.parse("2026-07-16T10:05:00Z") });
   check(existsSync(join(teamDir, "sources", "gmail", "kickoff.md")), "connector filed an email under sources/gmail/");
-  await new SyncEngine({ now: () => 2, actor: "dan" }).syncWritable(teamDir);
+  await new SyncEngine({ now: () => 2, actor: "dan" }).publish(teamDir);
   git(["pull", "--rebase", "origin", "main"], join(m2, "team-northwind"));
   check(existsSync(join(m2, "team-northwind", "sources", "gmail", "kickoff.md")), "machine 2 sees the connector material too");
 
