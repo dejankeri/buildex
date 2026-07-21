@@ -34,7 +34,16 @@ export async function onboard(
 ): Promise<{ companyId: string; operatorId: string; setupToken: string }> {
   const companyId = `co_${randomUUID()}`;
   const operatorId = `op_${randomUUID()}`;
-  await s2s(deps, "/s2s/companies", { id: companyId, slug: opts.companySlug, name: opts.companyName });
+  try {
+    await s2s(deps, "/s2s/companies", { id: companyId, slug: opts.companySlug, name: opts.companyName });
+  } catch (err) {
+    const original = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `could not create company "${opts.companySlug}" - a company with that slug probably already ` +
+        `exists (companies.slug is unique). If the operator already exists, re-issue their token with ` +
+        `--operator-id <id> instead of --onboard. Original error: ${original}`,
+    );
+  }
   await s2s(deps, "/s2s/operators", { id: operatorId, companyId, email: opts.email });
   const { setupToken } = (await s2s(deps, "/s2s/setup-tokens", { operatorId })) as { setupToken: string };
   return { companyId, operatorId, setupToken };
@@ -46,9 +55,15 @@ export async function mintForOperator(deps: MintDeps, operatorId: string): Promi
   return setupToken;
 }
 
-function arg(name: string): string | undefined {
+/** Look up a `--flag value` pair. Returns undefined if the flag is absent, trailing, or immediately
+ * followed by another flag - e.g. `--company-slug --email a@b.test` must not silently set
+ * companySlug to "--email". */
+export function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : undefined;
+  if (i < 0) return undefined;
+  const value = process.argv[i + 1];
+  if (value === undefined || value.startsWith("--")) return undefined;
+  return value;
 }
 
 async function main(): Promise<void> {
