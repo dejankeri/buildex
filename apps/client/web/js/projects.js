@@ -21,12 +21,18 @@ async function refreshProjects() {
     return;
   }
   // Reflect the background sync loop's status on the dot. An in-flight agent run (syncBusy) wins;
-  // otherwise the server's state - needs-help (a conflict was backed up) / queued (offline) / ok.
-  let ss = "ok";
+  // otherwise problems take precedence over the unsaved count - needs-help (a conflict was backed
+  // up) / queued (offline) / local (no account) / unsaved (waiting on the operator to save) / ok.
+  let st = "ok";
   try {
-    ss = (await getJSON("/api/sync")).status;
+    const s = await getJSON("/api/sync");
+    st =
+      s.status === "needs-help" ? "help" :
+      s.status === "queued" ? "queued" :
+      s.status === "local" ? "local" :
+      s.unsaved && s.unsaved.files > 0 ? "unsaved" : "ok";
   } catch (e) {}
-  setSync(syncBusy ? "busy" : ss === "needs-help" ? "help" : ss === "queued" ? "queued" : ss === "local" ? "local" : ss === "busy" ? "busy" : "ok");
+  setSync(syncBusy ? "busy" : st);
   if (S.rightTab === "synclog") fillSyncLog();
   try {
     sessions = (await getJSON("/api/sessions")).sessions;

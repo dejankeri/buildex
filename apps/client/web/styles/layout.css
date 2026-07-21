@@ -31,6 +31,9 @@
   .top .sync.queued .d{background:var(--gate);} .top .sync.help .d{background:var(--crit);animation:synchelp 1.4s infinite;}
   /* local = no account yet: neutral grey, not an error - an invitation to connect & sync */
   .top .sync.local .d{background:var(--faint);}
+  /* unsaved = work is waiting on the operator to save - the same amber as queued, but no pulse: it
+     isn't a problem, just a nudge, and click routes to the pending tray's save card (boot.js). */
+  .sync.unsaved .d{background:var(--gate);}
   @keyframes syncpulse{0%,100%{box-shadow:0 0 0 0 rgba(240,169,75,.55);}70%{box-shadow:0 0 0 5px rgba(240,169,75,0);}}
   @keyframes synchelp{0%,100%{box-shadow:0 0 0 0 rgba(224,115,107,.6);}70%{box-shadow:0 0 0 5px rgba(224,115,107,0);}}
   .top .ico{width:28px;height:28px;border:1px solid var(--line);border-radius:7px;background:var(--panel-2);color:var(--muted);font-size:13px;display:grid;place-items:center;flex:none;-webkit-app-region:no-drag;} .top .ico:hover{color:var(--ink);border-color:var(--line-2);}
