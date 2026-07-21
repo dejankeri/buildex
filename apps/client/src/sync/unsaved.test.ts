@@ -50,6 +50,22 @@ describe("unsavedIn", () => {
     expect(await unsavedIn(dir)).toEqual({ files: 0, oldestAt: null });
   });
 
+  it("does not count a teammate's change as ours after a fetch that has not been rebased yet", async () => {
+    // The window this covers: the tick fetched, so origin/main has moved, but our checkpoints are
+    // not replayed on top of it yet. A two-dot diff compares the two TREES, so theirs.md - which we
+    // never touched - reads as our unsaved work and the card overcounts.
+    const mine = clone("mine");
+    const theirs = clone("theirs");
+    commitFile(theirs, "theirs.md", "their work\n");
+    git(["push", "origin", "HEAD:main"], theirs);
+
+    commitFile(mine, "mine.md", "my work\n");
+    git(["fetch", "origin"], mine); // origin/main now has theirs.md; we have not rebased
+
+    const u = await unsavedIn(mine);
+    expect(u.files).toBe(1); // exactly mine.md - never theirs.md
+  });
+
   it("counts a committed-but-unsent change and dates it", async () => {
     const dir = clone("a");
     commitFile(dir, "doc.md", "changed\n");

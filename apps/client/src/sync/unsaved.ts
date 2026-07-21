@@ -120,8 +120,11 @@ export async function unsavedIn(dir: string): Promise<Unsaved> {
   if (committed) {
     // With an upstream, "unsaved" is everything the company's copy does not have. Without one - a
     // workspace with no account yet, or one that has never saved - everything counts.
+    // THREE dots, not two. `a..b` on a diff is a plain tree comparison, so a file only a TEAMMATE
+    // changed shows up as our unsaved work in the window after a fetch but before the rebase lands.
+    // `a...b` diffs from the merge base - only what WE changed since we diverged.
     const ahead = upstream
-      ? await git(["diff", "--name-only", "origin/main..HEAD"], dir)
+      ? await git(["diff", "--name-only", "origin/main...HEAD"], dir)
       : await git(["ls-files"], dir);
     for (const rel of lines(ahead)) paths.add(rel);
   }
