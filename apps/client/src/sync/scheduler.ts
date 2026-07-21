@@ -91,7 +91,10 @@ export class SyncScheduler {
   stop(): void {
     this.clearAllTimers();
     if (this.dirty.size > 0) void this.flush();
-    this.clearAllTimers(); // a final flush may arm a backoff retry; we are quitting, so drop it
+    // Defensive, not load-bearing: flush() has no network side effects any more (it only records
+    // checkpoints locally), so it cannot arm the backoff timer itself. This second clear just
+    // guards against a future flush() gaining a side effect without this invariant being revisited.
+    this.clearAllTimers();
   }
 
   private clearAllTimers(): void {

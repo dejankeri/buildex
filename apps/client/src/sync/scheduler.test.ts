@@ -403,4 +403,15 @@ describe("manual save", () => {
     await clock.advance(5_000);
     expect(engine.calls.publish.length).toBeGreaterThan(2);
   });
+
+  it("cancels a pending offline backoff retry on shutdown - quitting must never publish", async () => {
+    const { scheduler, engine, clock } = makeScheduler();
+    engine.publishResult = "queued";
+    expect(await scheduler.publishAll()).toBe("queued"); // arms the 5s backoff retry
+    const publishCallsBeforeStop = engine.calls.publish.length;
+    scheduler.stop();
+    clock.advance(30_000); // well past the 5s backoff - if the retry survived, it would fire in here
+    await tick();
+    expect(engine.calls.publish.length).toBe(publishCallsBeforeStop); // no further publish after stop
+  });
 });
