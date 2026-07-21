@@ -30,6 +30,12 @@ shelling to Windows PowerShell running an embedded `advapi32` P/Invoke (`CredRea
   command line (a hardening over the macOS `security -w <argv>` path).
 - **Per-workspace isolation.** The credential target is `` `${keychainService(workspace)}:${key}` `` —
   the same `sha256(workspace)` service prefix macOS uses (invariant 6).
+- **Same-user readability (accepted risk).** Credential Manager entries are DPAPI-encrypted **at rest**,
+  but carry no per-application ACL: any process running as the operator's own user can read every
+  stored token silently (`cmdkey /list` plus a trivial `CredRead`). This is a weaker boundary than the
+  macOS keychain, whose partition ACLs can prompt when an unfamiliar binary asks. Accepted under the
+  single-operator-machine assumption, and strictly better than any file-based fallback — but it is a
+  real difference between the platforms, not an implementation detail.
 
 ### Chunking (the one Windows-specific mechanism)
 
@@ -44,23 +50,57 @@ split:
 - **Large value:** slices at `<target>#0…#n-1`, plus a header credential at `<target>` of the form
   `|BXK1|<n>:<sha8>` (a leading `|` is not in the base64 alphabet, so a header is never mistaken for a
   raw value).
-- **Crash safety:** slices are written first, the header last (the commit point). `get` reassembles and
-  verifies the checksum; a missing chunk or checksum mismatch returns `undefined` (the value degrades to
-  "absent" → connector re-authorizes) — it **never returns a truncated or corrupt value**. `set`/`delete`
-  prune now-surplus chunk siblings.
+- **Crash safety:** the header is the commit point, so **every prune happens before it** and slices are
+  written before the header. `get` reassembles and verifies the checksum; a missing chunk or checksum
+  mismatch returns `undefined` (the value degrades to "absent" → connector re-authorizes) — it **never
+  returns a truncated or corrupt value**.
+
+  The ordering is load-bearing, not stylistic. Credential Manager offers no transaction, so the process
+  can die between any two operations. Pruning *after* the header would strand slices `#0…#n-1` — together
+  the complete base64 secret — with no header left to describe them: the retry reads no header, computes
+  a count of 0, prunes nothing, and a revoked token outlives its revocation. Pruning first means a crash
+  leaves a header pointing at missing slices, which `get` already degrades to `undefined`, and a retry
+  converges to a clean vault.
+
+  Pruning also probes *past* the count the header records, because an interrupted write can leave slices
+  the header never knew about (growing 4 chunks to 6 writes `#4`/`#5` while the header still says 4).
 
 ## Availability & fallback
 
-`createKeychain` treats win32 as available when a runner is injected (tests) or `powershell.exe` exists
-(the lightweight peer of macOS's `existsSync(SECURITY_BIN)` — no functional probe). If unavailable,
-`mode: "system"` throws (explicit opt-in must not silently degrade) and `mode: "auto"` falls back to
-in-memory (never a plaintext file).
+`createKeychain` **probes** the win32 backend rather than checking for a file. Existence is not enough:
+`powershell.exe` is present on every Windows machine, including ones where the helper can never run
+(Constrained Language Mode blocks its `Add-Type`), and selecting such a vault made every read return
+`undefined` — indistinguishable from "nothing stored".
+
+The probe is a single read of a target that cannot exist. It exercises the whole path — PowerShell
+start, `Add-Type` compile, `advapi32` P/Invoke — and a working helper answers `WIN_NOT_FOUND`. One
+spawn, no write, so it cannot strand a canary of its own if the process dies mid-probe. It proves
+readability, not writability; a write-denied vault still surfaces at connect time, where `set` throws.
+
+If unavailable, `mode: "system"` throws (explicit opt-in must not silently degrade) and `mode: "auto"`
+falls back to in-memory (never a plaintext file) — working for the session, forgotten on restart, but
+honest about it.
+
+### Contract parity with macOS
+
+`get` returns `undefined` on *any* backend failure, matching `SystemKeychain.get`, so a machine whose
+helper cannot run reads as "not connected" instead of hard-failing every connector route. `set` still
+throws, so an explicit persistence failure stays loud, and `delete` tolerates a failing pre-read — a
+broken read must never block a revocation. Every op is bounded by a timeout and spawned with
+`windowsHide`, and always via the absolute System32 path (never a bare `powershell.exe`, which would
+resolve through the CreateProcess search order — a binary-planting surface for a helper that receives
+the secret on stdin).
 
 ## Validation
 
 - Hermetic unit tests (`windows-keychain.test.ts`, fake runner): round-trip, empty value, missing key,
   base64-not-plaintext, update-or-add, delete-idempotent, per-workspace namespacing, chunk + reassemble,
-  prune-on-shrink, torn-write / checksum-mismatch → undefined, factory win32 cases.
+  prune-on-shrink, torn-write / checksum-mismatch → undefined, factory win32 cases, malformed headers,
+  the exact `CHUNK_LIMIT` boundary (1500 chars → exactly 2000 base64; 1501 → 2004), multi-byte unicode
+  across chunk boundaries, macOS contract parity, the availability probe, and the spawn options.
+- **Crash-window property test:** the runner is killed at *every* point of a delete, a shrinking set and
+  a growing set, asserting the vault always converges to empty on retry — plus a direct assertion on the
+  recorded operation sequence that every chunk delete precedes the header operation.
 - The `advapi32` P/Invoke core and the full `WindowsKeychain` (including a 9000-char chunked value) were
   validated live against real Credential Manager, **read back in a separate process** — proving the
   cross-restart persistence guarantee on real hardware.
@@ -76,8 +116,9 @@ in-memory (never a plaintext file).
 Because secrets live in the OS vault (not in any BuildEx file), two edges exist **on both macOS and
 Windows**, and neither platform handles them today:
 
-1. **Orphaned on uninstall.** Deleting the app / workspace does not remove its vault entries; there is no
-   uninstall hook (and on Windows no installer yet).
+1. **Orphaned on uninstall.** Deleting the app / workspace does not remove its vault entries; neither
+   platform has an uninstall hook. The Windows NSIS installer exists (it ships in this branch) but
+   wires no vault cleanup, so uninstalling leaves every stored credential behind.
 2. **Path-reuse bleed.** The service id is `sha256(workspace path)`; a *new* company created at a
    deleted company's path inherits the old credentials — an invariant-6 edge.
 
