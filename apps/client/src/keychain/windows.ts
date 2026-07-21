@@ -17,6 +17,11 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import type { Keychain } from "./keychain.js";
 
+/** The runner exits with this code when a credential target does not exist (maps ERROR_NOT_FOUND).
+ *  Declared above PS_SCRIPT and interpolated into it, so the TypeScript side and the helper's own
+ *  `exit` can never drift apart. */
+export const WIN_NOT_FOUND = 2;
+
 // Embedded PowerShell: env BXK_ACTION in {read,write,delete}, env BXK_TARGET = credential target.
 //   write: value read from STDIN (never argv/env - keeps the secret off the process command line, a
 //          hardening over the macOS `-w <argv>` path), stored as the CredentialBlob.
@@ -24,7 +29,8 @@ import type { Keychain } from "./keychain.js";
 //   delete: removes it; a missing target is not an error.
 // Run via -EncodedCommand (UTF-16LE base64) so no quoting of this script can ever go wrong. Persist is
 // LOCAL_MACHINE (per-machine token, invariant 6). This body is validated live against Credential Manager.
-const PS_SCRIPT = `$ErrorActionPreference = 'Stop'
+/** Exported only so the suite can assert the not-found exit code really interpolated. */
+export const PS_SCRIPT = `$ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -76,7 +82,7 @@ elseif ($action -eq 'read') {
   $ptr = [IntPtr]::Zero
   if (-not [BXKCred]::CredReadW($target, $TYPE_GENERIC, 0, [ref]$ptr)) {
     $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
-    if ($err -eq $ERROR_NOT_FOUND) { exit 2 }
+    if ($err -eq $ERROR_NOT_FOUND) { exit ${WIN_NOT_FOUND} }
     throw "CredRead failed: $err"
   }
   try {
@@ -96,9 +102,6 @@ elseif ($action -eq 'delete') {
   exit 0
 }
 else { throw "unknown action: $action" }`;
-
-/** The runner exits with this code when a credential target does not exist (maps ERROR_NOT_FOUND). */
-export const WIN_NOT_FOUND = 2;
 
 /** A single Credential Manager operation. Injected so WindowsKeychain is unit-testable without the OS
  *  vault. `stdout` carries the stored value on a successful read; `status` mirrors the helper exit code

@@ -6,6 +6,7 @@ import {
   defaultWinCredRunner,
   windowsPowerShellPath,
   windowsKeychainAvailable,
+  PS_SCRIPT,
   type WinCredRunner,
   type WinExec,
   type WinExecOptions,
@@ -190,6 +191,112 @@ describe("createKeychain factory - win32", () => {
     createKeychain({ mode: "system", workspace: "/ws/alpha", winRun: run, platform: "win32" }).set("connector:gmail", "a");
     createKeychain({ mode: "system", workspace: "/ws/beta", winRun: run, platform: "win32" }).set("connector:gmail", "b");
     expect(store.size).toBe(2); // two distinct service prefixes
+  });
+});
+
+describe("WindowsKeychain - the seams the original chunking tests missed", () => {
+  const HEADER_TARGET = "svc:k";
+
+  describe("a malformed header", () => {
+    // parseHeader rejects these, so get() must degrade - and, because a corrupt header makes the
+    // chunk count unknowable, a later set/delete must still not leave the siblings behind.
+    const malformed = ["|BXK1|garbage", "|BXK1|0:x", "|BXK1|3", "|BXK1|", "|BXK1|-1:aa", "|BXK1|2:"];
+
+    for (const head of malformed) {
+      it(`get() returns undefined for ${JSON.stringify(head)}`, () => {
+        const { run, store } = fakeCredManager();
+        store.set(HEADER_TARGET, head);
+        store.set(`${HEADER_TARGET}#0`, "AAAA");
+        expect(new WindowsKeychain("svc", run).get("k")).toBeUndefined();
+      });
+
+      it(`delete() still removes the siblings behind ${JSON.stringify(head)}`, () => {
+        const { run, store } = fakeCredManager();
+        store.set(HEADER_TARGET, head);
+        store.set(`${HEADER_TARGET}#0`, "AAAA");
+        store.set(`${HEADER_TARGET}#1`, "BBBB");
+        new WindowsKeychain("svc", run).delete("k");
+        expect([...store.keys()]).toEqual([]);
+      });
+    }
+  });
+
+  describe("the exact CHUNK_LIMIT boundary", () => {
+    // base64 length is ceil(n/3)*4, so 1500 bytes -> exactly 2000 chars (the limit, stored raw) and
+    // 1501 -> 2004 (chunked). The seam between the atomic and chunked write paths was otherwise only
+    // exercised thousands of characters away from where it actually sits.
+    it("1500 chars base64 to exactly the limit and stay a single atomic credential", () => {
+      const { run, store } = fakeCredManager();
+      const kc = new WindowsKeychain("svc", run);
+      const v = "a".repeat(1500);
+      kc.set("k", v);
+      expect(Buffer.from(v, "utf8").toString("base64")).toHaveLength(2000);
+      expect(chunkKeys(store, "svc:k")).toEqual([]); // no siblings: the raw path
+      expect(kc.get("k")).toBe(v);
+    });
+
+    it("1501 chars cross the limit and chunk", () => {
+      const { run, store } = fakeCredManager();
+      const kc = new WindowsKeychain("svc", run);
+      const v = "a".repeat(1501);
+      kc.set("k", v);
+      expect(Buffer.from(v, "utf8").toString("base64")).toHaveLength(2004);
+      expect(chunkKeys(store, "svc:k").length).toBeGreaterThan(0);
+      expect(kc.get("k")).toBe(v);
+    });
+
+    it("switches cleanly in both directions across the boundary", () => {
+      const { run, store } = fakeCredManager();
+      const kc = new WindowsKeychain("svc", run);
+      kc.set("k", "a".repeat(1501)); // chunked
+      kc.set("k", "b".repeat(1500)); // back to raw - siblings must not survive
+      expect(chunkKeys(store, "svc:k")).toEqual([]);
+      expect(kc.get("k")).toBe("b".repeat(1500));
+    });
+  });
+
+  describe("multi-byte unicode", () => {
+    // The chunking math counts base64 CHARACTERS while encode() consumes BYTES. Any confusion between
+    // the two hides precisely here, where one character is several bytes.
+    const cases: [string, string][] = [
+      ["cyrillic + accents", "Ćevapčići u Sarajevu — 100% ukusno"],
+      ["cjk", "認証トークン：秘密"],
+      ["emoji (surrogate pairs)", "🔐🇭🇷👨‍👩‍👧‍👦 token"],
+      ["combining marks", "ȩ́ nfd-normalised"],
+    ];
+
+    for (const [label, value] of cases) {
+      it(`round-trips ${label} in a single credential`, () => {
+        const { run } = fakeCredManager();
+        const kc = new WindowsKeychain("svc", run);
+        kc.set("k", value);
+        expect(kc.get("k")).toBe(value);
+      });
+
+      it(`round-trips ${label} across chunk boundaries`, () => {
+        const { run } = fakeCredManager();
+        const kc = new WindowsKeychain("svc", run);
+        const big = value.repeat(400); // comfortably multi-chunk, boundaries land mid-character
+        kc.set("k", big);
+        expect(kc.get("k")).toBe(big);
+      });
+    }
+
+    it("stores multi-byte values base64-encoded, never as readable plaintext", () => {
+      const { run, store } = fakeCredManager();
+      new WindowsKeychain("svc", run).set("k", "秘密のトークン");
+      expect([...store.values()].join("")).not.toContain("秘密");
+    });
+  });
+});
+
+describe("the not-found protocol value is written once, not twice", () => {
+  it("the helper script exits with the same code the TypeScript side checks for", () => {
+    // These are two ends of one protocol. As separate literals, changing one turns every missing-key
+    // read into a thrown "read failed" while the hermetic fake keeps passing - the failure would only
+    // appear on a real Windows machine.
+    expect(PS_SCRIPT).toContain(`exit ${WIN_NOT_FOUND}`);
+    expect(PS_SCRIPT).not.toMatch(/exit \$\{/); // the template really interpolated
   });
 });
 
