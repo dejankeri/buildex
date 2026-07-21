@@ -14,7 +14,7 @@ import type { PackMeta, InstallResult } from "../brain/catalog.js";
 import type { UsageReport } from "../brain/usage.js";
 import type { HistoryEntry, ChangeEntry } from "../brain/history.js";
 import type { AppBus, AppCommand } from "../miniapp/app-bus.js";
-import type { SessionMeta, SessionStatus } from "./sessions.js";
+import type { SessionMeta, SessionStatus, StoredEvent } from "./sessions.js";
 import type { Project, ProjectItem } from "./projects.js";
 
 /** Task containers holding a mix of tabs (chats, browsers, docs) - the console's left rail. */
@@ -31,8 +31,8 @@ export interface ProjectStore {
 export interface SessionStore {
   list(): SessionMeta[];
   create(meta?: { folder?: string; title?: string }): string;
-  read(id: string): SessionMeta & { events: UiEvent[] };
-  append(id: string, e: UiEvent): void;
+  read(id: string): SessionMeta & { events: StoredEvent[] };
+  append(id: string, e: StoredEvent): void;
   setStatus(id: string, s: SessionStatus): void;
   setTitle(id: string, title: string): void;
   getClaudeSessionId(id: string): string | undefined;
@@ -704,6 +704,21 @@ function serveStatic(webRoot: string, urlPath: string): Response | null {
   });
 }
 
+/**
+ * Name a conversation from its first message. A hard slice mid-word ("Can you check whether the Q3
+ * inv…") reads like a truncation bug to a non-technical operator, so this takes the first sentence,
+ * strips markdown punctuation, and cuts at a word boundary. Deterministic - no model call, in
+ * keeping with invariant 9 (trust surfaces render from repo state with zero LLM).
+ */
+export function sessionTitle(prompt: string): string {
+  const clean = prompt.replace(/[`*_#>]/g, "").replace(/\s+/g, " ").trim();
+  const sentence = clean.split(/(?<=[.!?])\s/)[0] || clean;
+  if (sentence.length <= 48) return sentence || "New chat";
+  const cut = sentence.slice(0, 48);
+  const space = cut.lastIndexOf(" ");
+  return (space > 20 ? cut.slice(0, space) : cut) + "…";
+}
+
 function streamPrompt(deps: DaemonDeps, prompt: string, resume: string | undefined, sessionId?: string, model?: string, effort?: string, systemPromptAppend?: string): Response {
   const enc = new TextEncoder();
   const store = deps.sessions;
@@ -713,9 +728,10 @@ function streamPrompt(deps: DaemonDeps, prompt: string, resume: string | undefin
     // Name the conversation from its first message.
     const s = store.read(sessionId);
     if ((s.title === "New chat" || !s.title) && s.events.length === 0) {
-      store.setTitle(sessionId, prompt.length > 48 ? prompt.slice(0, 48) + "…" : prompt);
+      store.setTitle(sessionId, sessionTitle(prompt));
     }
-    store.append(sessionId, { kind: "text", text: prompt }); // (user turn recorded by the UI too; harmless)
+    // `role: "user"` is what lets the console replay a thread without guessing who said what.
+    store.append(sessionId, { kind: "text", text: prompt, role: "user" });
     store.setStatus(sessionId, "running");
   }
   // A turn is cancelled when the client goes away (tab closed / navigated - the node adapter cancels

@@ -44,7 +44,10 @@ function injectApproval(tab, card) {
     ),
   );
   tab.thread.appendChild(node);
-  tab.thread.scrollTop = tab.thread.scrollHeight;
+  // A card is a request for a decision, so it always wins the scroll - unlike streamed text, which
+  // only follows while the operator hasn't scrolled away (see follower() in chat-turn.js).
+  if (tab.follow) tab.follow.pin();
+  else tab.thread.scrollTop = tab.thread.scrollHeight;
   _inlineApprovals[card.id] = node;
 }
 

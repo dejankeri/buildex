@@ -1,0 +1,88 @@
+/* Chat surface: turn chrome, streamed answer body, code blocks, message actions, composer
+   completion menu. Split from middle.css when the chat pane grew its own design system.
+   Part of the operator console design system (web/index.html). */
+
+/* --- turns ------------------------------------------------------------------------------- */
+/* A turn fades up as it lands, so a streamed answer doesn't pop into place. */
+.turn-in{animation:turnIn .16s ease-out;}
+@keyframes turnIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+/* The working trace's step list (was an inline style on the old string-built markup). */
+.wk-steps{display:flex;flex-direction:column;gap:7px;}
+.who .ts{margin-left:auto;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums;}
+.who .mbadge{font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);background:var(--panel-2);border:1px solid var(--line-2);border-radius:5px;padding:1px 6px;}
+
+/* Per-message actions: quiet until you're on the message, so the thread stays calm. */
+.msg-actions{display:flex;gap:6px;opacity:0;transition:opacity .12s;}
+.msg-actions:empty{display:none;}
+.turn:hover .msg-actions,.turn:focus-within .msg-actions{opacity:1;}
+.ma{border:1px solid var(--line-2);background:var(--panel);color:var(--muted);font:inherit;font-size:11.5px;padding:3px 9px;border-radius:6px;cursor:pointer;}
+.ma:hover{color:var(--ink);border-color:var(--line);}
+.ma.did{color:var(--good);border-color:var(--good);}
+
+/* An error is an affordance with a way out, not prose in the answer body. */
+.turn-error{display:flex;align-items:center;gap:9px;margin-top:6px;padding:9px 12px;border:1px solid var(--crit);border-radius:9px;background:color-mix(in srgb,var(--crit) 10%,transparent);font-size:13px;}
+.turn-error .te-ic{color:var(--crit);}
+.turn-error .te-msg{flex:1;color:var(--ink);}
+
+/* Re-attached turn notice (the page reloaded while the agent kept working). */
+.reattach{align-self:flex-start;font-size:12px;color:var(--muted);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:6px 10px;}
+
+/* --- code blocks ------------------------------------------------------------------------- */
+.codewrap{border:1px solid var(--line);border-radius:9px;overflow:hidden;margin:10px 0;background:var(--panel);}
+.cb-bar{display:flex;align-items:center;gap:8px;padding:5px 8px 5px 12px;border-bottom:1px solid var(--line);background:var(--panel-2);}
+.cb-lang{flex:1;font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);}
+.cb-copy{border:0;background:none;color:var(--muted);font:inherit;font-size:11.5px;padding:2px 7px;border-radius:5px;cursor:pointer;}
+.cb-copy:hover{color:var(--ink);background:var(--line-2);}
+.cb-copy.did{color:var(--good);}
+.codewrap>pre.cb{margin:0;border:0;border-radius:0;background:none;}
+/* A fence the stream hasn't closed yet: still arriving, so it gets a soft pulse instead of a
+   flash of literal backticks in the prose. */
+pre.cb-open{position:relative;}
+pre.cb-open::after{content:"";display:inline-block;width:7px;height:1em;margin-left:2px;vertical-align:text-bottom;background:var(--brand);opacity:.65;animation:caret 1s steps(2) infinite;}
+@keyframes caret{50%{opacity:0;}}
+
+/* Syntax colours for the vendored highlight.js (web/vendor/). We deliberately do NOT ship its
+   stylesheet: upstream themes hard-code a palette, which would ignore the console's light/dark
+   toggle. Mapping the .hljs-* classes onto our own tokens keeps code in the same design system as
+   everything else, and means re-theming the app re-themes the code too. */
+.hljs-keyword,.hljs-selector-tag,.hljs-literal,.hljs-section,.hljs-doctag,.hljs-name{color:#c792ea;}
+.hljs-string,.hljs-regexp,.hljs-addition,.hljs-attribute,.hljs-meta .hljs-string{color:var(--good);}
+.hljs-number,.hljs-symbol,.hljs-bullet,.hljs-link,.hljs-selector-attr{color:var(--run);}
+.hljs-title,.hljs-title.function_,.hljs-built_in,.hljs-type{color:var(--brand);}
+.hljs-comment,.hljs-quote,.hljs-deletion{color:var(--faint);font-style:italic;}
+.hljs-variable,.hljs-template-variable,.hljs-attr,.hljs-selector-class,.hljs-selector-id{color:#82aaff;}
+.hljs-meta,.hljs-params{color:var(--muted);}
+.hljs-emphasis{font-style:italic;} .hljs-strong{font-weight:700;}
+:root[data-theme="light"] .hljs-keyword,:root[data-theme="light"] .hljs-selector-tag,
+:root[data-theme="light"] .hljs-literal,:root[data-theme="light"] .hljs-section,
+:root[data-theme="light"] .hljs-doctag,:root[data-theme="light"] .hljs-name{color:#8250df;}
+:root[data-theme="light"] .hljs-variable,:root[data-theme="light"] .hljs-template-variable,
+:root[data-theme="light"] .hljs-attr,:root[data-theme="light"] .hljs-selector-class,
+:root[data-theme="light"] .hljs-selector-id{color:#0550ae;}
+
+/* --- richer markdown --------------------------------------------------------------------- */
+/* Table styling lives in middle.css (zebra rows + fit-content scroll), not here — this file only
+   adds the block types that stylesheet doesn't cover yet. */
+.md blockquote{margin:10px 0;padding:2px 0 2px 13px;border-left:3px solid var(--line-2);color:var(--muted);}
+.md blockquote p{margin:4px 0;}
+.md hr{border:0;border-top:1px solid var(--line);margin:16px 0;}
+.md del{opacity:.6;}
+.md li.task{list-style:none;margin-left:-16px;}
+.md ul ul,.md ol ol,.md ul ol,.md ol ul{margin:2px 0;}
+
+/* --- follow-the-stream ------------------------------------------------------------------- */
+/* The pill only shows when the operator has scrolled away from the bottom mid-turn. */
+.jump{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;z-index:3;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;font-size:12px;font-weight:600;padding:6px 13px;border-radius:999px;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.28);}
+.jump:hover{border-color:var(--brand-dim);}
+
+/* --- composer ---------------------------------------------------------------------------- */
+.composer.dropping{outline:2px dashed var(--brand-dim);outline-offset:-4px;}
+.composer .send.stopping{background:var(--panel-2);color:var(--ink);border:1px solid var(--line);}
+.composer .chint{font-size:11px;color:var(--gate);max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* Inline completion menu for `@file` and `/command`, anchored above the box. */
+.cmenu{position:absolute;bottom:calc(100% - 8px);left:16px;right:16px;max-width:460px;max-height:250px;overflow-y:auto;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:5px;box-shadow:0 8px 26px rgba(0,0,0,.34);}
+.cmi{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;background:none;border:0;color:var(--muted);font:inherit;font-size:12px;padding:5px 8px;border-radius:6px;cursor:pointer;}
+.cmi .cmi-l{font-family:var(--mono);font-size:11.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cmi .cmi-h{flex:1;font-size:11px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cmi.on,.cmi:hover{background:var(--panel-2);}
+.cmi.on .cmi-l{color:var(--brand);}

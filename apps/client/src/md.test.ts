@@ -81,30 +81,47 @@ describe("md() link targets (stored-XSS fix, A1)", () => {
   });
 });
 
-describe("md() benign rendering - identical to the pre-fix renderer", () => {
-  // Captured verbatim from the original inline md() in index.html before the A1 change.
+describe("md() benign rendering", () => {
+  // Pinned output for the everyday cases. Where a line differs from the pre-rewrite regex renderer
+  // it is called out: the block parser fixes two real bugs the old pass had — a fenced block used to
+  // be emitted INSIDE the surrounding <p>, and a block following a heading was left unwrapped.
   const baseline: Array<[name: string, input: string, expected: string]> = [
     ["heading + paragraph", "# Title\n\nSome text", "<h1>Title</h1>\n<p>Some text</p>"],
-    ["h4", "#### Deep\npara", "<h4>Deep</h4>\npara"],
+    // was "<h4>Deep</h4>\npara" — the trailing text is a paragraph and is now wrapped as one.
+    ["h4", "#### Deep\npara", "<h4>Deep</h4>\n<p>para</p>"],
     [
       "strong/em/code",
       "This is **bold** and *ital* and `code`.",
       "<p>This is <strong>bold</strong> and <em>ital</em> and <code>code</code>.</p>",
     ],
+    ["strikethrough", "a ~~gone~~ b", "<p>a <del>gone</del> b</p>"],
     [
       "bulleted + numbered lists",
       "- one\n- two\n\n1. first\n2. second",
       "<ul><li>one</li><li>two</li></ul>\n<ol><li>first</li><li>second</li></ol>",
     ],
     [
+      "nested list",
+      "- one\n  - a\n  - b\n- two",
+      "<ul><li>one<ul><li>a</li><li>b</li></ul></li><li>two</li></ul>",
+    ],
+    ["task list", "- [ ] todo\n- [x] done", '<ul><li class="task">☐ todo</li><li class="task">☑ done</li></ul>'],
+    ["horizontal rule", "a\n\n---\n\nb", "<p>a</p>\n<hr>\n<p>b</p>"],
+    [
+      "blockquote",
+      "> quoted **b**\n> more\n\nafter",
+      "<blockquote><p>quoted <strong>b</strong><br>more</p></blockquote>\n<p>after</p>",
+    ],
+    [
+      // was "<p>Before 42 lines<br> <pre>…</pre> <br>After 99 words</p>" — a <pre> nested in a <p>.
       "code fence with digits in surrounding prose",
       "Before 42 lines\n```js\nconst n = 7;\n```\nAfter 99 words",
-      "<p>Before 42 lines<br> <pre><code>const n = 7;</code></pre> <br>After 99 words</p>",
+      '<p>Before 42 lines</p>\n<pre class="cb" data-lang="js"><code>const n = 7;</code></pre>\n<p>After 99 words</p>',
     ],
     [
       "plain fence surrounded by digit-bearing text",
       "Count 0 and 1.\n```\nplain 0 1 2\n```\nTail 3",
-      "<p>Count 0 and 1.<br> <pre><code>plain 0 1 2</code></pre> <br>Tail 3</p>",
+      '<p>Count 0 and 1.</p>\n<pre class="cb"><code>plain 0 1 2</code></pre>\n<p>Tail 3</p>',
     ],
     [
       "paragraph breaks vs soft breaks",
@@ -118,6 +135,72 @@ describe("md() benign rendering - identical to the pre-fix renderer", () => {
       expect(md(input)).toBe(expected);
     });
   }
+
+  it("renders a pipe table with per-column alignment", () => {
+    expect(md("| a | b |\n|:--|--:|\n| 1 | 2 |")).toBe(
+      '<table><thead><tr><th style="text-align:left">a</th><th style="text-align:right">b</th></tr></thead>' +
+        '<tbody><tr><td style="text-align:left">1</td><td style="text-align:right">2</td></tr></tbody></table>',
+    );
+  });
+
+  it("pads a ragged table row to the header width instead of breaking the grid", () => {
+    const out = md("| a | b |\n|---|---|\n| 1 |");
+    expect(out).toContain("<td>1</td><td></td>");
+  });
+
+  it("leaves markup inside a code span literal", () => {
+    expect(md("use `**not bold**` here")).toBe("<p>use <code>**not bold**</code> here</p>");
+  });
+});
+
+// The chat pane re-renders the agent's answer on EVERY streamed token, so half-written markdown is
+// the normal input, not an edge case. These pin that a truncated document still renders as the
+// document it is becoming - never as raw syntax leaking into the prose.
+describe("md() streaming tolerance", () => {
+  it("renders an unclosed fence as an open code block, not literal backticks", () => {
+    const out = md("Here you go:\n```js\nconst n = 7;");
+    expect(out).toBe('<p>Here you go:</p>\n<pre class="cb cb-open" data-lang="js"><code>const n = 7;</code></pre>');
+    expect(out).not.toContain("```");
+  });
+
+  it("marks the block closed as soon as the closing fence arrives", () => {
+    expect(md("```\nx\n```")).toBe('<pre class="cb"><code>x</code></pre>');
+  });
+
+  it("never emits raw backticks while a fence is being typed character by character", () => {
+    const full = "Answer:\n```py\nprint(1)\n```\nDone.";
+    for (let n = 1; n <= full.length; n++) expect(md(full.slice(0, n)), full.slice(0, n)).not.toContain("```");
+  });
+
+  it("degrades a half-typed table to text rather than an empty grid", () => {
+    expect(md("| a | b |")).toBe("<p>| a | b |</p>"); // no divider yet → not a table
+  });
+
+  it("keeps every prefix escaped (a hostile answer stays inert while it streams)", () => {
+    const hostile = 'here <img src=x onerror=alert(1)> and [z](javascript:alert(2))';
+    for (let n = 1; n <= hostile.length; n++) {
+      const out = md(hostile.slice(0, n));
+      expect(out, hostile.slice(0, n)).not.toContain("<img");
+      expect(out).not.toContain("javascript:alert(2)\"");
+    }
+  });
+});
+
+describe("mdBlocks() - the incremental-render seam", () => {
+  it("returns one entry per top-level block, and md() is just those joined", () => {
+    const src = "# T\n\npara\n\n- a\n- b";
+    expect(mdBlocks(src)).toEqual(["<h1>T</h1>", "<p>para</p>", "<ul><li>a</li><li>b</li></ul>"]);
+    expect(md(src)).toBe(mdBlocks(src).join("\n"));
+  });
+
+  it("keeps a stable prefix as text is appended - this is what makes streaming cheap", () => {
+    // Appending to the last block must not disturb the blocks before it; the chat pane relies on
+    // that to leave earlier DOM (and any live text selection inside it) untouched.
+    const a = mdBlocks("# T\n\nfirst para\n\nsecond par");
+    const b = mdBlocks("# T\n\nfirst para\n\nsecond paragraph");
+    expect(b.slice(0, 2)).toEqual(a.slice(0, 2));
+    expect(b[2]).not.toBe(a[2]);
+  });
 });
 
 describe("md() GFM tables", () => {
