@@ -1,12 +1,26 @@
 # Litestream - continuous replication of the sync control database to object storage.
-# Pairs with an hourly restic snapshot of /srv/buildex/repos (see infra/backup-repos.sh). The bucket
-# and endpoint are supplied via infra/.env at deploy time (public repo - placeholders only).
+# Runs as the container ENTRYPOINT wrapping the node process (see apps/sync/Dockerfile): a Fly
+# machine runs one container, so it cannot be a compose sidecar, and wrapping gives
+# restore-before-serve ordering on a cold start.
+#
+# Target is Cloudflare R2 (S3-compatible, zero egress). Bucket, endpoint and credentials come from
+# the environment at deploy time - public repo, placeholders only.
+#
+# NOTE: these MUST be plain ${VAR} references, never bash-style ${VAR:-default}. Litestream's env
+# substitution does not understand the `:-default` shell fallback syntax - it treats the whole
+# `VAR:-default` string as one literal (unresolvable) variable name, resolves it to empty, and exits
+# with "bucket required for s3 replica" before the -exec child (node) ever runs. Since Litestream is
+# the container ENTRYPOINT, that failure means node never starts and /healthz is never reachable.
+# Every environment that runs this image - compose for dev, Fly for prod - MUST supply
+# LITESTREAM_BUCKET and LITESTREAM_ENDPOINT itself; there is no in-file default to fall back to.
 dbs:
   - path: /srv/buildex/control.db
     replicas:
       - type: s3
-        bucket: ${LITESTREAM_BUCKET:-buildex-backups-REPLACE}
+        bucket: ${LITESTREAM_BUCKET}
         path: control.db
-        endpoint: ${LITESTREAM_ENDPOINT:-https://object-storage.example.com}
-        # Restore on a clean VM with:  litestream restore -o /srv/buildex/control.db s3://<bucket>/control.db
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: auto
+        # Restore onto a clean machine with:
+        #   litestream restore -config /etc/litestream.yml -o /srv/buildex/control.db /srv/buildex/control.db
         # then run the rehearsed restore drill (apps/sync restore-drill) before serving traffic.

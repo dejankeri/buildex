@@ -75,20 +75,24 @@ tasks:
       - task: invariants
       - task: smoke
 
-  deploy:plan:
-    desc: "Dry-run: show what a sync deploy would change (no side effects)"
-    dir: infra
+  mint-setup-token:
+    desc: "Onboard an operator and print a one-time setup token (needs BUILDEX_SERVICE_KEY)"
     cmds:
-      - docker compose -f compose.yml --env-file .env config
+      - npx tsx scripts/mint-setup-token.ts {{.CLI_ARGS}}
+
+  deploy:plan:
+    desc: "Dry-run: build the sync image and show what would deploy (no side effects)"
+    cmds:
+      - docker build -f apps/sync/Dockerfile -t buildex-sync .
+      - fly deploy --config infra/fly.toml --dockerfile apps/sync/Dockerfile --build-only
       - echo "- dry-run only. Run 'task deploy' to apply (gated)."
 
   deploy:
-    desc: "Deploy the sync stack (gated - dry-run runs first, then asks before applying)"
-    dir: infra
-    prompt: "Apply this deploy to the sync VM?"
+    desc: "Deploy the sync service to Fly (gated - dry-run runs first, then asks before applying)"
+    prompt: "Apply this deploy to the sync service?"
     deps: [deploy:plan]
     cmds:
-      - docker compose -f compose.yml --env-file .env up -d
+      - fly deploy --config infra/fly.toml --dockerfile apps/sync/Dockerfile
 
   restore-drill:
     desc: "Rehearse recovery: restore control.db + repos onto a clean target and verify"

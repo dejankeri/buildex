@@ -1,0 +1,48 @@
+# buildex sync on Fly.io. PUBLIC REPO - placeholders only; the real app name and region live in the
+# private infra notes and are passed at deploy time.
+#
+# Deploy from the REPOSITORY ROOT so the build context includes the hoisted toolchain:
+#   fly deploy --config infra/fly.toml --dockerfile apps/sync/Dockerfile
+#
+# Secrets are set once, out of band, and never appear here:
+#   fly secrets set BUILDEX_SERVICE_KEY=... BUILDEX_PUBLIC_BASE_URL=https://<host> \
+#     LITESTREAM_BUCKET=... LITESTREAM_ENDPOINT=... \
+#     LITESTREAM_ACCESS_KEY_ID=... LITESTREAM_SECRET_ACCESS_KEY=...
+
+app = "buildex-sync-REPLACE"
+primary_region = "REPLACE"
+
+[build]
+  dockerfile = "apps/sync/Dockerfile"
+
+[env]
+  BUILDEX_DATA_DIR = "/srv/buildex"
+  PORT = "8080"
+
+# One volume holds BOTH control.db and repos/. They must stay on the same filesystem: SQLite in WAL
+# mode is unsafe on network storage, and splitting them would buy nothing while doubling the ways a
+# restore can half-succeed.
+[[mounts]]
+  source = "buildex_data"
+  destination = "/srv/buildex"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # A single-writer SQLite + git host is inherently single-node: never let Fly start a second machine.
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    # Git pushes are long and bursty; the default soft limit would shed them under normal use.
+    soft_limit = 50
+    hard_limit = 100
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  path = "/healthz"
+  timeout = "5s"

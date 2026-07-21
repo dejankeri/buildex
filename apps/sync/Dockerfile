@@ -10,7 +10,10 @@
 #   docker build -f apps/sync/Dockerfile -t buildex-sync .
 
 # ---------- build ----------
-FROM node:22-alpine AS build
+# Platform pinned explicitly: the litestream binary below is hardcoded linux-amd64, so a build on a
+# non-amd64 host (e.g. Apple Silicon) without this pin would silently produce an
+# architecture-mismatched image that fails at runtime instead of at build time.
+FROM --platform=linux/amd64 node:22-alpine AS build
 WORKDIR /app
 
 # Install the compiler directly rather than running a workspace `npm ci`: the root install would
@@ -31,7 +34,8 @@ RUN mkdir -p node_modules \
     && tsc -p tsconfig.build.json
 
 # ---------- runtime ----------
-FROM node:22-alpine AS runtime
+# Same pin as the build stage: the litestream release fetched below is linux-amd64 only.
+FROM --platform=linux/amd64 node:22-alpine AS runtime
 
 # git: required at runtime - the service spawns `git http-backend` and `git init --bare`.
 # ca-certificates: litestream needs TLS to reach object storage.
@@ -48,6 +52,12 @@ RUN wget -qO /tmp/litestream.tar.gz \
 WORKDIR /app
 COPY --from=build /app/apps/sync/dist ./dist
 COPY infra/litestream.yml /etc/litestream.yml
+
+# The runtime stage ships no package.json (there is no node_modules to anchor it to), so without
+# this marker Node 22 would fall back to auto-detecting whether dist/*.js is ESM or CommonJS. The
+# emitted code IS ESM (apps/sync/package.json has "type": "module") - make that explicit rather than
+# relying on implicit detection to keep guessing right.
+RUN printf '{"type":"module"}' > /app/package.json
 
 ENV NODE_ENV=production \
     BUILDEX_DATA_DIR=/srv/buildex \
