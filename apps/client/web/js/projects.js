@@ -171,6 +171,41 @@ function addToActiveProject(item) {
 }
 
 /**
+ * Find the saved item a tab was opened from, by matching on what identifies it - the same fields
+ * openProjectItem reads back. Chats are excluded on purpose: a chat is the session's content, so it
+ * leaves through the delete-with-confirmation path, never by being closed.
+ * @param {Array} items - the project's saved items.
+ * @param {object} t - an open tab.
+ * @returns {number} index of the matching item, or -1.
+ */
+function projectItemIndexForTab(items, t) {
+  return (items || []).findIndex((it) =>
+    (it.type === "doc" && t.type === "doc" && it.path === t.path)
+    || (it.type === "browser" && t.type === "browser" && it.url === t.url)
+    || (it.type === "map" && t.type === "map")
+    || (it.type === "app" && t.type === "app" && !!t.app && it.repo === t.app.repo && it.name === t.app.name));
+}
+
+/**
+ * Drop the session's memory of a closed tab. A session is the list of what the operator has open;
+ * closing a document, browser or app is not destructive (the file, the page and the app all outlive
+ * it), but it IS a statement that the thing is no longer part of this session - so it must not come
+ * back on the next visit. Nothing is deleted: only the session's pointer to it goes.
+ * @param {object} t - the tab being closed.
+ */
+function forgetTabFromSession(t) {
+  if (!t || t.type === "chat" || !S.activeProject) return;
+  const p = (S.projects || []).find((x) => x.id === S.activeProject);
+  if (!p) return;
+  const idx = projectItemIndexForTab(p.items, t);
+  if (idx < 0) return; // a tab that was never saved (Store, editors, MCP) - nothing to forget
+  p.items.splice(idx, 1); // locally first, so the rail cannot repaint the row we just closed
+  postJSON("/api/projects/" + p.id + "/remove-item", { index: idx })
+    .then(() => refreshProjects())
+    .catch(() => {});
+}
+
+/**
  * Remove item `idx` from project `pid`; if it maps to an open tab, close that too, then re-render.
  * @param {string} pid - project id.
  * @param {number} idx - item index within the project.
@@ -184,7 +219,9 @@ async function removeProjectItem(pid, idx, it) {
   // if the removed item is open as a tab (chat/doc are uniquely identifiable), close it too
   if (it) {
     const t = S.tabs.find((t) => (it.type === "chat" && t.type === "chat" && t.sessionId === it.sessionId) || (it.type === "doc" && t.type === "doc" && t.path === it.path));
-    if (t) closeTab(t.id);
+    // The item is already gone; flag the tab so closeTab does not "forget" it a second time and
+    // remove whatever index slid into its place.
+    if (t) { t.itemRemoved = true; closeTab(t.id); }
   }
   await refreshProjects();
 }

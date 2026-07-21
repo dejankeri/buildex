@@ -195,6 +195,9 @@ function requestCloseTab(id) {
 function closeTab(id) {
   const i = S.tabs.findIndex((t) => t.id === id);
   if (i < 0) return;
+  // A closed tab leaves the session too - otherwise switching away and back reopens everything the
+  // operator just dismissed. (itemRemoved: the caller already took the item out.)
+  if (!S.tabs[i].itemRemoved) forgetTabFromSession(S.tabs[i]);
   if (S.tabs[i].dispose)
     try {
       S.tabs[i].dispose(); // let the pane tear down listeners/intervals/webviews.

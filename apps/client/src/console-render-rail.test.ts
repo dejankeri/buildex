@@ -605,6 +605,88 @@ describe("console renderers (jsdom) — closing a tab from the tab bar", () => {
     expect(c.S.tabs).toHaveLength(0); // the tab went with it
   });
 
+  // Record POSTs with their bodies: "remove-item" alone is not enough here - the bug being pinned
+  // down is removing the WRONG index (or the same one twice).
+  const postLog = (w: any): Array<{ url: string; body: any }> => {
+    const seen: Array<{ url: string; body: any }> = [];
+    const inner = w.fetch as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    w.fetch = (u: string, o?: any) => {
+      if (o && o.method === "POST") seen.push({ url: String(u), body: o.body ? JSON.parse(o.body) : null });
+      return inner(u, o);
+    };
+    return seen;
+  };
+
+  it("a closed doc leaves the session, so switching away and back does NOT reopen it", async () => {
+    const { doc, w, c } = loadConsole();
+    const items = [{ type: "doc", path: "team/plan.md" }, { type: "browser", url: "https://x.test" }];
+    routeProjects(w, [{ id: "p1", name: "Work", createdAt: 0, items }]);
+    await c.refreshProjects();
+    c.S.activeProject = "p1";
+    const posts = postLog(w);
+    c.S.tabs = [{ id: "t1", type: "doc", title: "plan.md", path: "team/plan.md", pane: doc.createElement("div") }];
+    c.S.active = "t1";
+    c.requestCloseTab("t1");
+    const rm = posts.filter((p) => p.url.includes("/api/projects/p1/remove-item"));
+    expect(rm).toHaveLength(1);
+    expect(rm[0]!.body.index).toBe(0); // the doc's slot, not the browser's
+    // …and locally too, so the rail cannot repaint the row between now and the refresh.
+    expect(c.S.projects[0].items.map((i: any) => i.type)).toEqual(["browser"]);
+  });
+
+  it("matches a browser tab by url and an app tab by repo+name, not by position", async () => {
+    const { doc, w, c } = loadConsole();
+    const items = [
+      { type: "map" },
+      { type: "browser", url: "https://a.test" },
+      { type: "app", repo: "team", name: "stripe" },
+      { type: "browser", url: "https://b.test" },
+    ];
+    routeProjects(w, [{ id: "p1", name: "Work", createdAt: 0, items }]);
+    await c.refreshProjects();
+    c.S.activeProject = "p1";
+    const posts = postLog(w);
+    c.S.tabs = [
+      { id: "t1", type: "browser", title: "Browser", url: "https://b.test", pane: doc.createElement("div") },
+      { id: "t2", type: "app", title: "Stripe", app: { repo: "team", name: "stripe" }, pane: doc.createElement("div") },
+    ];
+    c.S.active = "t1";
+    c.requestCloseTab("t1");
+    expect(posts[0]!.body.index).toBe(3); // the SECOND browser, matched on its url
+    c.requestCloseTab("t2");
+    expect(posts[1]!.body.index).toBe(2); // the app, matched on repo+name
+    expect(c.S.projects[0].items.map((i: any) => i.type)).toEqual(["map", "browser"]);
+  });
+
+  it("forgets nothing for a tab the session never saved", async () => {
+    const { doc, w, c } = loadConsole();
+    routeProjects(w, [{ id: "p1", name: "Work", createdAt: 0, items: [{ type: "doc", path: "team/plan.md" }] }]);
+    await c.refreshProjects();
+    c.S.activeProject = "p1";
+    const posts = postLog(w);
+    c.S.tabs = [{ id: "t1", type: "store", title: "App Store", pane: doc.createElement("div") }];
+    c.S.active = "t1";
+    c.requestCloseTab("t1");
+    expect(posts.filter((p) => p.url.includes("remove-item"))).toHaveLength(0);
+    expect(c.S.projects[0].items).toHaveLength(1); // the doc is untouched
+  });
+
+  it("removes a deleted chat's item ONCE - the close that follows must not take its neighbour", async () => {
+    const { doc, w, c } = loadConsole();
+    const items = [{ type: "chat", sessionId: "s1", title: "Kickoff" }, { type: "doc", path: "team/keep.md" }];
+    routeProjects(w, [{ id: "p1", name: "Work", createdAt: 0, items }]);
+    await c.refreshProjects();
+    c.S.activeProject = "p1";
+    const posts = postLog(w);
+    c.S.tabs = [{ id: "t1", type: "chat", title: "Kickoff", sessionId: "s1", pane: doc.createElement("div") }];
+    c.S.active = "t1";
+    c.requestCloseTab("t1");
+    (doc.querySelector(".ovbackdrop .ovyes") as any).onclick();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(posts.filter((p) => p.url.includes("remove-item"))).toHaveLength(1);
+  });
+
   it("Cancel keeps the chat open and undeleted", async () => {
     const { doc, w, c } = loadConsole();
     routeProjects(w, [{ id: "p1", name: "Work", createdAt: 0, items: [{ type: "chat", sessionId: "s1", title: "Kickoff" }] }]);
