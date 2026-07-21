@@ -81,6 +81,7 @@ interface Creds {
 describe("git transport over a REAL HTTP socket (E2)", () => {
   let dir: string;
   let store: ControlPlaneStore;
+  let schedules: ScheduleStore;
   let git: EmbeddedGitService;
   let app: Handler;
   let baseUrl: string;
@@ -103,7 +104,7 @@ describe("git transport over a REAL HTTP socket (E2)", () => {
     let n = 0;
     const provisioning = new ProvisioningService({ store, git, idFactory: () => `m${++n}` });
     await provisioning.ensureCoreRepo();
-    const schedules = new ScheduleStore(join(dir, "schedules.db"));
+    schedules = new ScheduleStore(join(dir, "schedules.db"));
     app = createApp({ store, provisioning, git, schedules, serviceKey: SERVICE_KEY, publicBaseUrl: "http://sync.test" });
 
     const started = await listen(app);
@@ -134,6 +135,7 @@ describe("git transport over a REAL HTTP socket (E2)", () => {
   afterEach(async () => {
     await close();
     store.close();
+    schedules.close();
     rmSync(dir, { recursive: true, force: true });
   });
 

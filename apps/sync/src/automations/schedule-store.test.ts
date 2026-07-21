@@ -153,3 +153,24 @@ describe("ScheduleStore each/backlog, claim, report, reap", () => {
     expect(store.listRuns("co_2", "due")).toHaveLength(0); // not yet created for co_2
   });
 });
+
+describe("ScheduleStore.close", () => {
+  it("releases the database file so the directory can be removed", () => {
+    // On Windows an open handle blocks rmSync outright; POSIX allows unlinking an open file, which
+    // is why a leaked store went unnoticed here for so long.
+    const { store } = freshStore(1_000);
+    expect(() => store.close()).not.toThrow();
+  });
+
+  it("is idempotent, like ControlPlaneStore.close", () => {
+    // Teardown closes several stores in sequence; a second call - a retried cleanup, or an afterEach
+    // running after a failed beforeEach - must not throw and mask the real failure.
+    const { store } = freshStore(1_000);
+    store.close();
+    expect(() => store.close()).not.toThrow();
+    expect(() => {
+      store.close();
+      store.close();
+    }).not.toThrow();
+  });
+});

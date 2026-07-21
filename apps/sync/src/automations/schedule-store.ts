@@ -213,9 +213,15 @@ export class ScheduleStore {
     return row ? rowToRun(row) : null;
   }
 
+  /** Idempotent, matching ControlPlaneStore: teardown paths close both stores, and a second call
+   *  (a retried cleanup, an afterEach after a failed beforeEach) must not throw over the real error. */
   close(): void {
+    if (this.closed) return;
+    this.closed = true;
     this.db.close();
   }
+
+  private closed = false;
 
   // --- internals ---
   private hasOpenRun(companyId: string, name: string): boolean {
