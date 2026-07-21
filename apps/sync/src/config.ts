@@ -4,6 +4,8 @@
 // worse than one that refuses to boot, because the S2S surface is the only thing between the public
 // internet and company creation.
 
+import { isAbsolute } from "node:path";
+
 export interface SyncConfig {
   serviceKey: string;
   publicBaseUrl: string;
@@ -47,6 +49,13 @@ export function readConfig(env: Record<string, string | undefined>): SyncConfig 
   }
 
   const dataDir = trimOrUndefined(env["BUILDEX_DATA_DIR"]) ?? "/srv/buildex";
+  // A relative dataDir (the likeliest typo is a dropped leading slash, e.g. "srv/buildex") resolves
+  // against the process CWD at runtime - /app in the container - landing every database and bare
+  // repo on the ephemeral container layer instead of the mounted volume. /healthz would still
+  // return {ok:true} and the failure would surface only as silent data loss on the first restart.
+  if (!isAbsolute(dataDir)) {
+    throw new ConfigError(`BUILDEX_DATA_DIR must be an absolute path, got "${dataDir}"`);
+  }
 
   const rawPort = trimOrUndefined(env["PORT"]) ?? "8080";
   const port = Number(rawPort);

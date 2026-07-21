@@ -70,4 +70,15 @@ describe("readConfig", () => {
   it("still honours an explicit port 0, which means 'pick an ephemeral port'", () => {
     expect(readConfig(env({ PORT: "0" })).port).toBe(0);
   });
+
+  it("rejects a non-absolute data dir - it would silently land data on the container's ephemeral layer", () => {
+    expect(() => readConfig(env({ BUILDEX_DATA_DIR: "srv/buildex" }))).toThrow(ConfigError);
+    expect(() => readConfig(env({ BUILDEX_DATA_DIR: "srv/buildex" }))).toThrow(/absolute path/);
+    expect(() => readConfig(env({ BUILDEX_DATA_DIR: "./data" }))).toThrow(/absolute path/);
+  });
+
+  it("accepts an absolute data dir", () => {
+    expect(readConfig(env({ BUILDEX_DATA_DIR: "/srv/buildex" })).dataDir).toBe("/srv/buildex");
+    expect(readConfig(env({ BUILDEX_DATA_DIR: "/data/nested" })).dataDir).toBe("/data/nested");
+  });
 });
