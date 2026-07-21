@@ -315,7 +315,7 @@ describe("SyncScheduler - resilience", () => {
     expect([...calls].sort()).toEqual(["/bad", "/team"]);
   });
 
-  it("does not crash when one root's publish throws; the throw is treated as no-change", async () => {
+  it("does not crash when one root's publish throws, and surfaces it as needing attention", async () => {
     const calls: string[] = [];
     const engine = {
       async checkpoint(): Promise<CheckpointResult> {
@@ -341,8 +341,10 @@ describe("SyncScheduler - resilience", () => {
     });
     const status = await scheduler.publishAll();
     expect([...calls].sort()).toEqual(["/bad", "/team"]);
-    expect(status).toBe("ok"); // the throw becomes "no-change", which ranks with "ok"
-    expect(statuses).toEqual(["busy", "ok"]);
+    // A throw is a failure to send. Ranking it with "ok" would paint the dot green and tell the
+    // operator their work reached the company when it never left the machine.
+    expect(status).toBe("needs-help");
+    expect(statuses).toEqual(["busy", "needs-help"]);
   });
 });
 
@@ -402,6 +404,115 @@ describe("manual save", () => {
     engine.publishResult = "ok";
     await clock.advance(5_000);
     expect(engine.calls.publish.length).toBeGreaterThan(2);
+  });
+
+  it("checkpoints each writable root BEFORE receiving it on the tick", async () => {
+    // Receiving rebases, and a rebase refuses to start on a dirty tree - the engine then treats
+    // that as a conflict and hard-resets to the remote. Work the operator never checkpointed is
+    // not in the conflict backup set, so it would be destroyed (invariant 8). Checkpointing first
+    // makes the tree clean; checkpointing is network-free, so the tick still sends nothing.
+    const order: string[] = [];
+    const clock = new FakeClock();
+    const scheduler = new SyncScheduler({
+      engine: {
+        async checkpoint(dir: string): Promise<CheckpointResult> {
+          order.push("checkpoint:" + dir);
+          return "committed";
+        },
+        async receive(dir: string): Promise<ReceiveResult> {
+          order.push("receive:" + dir);
+          return "ok";
+        },
+        async publish(): Promise<SyncResult> {
+          order.push("publish");
+          return "ok";
+        },
+        async syncReadonly(): Promise<void> {},
+      },
+      writableRoots: () => ["/w/team", "/w/private"],
+      readonlyRoots: () => [],
+      clock,
+    });
+    scheduler.start();
+    clock.advance(45_000);
+    await tick();
+    expect(order).toEqual([
+      "checkpoint:/w/team",
+      "receive:/w/team",
+      "checkpoint:/w/private",
+      "receive:/w/private",
+    ]);
+    expect(order).not.toContain("publish");
+  });
+
+  it("never runs a tick and a save against the same root at the same time", async () => {
+    // Two git operations in one worktree race on the index lock; worse, a rebase that fails for
+    // that reason trips the engine's conflict path - a spurious "needs help" and a hard reset.
+    let inFlight = 0;
+    let overlapped = false;
+    const clock = new FakeClock();
+    const gate: (() => void)[] = [];
+    const slow = async <T,>(v: T): Promise<T> => {
+      inFlight++;
+      if (inFlight > 1) overlapped = true;
+      await new Promise<void>((r) => gate.push(r));
+      inFlight--;
+      return v;
+    };
+    const scheduler = new SyncScheduler({
+      engine: {
+        checkpoint: () => slow<CheckpointResult>("committed"),
+        receive: () => slow<ReceiveResult>("ok"),
+        publish: () => slow<SyncResult>("ok"),
+        async syncReadonly(): Promise<void> {},
+      },
+      writableRoots: () => ["/w/team"],
+      readonlyRoots: () => [],
+      clock,
+    });
+    scheduler.start();
+    const publishP = scheduler.publishAll(); // operator saves...
+    clock.advance(45_000); // ...and the tick fires while it is still in flight
+    // Release every operation as it queues; nothing may ever be in flight two at a time.
+    for (let i = 0; i < 20; i++) {
+      gate.shift()?.();
+      await tick();
+    }
+    await publishP;
+    expect(overlapped).toBe(false);
+  });
+
+  it("retries only the roots pending at click time, and never re-records newer work", async () => {
+    // The operator saved, then kept working for an hour. When connectivity returns, the retry must
+    // send what they asked to send - not everything they have done since.
+    const { scheduler, engine, clock } = makeScheduler();
+    engine.publishResults = ["ok", "queued"]; // /w/team went out; /w/private was offline
+    await scheduler.publishAll();
+    expect(engine.calls.checkpoint).toEqual([]); // nothing was dirty at click time
+
+    // The operator keeps working. This touch is still inside its 2s quiet window when the 5s
+    // backoff fires, so a retry that flushed would checkpoint it and then send it.
+    clock.advance(4_000);
+    scheduler.touch("/w/team");
+
+    engine.calls.publish.length = 0;
+    clock.advance(1_000); // connectivity returns; the retry fires at t=5s
+    await tick();
+    expect(engine.calls.publish).toEqual(["/w/private"]); // only the root that was still pending
+    expect(engine.calls.checkpoint).toEqual([]); // and nothing newer was recorded to be sent
+  });
+
+  it("gives up retrying while offline instead of re-running forever, leaving the state queued", async () => {
+    const { scheduler, engine, clock, statuses } = makeScheduler();
+    engine.publishResult = "queued";
+    await scheduler.publishAll();
+    for (let i = 0; i < 12; i++) {
+      clock.advance(200_000); // well past every doubling delay
+      await tick();
+    }
+    // 1 initial attempt + at most MAX_RETRIES (5) retries, over 2 roots.
+    expect(engine.calls.publish.length).toBeLessThanOrEqual(12);
+    expect(statuses[statuses.length - 1]).toBe("queued"); // the operator can save again by hand
   });
 
   it("cancels a pending offline backoff retry on shutdown - quitting must never publish", async () => {

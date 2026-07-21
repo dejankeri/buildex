@@ -126,8 +126,11 @@ export class SyncEngine {
     }
   }
 
-  /** Whether any git remote is configured - false for a local-only stub repo (no account yet). */
-  private async hasRemote(dir: string): Promise<boolean> {
+  /** Whether any git remote is configured - false for a local-only stub repo (no account yet).
+   *  Public because the console has to tell "waiting to be saved" apart from "there is nowhere to
+   *  save to yet": with no account the card must state the truth rather than offer a save that
+   *  cannot do anything. `git remote` is a local read - no network. */
+  async hasRemote(dir: string): Promise<boolean> {
     return (await this.git(["remote"], dir)).trim().length > 0;
   }
 
@@ -164,12 +167,21 @@ export class SyncEngine {
       /* rebase may have failed before starting (e.g. bad upstream) - nothing to abort */
     }
     const stamp = String(this.deps.now());
-    const changed = (await this.git(["diff", "--name-only", "HEAD", "origin/main"], dir))
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    // Everything the reset is about to overwrite, from BOTH sources:
+    //  - what the remote changed relative to our HEAD (the classic conflict case), and
+    //  - anything dirty in the working tree right now (modified, staged, or untracked).
+    // The second half is not redundant: a rebase refuses to start at all on a dirty tree, so the
+    // file that provoked this may never appear in the HEAD..origin/main list. Backing up only that
+    // list would hard-reset an operator's uncommitted edit into nothing (invariant 8).
+    const changed = new Set<string>([
+      ...lines(await this.git(["diff", "--name-only", "HEAD", "origin/main"], dir)),
+      ...lines(await this.git(["ls-files", "--modified", "--others", "--exclude-standard"], dir)),
+      ...lines(await this.git(["diff", "--cached", "--name-only"], dir)),
+    ]);
 
     for (const rel of changed) {
+      // Never copy workspace-internal paths - .conflicts/ into .conflicts/ would nest forever.
+      if (INTERNAL.some((p) => rel === p || rel.startsWith(`${p}/`))) continue;
       const src = join(dir, rel);
       if (!existsSync(src)) continue;
       const dest = join(dir, ".conflicts", stamp, rel);
@@ -207,6 +219,11 @@ export class SyncEngine {
     });
     return stdout;
   }
+}
+
+/** Split git's newline output into trimmed, non-empty entries. */
+function lines(out: string): string[] {
+  return out.split("\n").map((s) => s.trim()).filter(Boolean);
 }
 
 /** Refuse to operate inside a cloud-synced folder - concurrent cloud sync corrupts git repos. */

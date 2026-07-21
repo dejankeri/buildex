@@ -1,7 +1,15 @@
 // Background sync loop.
 // Owns *when* a sync runs; the SyncEngine primitive owns *how*. Debounces bursts of edits into a
-// single commit, runs a background pull tick, retries offline commits with backoff. Deterministic:
-// all timing goes through an injected clock so tests run on a fake clock with no real timers.
+// single checkpoint, runs a background receive tick, retries offline sends with bounded backoff.
+// Deterministic: all timing goes through an injected clock so tests run on a fake clock with no
+// real timers.
+//
+// Mutual exclusion is PER ROOT, not per operation: checkpoint, receive and publish all run through
+// `exclusive(dir, ...)`, which chains them on one promise per repository. Two git operations in one
+// worktree race on the index lock, and a rebase that fails because another operation held the lock
+// would trip the engine's conflict path - a spurious "needs help" plus a hard reset. The
+// `flushing`/`rerun` pair below is a separate, narrower guard: it only coalesces overlapping
+// debounce flushes.
 import type { SyncResult, CheckpointResult, ReceiveResult } from "./engine.js";
 
 export type SyncStatus = "ok" | "busy" | "queued" | "needs-help" | "local";
@@ -37,6 +45,11 @@ const QUIET_MS = 2000;
 const MAX_WAIT_MS = 10000;
 const BACKOFF_MS = 5000;
 const PULL_MS = 45000;
+/** How many times an offline send is retried before it stops on its own. Retries double the wait
+ *  (5s, 10s, 20s, 40s, 80s), so a laptop that is offline for an afternoon stops re-running git every
+ *  five seconds - and stops flickering the dot between busy and queued. After the last attempt the
+ *  status stays "queued": the work is safe locally and the operator can save again by hand. */
+const MAX_RETRIES = 5;
 
 export class SyncScheduler {
   private readonly dirty = new Set<string>();
@@ -50,8 +63,25 @@ export class SyncScheduler {
   private flushing = false;
   private rerun = false;
   private lastStatus: SyncStatus = "ok";
+  /** One promise chain per repository - the per-root mutex (see the file comment). */
+  private readonly chain = new Map<string, Promise<unknown>>();
 
   constructor(private readonly deps: SyncSchedulerDeps) {}
+
+  /** Run `fn` with exclusive access to `dir`: it starts only once every operation already queued
+   *  for that repository has settled. Failures never poison the chain for the next caller. */
+  private exclusive<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.chain.get(dir) ?? Promise.resolve();
+    const next = prev.then(fn, fn);
+    this.chain.set(
+      dir,
+      next.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return next;
+  }
 
   /** Begin the background pull tick - fetch/rebase every writable root on an idle interval. */
   start(): void {
@@ -77,7 +107,15 @@ export class SyncScheduler {
     }
     for (const dir of this.deps.writableRoots()) {
       try {
-        const r = await this.deps.engine.receive(dir);
+        // Checkpoint FIRST, always. Receiving rebases, and a rebase refuses to start on a dirty
+        // tree - the engine then treats that as a conflict and resets to the remote, which would
+        // destroy an edit that was never recorded (invariant 8). Checkpointing is network-free, so
+        // this tick still sends nothing. Both halves run under one exclusive lease so a save
+        // cannot interleave between them.
+        const r = await this.exclusive(dir, async () => {
+          await this.deps.engine.checkpoint(dir);
+          return this.deps.engine.receive(dir);
+        });
         if (r === "needs-help") this.setStatus("needs-help");
       } catch {
         /* nothing arrived; the operator's own work is untouched */
@@ -143,7 +181,7 @@ export class SyncScheduler {
       await Promise.all(
         roots.map(async (dir) => {
           try {
-            await this.deps.engine.checkpoint(dir);
+            await this.exclusive(dir, () => this.deps.engine.checkpoint(dir));
           } catch {
             /* the operator's file is on disk regardless */
           }
@@ -163,29 +201,46 @@ export class SyncScheduler {
    *  (POST /api/sync). */
   async publishAll(): Promise<SyncStatus> {
     await this.flush(); // record anything still in the debounce window first
-    const roots = this.deps.writableRoots();
+    return this.publishRoots(this.deps.writableRoots(), 0);
+  }
+
+  /** Send exactly `roots`. The retry path re-enters here with the roots that were pending AT CLICK
+   *  TIME and never re-flushes: an operator who saved while offline asked to send what existed then,
+   *  not an hour of work they did afterwards. Sending more than they asked for would break the one
+   *  rule this whole surface exists to keep. */
+  private async publishRoots(roots: string[], attempt: number): Promise<SyncStatus> {
     this.setStatus("busy");
     const results = await Promise.all(
-      roots.map(async (dir): Promise<SyncResult> => {
-        try {
-          return await this.deps.engine.publish(dir);
-        } catch {
-          return "no-change";
-        }
-      }),
+      roots.map((dir) =>
+        this.exclusive(dir, async (): Promise<SyncResult> => {
+          try {
+            return await this.deps.engine.publish(dir);
+          } catch {
+            // A throw is a FAILURE to send (a cloud-synced workspace, a corrupt repository, a git
+            // timeout). It must never be laundered into "no-change", which ranks as success and
+            // would tell the operator their work went out when it never left.
+            return "needs-help";
+          }
+        }),
+      ),
     );
     const status = worstStatus(results);
     this.setStatus(status);
 
-    // Offline roots keep their checkpoints locally; retry on a delay.
+    // Offline roots keep their checkpoints locally; retry those roots (only those) on a doubling
+    // delay, a bounded number of times. When the retries run out the status stays "queued" - the
+    // work is safe on disk and saving again is one tap away.
     const queued = roots.filter((_, i) => results[i] === "queued");
     if (this.backoffTimer !== null) this.deps.clock.clearTimer(this.backoffTimer);
     this.backoffTimer = null;
-    if (queued.length > 0) {
-      this.backoffTimer = this.deps.clock.setTimer(() => {
-        this.backoffTimer = null;
-        void this.publishAll();
-      }, BACKOFF_MS);
+    if (queued.length > 0 && attempt < MAX_RETRIES) {
+      this.backoffTimer = this.deps.clock.setTimer(
+        () => {
+          this.backoffTimer = null;
+          void this.publishRoots(queued, attempt + 1);
+        },
+        BACKOFF_MS * 2 ** attempt,
+      );
     }
     return status;
   }

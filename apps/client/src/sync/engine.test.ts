@@ -175,6 +175,34 @@ describe("SYNC-SAFETY INVARIANT [release-gate:sync-safety]: a conflict never los
     expect(reset).toBe("op1 version\n");
     expect(reset).not.toContain("\r");
   });
+
+  it("receive() on a DIRTY tree keeps the operator's uncommitted edit - it is never reset away", async () => {
+    // WHY THIS EXISTS: `git rebase` refuses to start on a dirty working tree, so receive()'s catch
+    // runs backupAndReset - which used to back up only what the REMOTE changed (HEAD..origin/main).
+    // An edit the operator (or a mid-run agent) had not checkpointed yet was in neither list, so
+    // `reset --hard` destroyed it with no backup. That is a direct breach of invariant 8.
+    const op1 = clone("op1");
+    const op2 = clone("op2");
+
+    // A teammate changes a DIFFERENT file and sends it. This is the case that used to lose work:
+    // the remote-changed list is ["theirs.md"], so the operator's dirty doc.md is not in it.
+    writeFileSync(join(op1, "theirs.md"), "teammate version\n");
+    expect(await engine().publish(op1)).toBe("ok");
+
+    // The operator has an uncommitted edit in flight (never checkpointed) when the tick fires.
+    const precious = "operator work in flight\n";
+    writeFileSync(join(op2, "doc.md"), precious);
+    git(["fetch", "origin"], op2); // the remote ref exists locally; the tree is still dirty
+
+    await engine(() => 1_700_000_000_000).receive(op2);
+
+    // Byte for byte, the operator's content still exists - in the tree or under .conflicts/.
+    const backup = join(op2, ".conflicts", "1700000000000", "doc.md");
+    const survived =
+      readFileSync(join(op2, "doc.md"), "utf8") === precious ||
+      (existsSync(backup) && readFileSync(backup, "utf8") === precious);
+    expect(survived).toBe(true);
+  });
 });
 
 describe("local-only stub repo (no remote): work is committed but there is nothing to sync", () => {
