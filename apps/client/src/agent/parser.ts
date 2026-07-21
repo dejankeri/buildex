@@ -5,6 +5,7 @@
 // (which had ~120 happy-path lines and no partial-frame or error tolerance).
 import { relative, isAbsolute } from "node:path";
 import type { UiEvent } from "./types.js";
+import { toPosix } from "../lib/to-posix.js";
 
 interface StreamContentBlock {
   type: string;
@@ -127,7 +128,7 @@ export class ClaudeStreamParser {
       // Only relativize paths that stay inside the workspace; otherwise leave absolute. Normalize to
       // forward slashes: on Windows `relative` yields backslashes, but the live map keys every file
       // POSIX-style (brain/graph.ts toPosix), so an un-normalized path would never match it.
-      if (!rel.startsWith("..") && !isAbsolute(rel)) return rel.split("\\").join("/");
+      if (!rel.startsWith("..") && !isAbsolute(rel)) return toPosix(rel);
       return raw;
     }
     return raw;

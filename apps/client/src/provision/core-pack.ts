@@ -6,6 +6,7 @@
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { pinnedGit } from "../lib/git-pin.js";
 import type { Root } from "../brain/graph.js";
 
 /** Where to look for the bundled core pack. */
@@ -69,7 +70,7 @@ export function provisionLocalCore(opts: LocalCoreOpts): Root {
  *  team/private stub provisioners - a stub is just a local repo whose remote is attached later, on
  *  account-open. Deterministic commit identity, independent of the operator's global git config. */
 export function initAndCommit(dir: string, actor: string, message: string): void {
-  const git = (args: string[]): void => void execFileSync("git", args, { cwd: dir, env: gitEnv(actor), stdio: ["ignore", "pipe", "pipe"] });
+  const git = (args: string[]): void => void execFileSync("git", pinnedGit(args), { cwd: dir, env: gitEnv(actor), stdio: ["ignore", "pipe", "pipe"] });
   git(["init", "--initial-branch=main"]);
   git(["add", "-A"]);
   git(["commit", "-m", message]);
