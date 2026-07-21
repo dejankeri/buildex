@@ -83,16 +83,27 @@ export async function createServices(
   });
 
   // BOTH stores must close, even if the first throws - otherwise the second handle leaks, which
-  // is exactly what blocked cleanup before ee770eb.
+  // is exactly what blocked cleanup before ee770eb. Discipline matches the construction-failure
+  // catch above: swallow a secondary close error so the primary one survives to the caller, rather
+  // than try/finally, which would let a schedules.close() error mask one from store.close().
   let closed = false;
   const close = (): void => {
     if (closed) return;
     closed = true;
+    let primaryErr: unknown;
+    let hasPrimaryErr = false;
     try {
       store.close();
-    } finally {
-      schedules.close();
+    } catch (err) {
+      hasPrimaryErr = true;
+      primaryErr = err;
     }
+    try {
+      schedules.close();
+    } catch {
+      // Best-effort: the primary error (if any) is what the caller needs to see.
+    }
+    if (hasPrimaryErr) throw primaryErr;
   };
 
   return { handler, close };

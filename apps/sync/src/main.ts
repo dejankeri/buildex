@@ -21,8 +21,26 @@ export async function start(env: Record<string, string | undefined>): Promise<St
   const stop = async (): Promise<void> => {
     if (stopped) return;
     stopped = true;
-    await bound.close(); // force-closes keep-alive sockets; git and undici both hold them open
-    services.close();
+    // Same discipline as server.ts's close(): a throw from bound.close() must not skip
+    // services.close() (a SQLite handle leak on an error path) - swallow the secondary error and
+    // preserve the primary one, rather than letting the first throw short-circuit the rest.
+    let primaryErr: unknown;
+    let hasPrimaryErr = false;
+    try {
+      await bound.close(); // force-closes keep-alive sockets; git and undici both hold them open
+    } catch (err) {
+      hasPrimaryErr = true;
+      primaryErr = err;
+    }
+    try {
+      services.close();
+    } catch (err) {
+      if (!hasPrimaryErr) {
+        hasPrimaryErr = true;
+        primaryErr = err;
+      }
+    }
+    if (hasPrimaryErr) throw primaryErr;
   };
 
   return { port: bound.port, stop };
