@@ -39,15 +39,12 @@ const KEY = "k".repeat(32);
 describe("onboard", () => {
   it("calls the three S2S endpoints in order, with the service key and JSON content type on each", async () => {
     const calls: RecordedCall[] = [];
-    const fetchImpl = fakeFetch(calls, () => ({ status: 201, body: { ok: true } }));
-    const deps: MintDeps = { baseUrl: BASE, serviceKey: KEY, fetchImpl };
-
     // The last call (/s2s/setup-tokens) needs a real token in its response.
     const withToken = fakeFetch(calls, (call) => {
       if (call.url.endsWith("/s2s/setup-tokens")) return { status: 200, body: { setupToken: "xsetup_abc123" } };
       return { status: 201, body: { ok: true } };
     });
-    deps.fetchImpl = withToken;
+    const deps: MintDeps = { baseUrl: BASE, serviceKey: KEY, fetchImpl: withToken };
 
     await onboard(deps, { companySlug: "acme", companyName: "Acme Labs", email: "operator@example.test" });
 
@@ -115,6 +112,59 @@ describe("onboard", () => {
     await expect(
       onboard(deps, { companySlug: "acme", companyName: "Acme Labs", email: "operator@example.test" }),
     ).rejects.toThrow(/internal error/);
+  });
+
+  it("propagates a 401 from /s2s/companies untouched - a bad service key is not a slug problem", async () => {
+    const calls: RecordedCall[] = [];
+    const fetchImpl = fakeFetch(calls, () => ({ status: 401, body: { error: "bad service key" } }));
+    const deps: MintDeps = { baseUrl: BASE, serviceKey: KEY, fetchImpl };
+
+    let caught: Error | undefined;
+    try {
+      await onboard(deps, { companySlug: "acme", companyName: "Acme Labs", email: "operator@example.test" });
+    } catch (err) {
+      caught = err as Error;
+    }
+
+    expect(caught).toBeDefined();
+    expect(caught?.message).toMatch(/bad service key/);
+    expect(caught?.message).not.toMatch(/slug/i);
+    expect(caught?.message).not.toMatch(/already exist/i);
+  });
+
+  it("still attaches the duplicate-slug guidance for a 500, and keeps the original error text", async () => {
+    const calls: RecordedCall[] = [];
+    const fetchImpl = fakeFetch(calls, () => ({ status: 500, body: { error: "internal error" } }));
+    const deps: MintDeps = { baseUrl: BASE, serviceKey: KEY, fetchImpl };
+
+    let caught: Error | undefined;
+    try {
+      await onboard(deps, { companySlug: "acme", companyName: "Acme Labs", email: "operator@example.test" });
+    } catch (err) {
+      caught = err as Error;
+    }
+
+    expect(caught).toBeDefined();
+    expect(caught?.message).toMatch(/slug/i);
+    expect(caught?.message).toMatch(/already exist/i);
+    expect(caught?.message).toMatch(/internal error/);
+  });
+
+  it("propagates a network rejection from fetchImpl untouched - no slug framing invented", async () => {
+    const fetchImpl: typeof fetch = () => Promise.reject(new Error("fetch failed: ECONNREFUSED"));
+    const deps: MintDeps = { baseUrl: BASE, serviceKey: KEY, fetchImpl };
+
+    let caught: Error | undefined;
+    try {
+      await onboard(deps, { companySlug: "acme", companyName: "Acme Labs", email: "operator@example.test" });
+    } catch (err) {
+      caught = err as Error;
+    }
+
+    expect(caught).toBeDefined();
+    expect(caught?.message).toMatch(/ECONNREFUSED/);
+    expect(caught?.message).not.toMatch(/slug/i);
+    expect(caught?.message).not.toMatch(/already exist/i);
   });
 });
 

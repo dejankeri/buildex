@@ -17,13 +17,25 @@ export interface MintDeps {
   fetchImpl: typeof fetch;
 }
 
+/** Thrown by s2s() on a non-OK response. Carries the numeric status so callers can branch on it
+ * without parsing it back out of the message string. */
+export class S2sError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "S2sError";
+  }
+}
+
 async function s2s(deps: MintDeps, path: string, body: unknown): Promise<unknown> {
   const res = await deps.fetchImpl(`${deps.baseUrl}${path}`, {
     method: "POST",
     headers: { "x-service-key": deps.serviceKey, "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`${path} failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw new S2sError(`${path} failed: ${res.status} ${await res.text()}`, res.status);
   return res.json();
 }
 
@@ -37,12 +49,18 @@ export async function onboard(
   try {
     await s2s(deps, "/s2s/companies", { id: companyId, slug: opts.companySlug, name: opts.companyName });
   } catch (err) {
-    const original = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `could not create company "${opts.companySlug}" - a company with that slug probably already ` +
-        `exists (companies.slug is unique). If the operator already exists, re-issue their token with ` +
-        `--operator-id <id> instead of --onboard. Original error: ${original}`,
-    );
+    // A 500 is the shape a UNIQUE violation on companies.slug takes (it falls through the server's
+    // catch-all). Every other failure - a 401 from a bad service key, a validation error, a network
+    // rejection - is not consistent with a duplicate slug, so it must propagate untouched rather than
+    // mislead the operator with an invented diagnosis.
+    if (err instanceof S2sError && err.status === 500) {
+      throw new Error(
+        `could not create company "${opts.companySlug}" - a company with that slug probably already ` +
+          `exists (companies.slug is unique). If the operator already exists, re-issue their token with ` +
+          `--operator-id <id> instead of --onboard. Original error: ${err.message}`,
+      );
+    }
+    throw err;
   }
   await s2s(deps, "/s2s/operators", { id: operatorId, companyId, email: opts.email });
   const { setupToken } = (await s2s(deps, "/s2s/setup-tokens", { operatorId })) as { setupToken: string };
