@@ -17,7 +17,24 @@ export interface Services {
   close: () => void;
 }
 
-export async function createServices(config: SyncConfig): Promise<Services> {
+/**
+ * Store construction seams, overridable so a test can hold a direct reference to the real
+ * `ControlPlaneStore` / `ScheduleStore` instances `createServices` builds internally and assert on
+ * them after `close()` - e.g. that a post-close operation throws. Both default to the real
+ * constructors, so `createServices(config)` is unchanged for every existing caller.
+ */
+export interface ServiceFactories {
+  createStore?: (dbPath: string) => ControlPlaneStore;
+  createSchedules?: (dbPath: string) => ScheduleStore;
+}
+
+export async function createServices(
+  config: SyncConfig,
+  factories: ServiceFactories = {},
+): Promise<Services> {
+  const createStore = factories.createStore ?? ((dbPath: string) => new ControlPlaneStore(dbPath));
+  const createSchedules = factories.createSchedules ?? ((dbPath: string) => new ScheduleStore(dbPath));
+
   const reposRoot = join(config.dataDir, "repos");
   mkdirSync(reposRoot, { recursive: true }); // also creates dataDir - first boot on a fresh volume
 
@@ -34,9 +51,9 @@ export async function createServices(config: SyncConfig): Promise<Services> {
   let git: EmbeddedGitService;
   let provisioning: ProvisioningService;
   try {
-    store = new ControlPlaneStore(join(config.dataDir, "control.db"));
+    store = createStore(join(config.dataDir, "control.db"));
     opened.push(store);
-    schedules = new ScheduleStore(join(config.dataDir, "schedules.db"));
+    schedules = createSchedules(join(config.dataDir, "schedules.db"));
     opened.push(schedules);
     git = new EmbeddedGitService({ reposRoot });
     provisioning = new ProvisioningService({ store, git, idFactory: () => randomUUID() });
