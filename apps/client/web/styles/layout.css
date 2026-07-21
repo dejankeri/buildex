@@ -37,6 +37,12 @@
   .dropdown{position:absolute;top:36px;left:0;background:var(--elevate);border:1px solid var(--line-2);border-radius:9px;padding:5px;min-width:180px;box-shadow:0 10px 30px rgba(0,0,0,.4);z-index:50;}
   .dropdown button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:none;border:0;font-size:13px;padding:7px 9px;border-radius:6px;color:var(--ink);} .dropdown button:hover{background:var(--brand-tint);}
   .dropdown .k{color:var(--faint);width:15px;text-align:center;}
+  /* The ＋ add-menu also lists every installed app, so it can outgrow the viewport - cap and scroll
+     rather than run off the bottom of the window. */
+  .addmenu{min-width:212px;max-height:min(70vh,440px);overflow-y:auto;}
+  .addmenu .mhd{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:700;padding:9px 9px 4px;margin-top:4px;border-top:1px solid var(--line);}
+  .addmenu .k{display:grid;place-items:center;height:16px;}
+  .addmenu .k .mlogo{max-width:16px;max-height:16px;width:auto;height:auto;object-fit:contain;display:block;}
   .dropdown .kbd{margin-left:auto;padding-left:16px;font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.02em;}
   .addapp .aform{display:flex;flex-direction:column;gap:7px;padding:10px;}
   .addapp label{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;}

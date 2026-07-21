@@ -49,7 +49,7 @@ function renderTabbar() {
     el.innerHTML = icon + '<span class="tt">' + esc(t.title) + '</span><span class="x">×</span>';
     el.onclick = (e) => {
       if (e.target.classList.contains("x")) {
-        closeTab(t.id);
+        requestCloseTab(t.id);
       } else activateTab(t.id);
     };
     el.onmousedown = (e) => {
@@ -58,7 +58,7 @@ function renderTabbar() {
     el.onauxclick = (e) => {
       if (e.button === 1) {
         e.preventDefault();
-        closeTab(t.id); // middle-click closes the tab
+        requestCloseTab(t.id); // middle-click closes the tab
       }
     };
     // --- drag to reorder ---
@@ -154,6 +154,23 @@ function navUpdate() {
   f.disabled = !S.hist.slice(S.hp + 1).some((id) => S.tabs.find((t) => t.id === id));
 }
 
+/**
+ * Close a tab *from the tab bar*. A chat is the session's content - the left rail lists exactly the
+ * chats - so closing one is deleting it, and it asks first. Every other surface (doc, browser, map,
+ * store…) is only a view of something that lives elsewhere, so it closes with no ceremony.
+ * @param {string} id - tab id.
+ */
+function requestCloseTab(id) {
+  const t = S.tabs.find((x) => x.id === id);
+  if (!t || t.type !== "chat") return closeTab(id);
+  confirmAction({
+    title: "Delete this chat?",
+    body: "“" + (t.title || "Chat") + "” and its history are removed from this session. Documents and browsers you opened stay where they are.",
+    confirm: "Delete chat",
+    onConfirm: () => deleteChatFromSession(t),
+  });
+}
+
 /** Close tab `id`: dispose it, remove its pane, and focus a neighbour (or the start screen if none). */
 function closeTab(id) {
   const i = S.tabs.findIndex((t) => t.id === id);
@@ -184,14 +201,19 @@ function addTab(tab) {
   return tab;
 }
 
-/** Open (or re-focus) a chat tab for session `sess`, building its pane and loading its history. */
-function openChatTab(sess) {
+/**
+ * Open (or re-focus) a chat tab for session `sess`, building its pane and loading its history.
+ * @param {object} sess - the session ({id, title, status}).
+ * @param {object} [app] - the app this chat belongs to, when it was started from one; carried on the
+ *   tab so the app's mark and connect banner survive a session reload.
+ */
+function openChatTab(sess, app) {
   const existing = S.tabs.find((t) => t.type === "chat" && t.sessionId === sess.id);
   if (existing) {
     activateTab(existing.id);
     return;
   }
-  const tab = addTab({ type: "chat", title: sess.title || "Chat", sessionId: sess.id, status: sess.status || "idle" });
+  const tab = addTab({ type: "chat", title: sess.title || "Chat", sessionId: sess.id, status: sess.status || "idle", app: app || null, appConn: app && typeof appConn === "function" ? appConn(app.name) : null });
   buildChatPane(tab);
   loadSession(tab);
 }
