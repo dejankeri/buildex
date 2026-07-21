@@ -36,7 +36,7 @@ function reorderTab(fromId, toId, after) {
 function renderTabbar() {
   const bar = $("#tabbar");
   $$(".tab", bar).forEach((t) => t.remove());
-  const add = $("#tabAdd");
+  let activeEl = null;
   S.tabs.forEach((t) => {
     const el = elt("div", "tab" + (t.id === S.active ? " active" : ""));
     // chat tabs show a live status dot; every other surface shows a per-type glyph.
@@ -93,8 +93,28 @@ function renderTabbar() {
       const r = el.getBoundingClientRect();
       reorderTab(dragTabId, t.id, e.clientX > r.left + r.width / 2);
     };
-    bar.insertBefore(el, add);
+    bar.appendChild(el);
+    if (t.id === S.active) activeEl = el;
   });
+  scrollTabIntoView(bar, activeEl);
+}
+
+/**
+ * Keep the active tab on screen. Opening a tab when the strip is already full used to put it just
+ * past the right edge - the operator asked for a thing and the app appeared to do nothing - and the
+ * same happens on the left when a tab is activated from the sessions rail.
+ * @param {Element} bar - the scrolling strip (#tabbar).
+ * @param {Element|null} el - the active tab row, or null when nothing is active.
+ */
+function scrollTabIntoView(bar, el) {
+  if (!bar || !el) return;
+  // Measured against the strip itself, so the pinned ＋ (a sibling now) never counts as room.
+  const left = el.offsetLeft - bar.offsetLeft;
+  const right = left + el.offsetWidth;
+  if (!bar.clientWidth) return; // not laid out yet (hidden pane, or jsdom) - nothing to scroll
+  const pad = 8; // leave a sliver of the neighbouring tab visible, so "there is more" still reads
+  if (left - pad < bar.scrollLeft) bar.scrollLeft = Math.max(0, left - pad);
+  else if (right + pad > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = right + pad - bar.clientWidth;
 }
 
 /** Focus tab `id`: show its pane, hide the rest, repaint the bar, record it in nav history. */

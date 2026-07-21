@@ -2,10 +2,13 @@
    Part of the operator console design system (web/index.html). */
   /* middle */
   .mid{display:flex;flex-direction:column;min-width:0;background:var(--bg);}
-  .tabs{flex:1;min-width:0;display:flex;align-items:stretch;gap:1px;padding:0 4px 0 6px;overflow-x:auto;overflow-y:hidden;-webkit-app-region:drag;} .tabs::-webkit-scrollbar{height:0;}
+  /* The strip scrolls; the wrapper does not - so ＋ stays pinned at the right edge no matter how
+     many tabs are open, and the title bar stays draggable across the whole run. */
+  .tabswrap{flex:1;min-width:0;display:flex;align-items:stretch;-webkit-app-region:drag;}
+  .tabs{flex:1;min-width:0;display:flex;align-items:stretch;gap:1px;padding:0 4px 0 6px;overflow-x:auto;overflow-y:hidden;scroll-behavior:smooth;-webkit-app-region:drag;} .tabs::-webkit-scrollbar{height:0;}
   .tab{-webkit-app-region:no-drag;display:flex;align-items:center;gap:8px;padding:0 12px;font-size:13px;color:var(--muted);cursor:pointer;border-top:2px solid transparent;max-width:220px;} .tab .ti{opacity:.8;} .tab .tt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;} .tab.active{color:var(--ink);background:var(--bg);border-top-color:var(--brand);} .tab .x{opacity:0;font-size:15px;color:var(--faint);width:16px;height:16px;border-radius:4px;display:grid;place-items:center;} .tab:hover .x{opacity:1;} .tab .x:hover{background:var(--line-2);color:var(--ink);} .tab.dragging{opacity:.4;} .tab.dragover-l{box-shadow:inset 2px 0 0 var(--brand);} .tab.dragover-r{box-shadow:inset -2px 0 0 var(--brand);}
   .tab .st{width:7px;height:7px;border-radius:50%;background:var(--good);} .tab .st.running{background:var(--run);animation:pulse 1.4s infinite;}
-  .tabadd{-webkit-app-region:no-drag;background:none;border:0;color:var(--muted);font-size:17px;padding:0 12px;position:relative;} .tabadd:hover{color:var(--ink);}
+  .tabadd{-webkit-app-region:no-drag;flex:none;background:none;border:0;color:var(--muted);font-size:17px;padding:0 12px;position:relative;} .tabadd:hover{color:var(--ink);}
   .tabbody{flex:1;min-height:0;position:relative;} .pane{position:absolute;inset:0;display:none;flex-direction:column;} .pane.on{display:flex;}
 
   /* chat pane */

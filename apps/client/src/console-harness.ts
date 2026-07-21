@@ -88,7 +88,7 @@ const EXPOSE = [
   "projectRename", "projectStatus", "rAuto", "rFiles", "rGateway", "rPending", "rSkills", "rSyncLog", "refreshApps",
   "refreshPending", "refreshProjects", "refreshUsage", "removeProjectItem", "renderAgentHealth", "rootSlot", "toggleTreeNode", "treeActions", "wireTreeActions", "openFileMenu", "openTreeMoreMenu", "uploadIntoFolder", "fsDo", "promptAction", "toast", "renderBrain",
   "renderBrainRail", "renderConnectorEditor", "renderHistory", "renderMcpEditor", "renderPending",
-  "renderTabbar", "renderTree", "reorderTab", "resolveCard", "runSkill", "sendPrompt", "setMsg", "setSync",
+  "renderTabbar", "renderTree", "reorderTab", "resolveCard", "runSkill", "scrollTabIntoView", "sendPrompt", "setMsg", "setSync",
   "showProjectStart", "startApiKey", "clearApiKey", "startAppHost", "startBrainFlow", "startInstall", "startUninstall", "storeNotice",
   // Apps & Tools rail: manual order, the visible cap, edit mode, and the chat-side connect gate.
   "appOrderKey", "savedAppOrder", "saveAppOrder", "orderApps", "renderApps", "appRow", "wireAppDrag", "toggleAppsEdit",

@@ -41,7 +41,12 @@
       <button class="brand" id="brandBtn" title="Your company brain - the whole system, live"><span class="dot"></span>BuildEx</button>
     </div>
 
-    <div class="tabs" id="tabbar"><button class="tabadd" id="tabAdd" title="New tab" aria-label="New tab">＋</button></div>
+    <!-- ＋ sits OUTSIDE the scrolling strip: "start something new" must never be the thing that
+         scrolls off when the operator has a lot of work open. -->
+    <div class="tabswrap">
+      <div class="tabs" id="tabbar"></div>
+      <button class="tabadd" id="tabAdd" title="New tab" aria-label="New tab">＋</button>
+    </div>
 
     <div class="tl tl-r">
       <div class="rtabs" id="rtabs" role="tablist" aria-label="Right panel">

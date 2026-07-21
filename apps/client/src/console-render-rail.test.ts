@@ -281,6 +281,43 @@ describe("console renderers (jsdom) — tab bar", () => {
     expect(doc.querySelector("#tabbar img")).toBeNull(); // payload did NOT become a real element
     expect(doc.querySelector("#tabbar .tab .tt")!.textContent).toContain("<img"); // survives as text
   });
+
+  it("keeps ＋ OUT of the scrolling strip, so it survives a bar full of tabs", () => {
+    const { doc, c } = loadConsole();
+    c.S.tabs = Array.from({ length: 12 }, (_, i) => ({ id: "t" + i, type: "doc", title: "doc" + i + ".md" }));
+    c.S.active = "t11";
+    c.renderTabbar();
+    expect(doc.querySelectorAll("#tabbar .tab")).toHaveLength(12);
+    expect(doc.querySelector("#tabbar #tabAdd")).toBeNull(); // NOT a child of the scroller…
+    expect(doc.querySelector(".tabswrap > #tabAdd")).not.toBeNull(); // …pinned beside it instead
+  });
+
+  it("scrolls the active tab into view from either edge, and leaves it alone when already visible", () => {
+    const { c } = loadConsole();
+    // jsdom has no layout, so drive the geometry directly: a 200px-wide strip at x=0.
+    const bar = (scrollLeft: number) => ({ offsetLeft: 0, clientWidth: 200, scrollLeft });
+    const tab = (offsetLeft: number, offsetWidth = 100) => ({ offsetLeft, offsetWidth });
+
+    const right = bar(0);
+    c.scrollTabIntoView(right, tab(300)); // opened past the right edge → scroll it in
+    expect(right.scrollLeft).toBe(208); // 300 + 100 + 8 pad − 200 viewport
+
+    const left = bar(400);
+    c.scrollTabIntoView(left, tab(120)); // activated from the rail, off to the left
+    expect(left.scrollLeft).toBe(112); // 120 − 8 pad
+
+    const visible = bar(50);
+    c.scrollTabIntoView(visible, tab(80)); // fully on screen already → no jump
+    expect(visible.scrollLeft).toBe(50);
+
+    const first = bar(20);
+    c.scrollTabIntoView(first, tab(0)); // never scrolls past the start of the strip
+    expect(first.scrollLeft).toBe(0);
+
+    const unlaid = { offsetLeft: 0, clientWidth: 0, scrollLeft: 0 };
+    c.scrollTabIntoView(unlaid, tab(300)); // hidden/not laid out yet → leave it be
+    expect(unlaid.scrollLeft).toBe(0);
+  });
 });
 
 // The sessions list fetches its own data (getJSON/postJSON). Route `fetch` to controlled JSON,
