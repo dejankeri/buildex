@@ -180,3 +180,123 @@ describe("createKeychain factory - win32", () => {
     expect(store.size).toBe(2); // two distinct service prefixes
   });
 });
+
+// A fake vault that also RECORDS the operation sequence and can be armed to die partway through, so
+// the crash windows between individual credential operations are testable. There is no transaction
+// across Credential Manager writes: the process can be killed (or the machine cut) between any two,
+// so the ORDER of operations is the only thing standing between a revoked secret and a permanent leak.
+function crashableCredManager() {
+  const store = new Map<string, string>();
+  const ops: string[] = [];
+  let budget = Number.POSITIVE_INFINITY;
+  const run: WinCredRunner = (op) => {
+    if (ops.length >= budget) throw new Error("simulated crash: the process died mid-operation");
+    ops.push(`${op.action} ${op.target}`);
+    switch (op.action) {
+      case "write":
+        store.set(op.target, op.value);
+        return { status: 0, stdout: "" };
+      case "read": {
+        const v = store.get(op.target);
+        return v === undefined ? { status: WIN_NOT_FOUND, stdout: "" } : { status: 0, stdout: v };
+      }
+      case "delete":
+        store.delete(op.target);
+        return { status: 0, stdout: "" };
+    }
+  };
+  return {
+    run,
+    store,
+    ops,
+    /** Die after `n` further operations. */
+    arm: (n: number) => { budget = ops.length + n; },
+    disarm: () => { budget = Number.POSITIVE_INFINITY; },
+  };
+}
+
+/** Big enough to need several chunks: 5000 bytes -> 6668 base64 chars -> 4 chunks at CHUNK_LIMIT. */
+const BIG_SECRET = "s".repeat(5000);
+
+describe("WindowsKeychain - no crash window may strand secret material", () => {
+  it("delete: a crash at ANY point still converges to an empty vault on retry", () => {
+    // The leak: delete() removes the header first, then prunes chunks. Killed in between, chunks
+    // #0..#n-1 - which together ARE the complete base64 secret - survive. The retry reads no header,
+    // computes oldN = 0, and never prunes them. A revoked OAuth token then outlives its revocation,
+    // readable by any process running as the same user (`cmdkey /list` + a trivial CredRead).
+    for (let crashAfter = 0; crashAfter <= 12; crashAfter++) {
+      const v = crashableCredManager();
+      new WindowsKeychain("svc", v.run).set("k", BIG_SECRET); // seed, uninterrupted
+      expect(v.store.size).toBeGreaterThan(1); // sanity: really chunked
+
+      v.arm(crashAfter);
+      try {
+        new WindowsKeychain("svc", v.run).delete("k");
+      } catch {
+        /* the power cut */
+      }
+      v.disarm();
+
+      new WindowsKeychain("svc", v.run).delete("k"); // the operator retries
+      expect([...v.store.keys()], `stranded after crashAfter=${crashAfter}`).toEqual([]);
+    }
+  });
+
+  it("set: a crash while shrinking a value cannot strand the previous, larger secret", () => {
+    // Same ordering flaw on the write path: the new value is committed before the now-surplus chunks
+    // of the OLD value are pruned. The survivors are fragments of the secret being replaced.
+    for (let crashAfter = 0; crashAfter <= 12; crashAfter++) {
+      const v = crashableCredManager();
+      new WindowsKeychain("svc", v.run).set("k", BIG_SECRET);
+
+      v.arm(crashAfter);
+      try {
+        new WindowsKeychain("svc", v.run).set("k", "small");
+      } catch {
+        /* the power cut */
+      }
+      v.disarm();
+
+      new WindowsKeychain("svc", v.run).delete("k");
+      expect([...v.store.keys()], `stranded after crashAfter=${crashAfter}`).toEqual([]);
+    }
+  });
+
+  it("set: a crash while GROWING a value cannot strand the chunks the old header never recorded", () => {
+    // The ordering fix alone does not close this one. Growing 4 chunks -> 7 writes #4,#5,#6, which the
+    // still-current header (n=4) does not describe. Killed before the header commit, a later delete
+    // trusts that header, prunes #0..#3, and strands #4..#6 - the tail of the new secret, forever.
+    const BIGGER = "s".repeat(9000); // 12000 base64 chars -> 6 chunks, vs BIG_SECRET's 4
+    for (let crashAfter = 0; crashAfter <= 16; crashAfter++) {
+      const v = crashableCredManager();
+      new WindowsKeychain("svc", v.run).set("k", BIG_SECRET);
+
+      v.arm(crashAfter);
+      try {
+        new WindowsKeychain("svc", v.run).set("k", BIGGER);
+      } catch {
+        /* the power cut */
+      }
+      v.disarm();
+
+      new WindowsKeychain("svc", v.run).delete("k");
+      expect([...v.store.keys()], `stranded after crashAfter=${crashAfter}`).toEqual([]);
+    }
+  });
+
+  it("pins the ordering invariant: every chunk delete precedes the header write/delete", () => {
+    // The structural guarantee behind both tests above, asserted directly on the op sequence so it
+    // cannot silently regress: the header is the commit point, so nothing may be pruned after it.
+    const v = crashableCredManager();
+    const kc = new WindowsKeychain("svc", v.run);
+    kc.set("k", BIG_SECRET);
+    v.ops.length = 0;
+
+    kc.delete("k");
+    const headerOp = v.ops.indexOf("delete svc:k");
+    const chunkOps = v.ops.map((o, i) => [o, i] as const).filter(([o]) => o.startsWith("delete svc:k#"));
+    expect(headerOp).toBeGreaterThanOrEqual(0);
+    expect(chunkOps.length).toBeGreaterThan(0);
+    for (const [op, i] of chunkOps) expect(i, `${op} must precede the header delete`).toBeLessThan(headerOp);
+  });
+});

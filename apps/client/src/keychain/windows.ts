@@ -193,9 +193,32 @@ export class WindowsKeychain implements Keychain {
     return parseHeader(head)?.n ?? 0;
   }
 
+  /** Never throws: if the backend is failing we cannot enumerate, so stop probing rather than turn a
+   *  cleanup into an exception. */
+  private chunkExists(target: string): boolean {
+    try {
+      return this.readRaw(target) !== undefined;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Delete siblings `from`..`upto-1`, then keep going while more exist - an interrupted write can
+   *  leave siblings the current header never recorded (growing 4 chunks to 6 writes #4/#5 while the
+   *  header still says 4). Costs one extra read per prune. */
   private pruneChunks(target: string, from: number, upto: number): void {
     for (let k = from; k < upto; k++) this.deleteRaw(`${target}#${k}`);
+    for (let k = Math.max(from, upto); this.chunkExists(`${target}#${k}`); k++) {
+      this.deleteRaw(`${target}#${k}`);
+    }
   }
+
+  // ORDERING INVARIANT - never move a prune after the header write/delete, however much tidier it
+  // looks. Credential Manager gives us no transaction and the header is the commit point. Pruning
+  // first means a crash leaves a header pointing at missing chunks, which get() already degrades to
+  // `undefined`, and a retry converges. Pruning last strands chunks #0..#n-1 - together the COMPLETE
+  // base64 secret - with no header left to describe them, so the retry computes oldN = 0 and a
+  // revoked token stays readable by any same-user process. Verified: they decode back to the original.
 
   get(key: string): string | undefined {
     const target = this.target(key);
@@ -219,22 +242,22 @@ export class WindowsKeychain implements Keychain {
     const b64 = encode(value);
     const oldN = this.currentChunkCount(target);
     if (b64.length <= CHUNK_LIMIT) {
-      this.writeRaw(target, b64); // single atomic credential, exactly like macOS
-      this.pruneChunks(target, 0, oldN); // drop any chunks from a previous, larger value
+      this.pruneChunks(target, 0, oldN);
+      this.writeRaw(target, b64); // single atomic credential, exactly like macOS - the commit
       return;
     }
     const parts: string[] = [];
     for (let i = 0; i < b64.length; i += CHUNK_LIMIT) parts.push(b64.slice(i, i + CHUNK_LIMIT));
-    for (let k = 0; k < parts.length; k++) this.writeRaw(`${target}#${k}`, parts[k]!); // chunks first
+    this.pruneChunks(target, parts.length, oldN);
+    for (let k = 0; k < parts.length; k++) this.writeRaw(`${target}#${k}`, parts[k]!);
     this.writeRaw(target, `${HEADER_PREFIX}${parts.length}:${sha8(b64)}`); // header last = the commit
-    this.pruneChunks(target, parts.length, oldN); // drop now-surplus chunks
   }
 
   delete(key: string): void {
     const target = this.target(key);
     const oldN = this.currentChunkCount(target);
-    this.deleteRaw(target);
     this.pruneChunks(target, 0, oldN);
+    this.deleteRaw(target); // header last = the commit
   }
 }
 
