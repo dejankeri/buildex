@@ -216,31 +216,69 @@ describe("/api/sync", () => {
     const { app } = makeDaemon({ syncStatus: () => "needs-help" });
     const res = await app(new Request("http://127.0.0.1/api/sync"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "needs-help", unsaved: { files: 0, oldestAt: null, stale: false } });
+    expect(await res.json()).toEqual({ status: "needs-help", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
   });
 
   it("GET defaults to ok when no status dep is wired", async () => {
     const { app } = makeDaemon();
     const res = await app(new Request("http://127.0.0.1/api/sync"));
-    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false } });
+    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
   });
 
   it("reports status and what is waiting to be saved", async () => {
     const { app } = makeDaemon({
       syncStatus: () => "ok",
-      unsavedFn: async () => ({ files: 14, oldestAt: 1_700_000_000_000, stale: false }),
+      unsavedFn: async () => ({ files: 14, oldestAt: 1_700_000_000_000, stale: false, connected: true }),
     });
     const res = await app(new Request("http://127.0.0.1/api/sync"));
     expect(await res.json()).toEqual({
       status: "ok",
-      unsaved: { files: 14, oldestAt: 1_700_000_000_000, stale: false },
+      unsaved: { files: 14, oldestAt: 1_700_000_000_000, stale: false, connected: true },
     });
   });
 
   it("reports nothing waiting when the daemon has no counter wired", async () => {
     const { app } = makeDaemon({ syncStatus: () => "ok" });
     const res = await app(new Request("http://127.0.0.1/api/sync"));
-    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false } });
+    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
+  });
+
+  it("reports connected:false when no root has an account yet - the card must not offer a save", async () => {
+    const { app } = makeDaemon({
+      syncStatus: () => "ok",
+      unsavedFn: async () => ({ files: 3, oldestAt: 1_700_000_000_000, stale: false, connected: false }),
+    });
+    const res = await app(new Request("http://127.0.0.1/api/sync"));
+    expect(await res.json()).toEqual({
+      status: "ok",
+      unsaved: { files: 3, oldestAt: 1_700_000_000_000, stale: false, connected: false },
+    });
+  });
+
+  it("counts once per TTL window, not once per poll (two console pollers hit this route)", async () => {
+    let counted = 0;
+    const { app } = makeDaemon({
+      unsavedFn: async () => {
+        counted++;
+        return { files: 1, oldestAt: null, stale: false, connected: true };
+      },
+    });
+    const reqs = [1, 2, 3, 4].map(() => app(new Request("http://127.0.0.1/api/sync")));
+    const bodies = await Promise.all((await Promise.all(reqs)).map((r) => r.json()));
+    expect(counted).toBe(1); // several git processes per root - not once per poll
+    for (const b of bodies) expect((b as { unsaved: { files: number } }).unsaved.files).toBe(1);
+  });
+
+  it("degrades to nothing-waiting when counting throws, instead of 500-ing the status poll", async () => {
+    const { app } = makeDaemon({
+      syncStatus: () => "ok",
+      unsavedFn: async () => {
+        throw new Error("index.lock held by a concurrent operation");
+      },
+    });
+    const res = await app(new Request("http://127.0.0.1/api/sync"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
   });
 });
 

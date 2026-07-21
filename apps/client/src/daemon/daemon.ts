@@ -133,9 +133,11 @@ export interface DaemonDeps {
   syncFn: () => Promise<string>;
   /** Current background-sync status for the header dot: "ok" | "busy" | "queued" | "needs-help". */
   syncStatus?: () => string;
-  /** What is waiting to be saved, for the pending tray's one card. Optional: a daemon without it
-   *  reports nothing waiting rather than failing the status poll. */
-  unsavedFn?: () => Promise<{ files: number; oldestAt: number | null; stale: boolean }>;
+  /** What is waiting to be saved, for the pending tray's one card. `connected` says whether there is
+   *  anywhere to save TO yet (any writable root with a remote): with no account, work waiting is not
+   *  a nudge to act, it is a fact to state. Optional, and a throwing implementation degrades to
+   *  "nothing waiting" - counting must never be the reason the status poll fails. */
+  unsavedFn?: () => Promise<{ files: number; oldestAt: number | null; stale: boolean; connected: boolean }>;
   /** Directory of the built operator console (index.html + assets). Served at `/` when set. */
   webRoot?: string;
   /** The read-only vault surface (documents + per-file history). */
@@ -218,8 +220,38 @@ export interface OnboardingControl {
 
 export type Handler = (req: Request) => Promise<Response>;
 
+/** How long an unsaved count is reused before it is recomputed. Two console pollers (the tray, 4s;
+ *  the left rail, 5s) hit GET /api/sync, and counting runs several git processes PER ROOT - roughly
+ *  ten short-lived processes every couple of seconds on the operator's laptop, forever. A short TTL
+ *  collapses that to one count per window without the number ever looking stale to a human. */
+const UNSAVED_TTL_MS = 2000;
+const NOTHING_UNSAVED = { files: 0, oldestAt: null, stale: false, connected: false } as const;
+
 export function createDaemon(deps: DaemonDeps): Handler {
   const appSubs = new Map<string, () => void>(); // token → unsubscribe (mini-app host registration)
+  type UnsavedView = Awaited<ReturnType<NonNullable<DaemonDeps["unsavedFn"]>>>;
+  let unsavedAt = -Infinity;
+  let unsavedValue: UnsavedView = { ...NOTHING_UNSAVED };
+  let unsavedInFlight: Promise<UnsavedView> | null = null;
+  /** The cached count. Concurrent pollers collapse onto one in-flight count; a throw degrades to
+   *  "nothing waiting" (the dep's documented contract) rather than 500-ing the status poll. */
+  const unsavedCached = async (): Promise<UnsavedView> => {
+    if (!deps.unsavedFn) return { ...NOTHING_UNSAVED };
+    if (Date.now() - unsavedAt < UNSAVED_TTL_MS) return unsavedValue;
+    if (unsavedInFlight) return unsavedInFlight;
+    unsavedInFlight = deps
+      .unsavedFn()
+      .then((v) => {
+        unsavedValue = v;
+        unsavedAt = Date.now();
+        return v;
+      })
+      .catch(() => ({ ...NOTHING_UNSAVED }))
+      .finally(() => {
+        unsavedInFlight = null;
+      });
+    return unsavedInFlight;
+  };
   const handle = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -595,8 +627,7 @@ export function createDaemon(deps: DaemonDeps): Handler {
       return json({ result: await deps.syncFn() });
     }
     if (method === "GET" && path === "/api/sync") {
-      const unsaved = (await deps.unsavedFn?.()) ?? { files: 0, oldestAt: null, stale: false };
-      return json({ status: deps.syncStatus?.() ?? "ok", unsaved });
+      return json({ status: deps.syncStatus?.() ?? "ok", unsaved: await unsavedCached() });
     }
 
     // Mini-app bridge: the agent's app-driver MCP posts commands here; the mini-app window
