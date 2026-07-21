@@ -12,7 +12,7 @@ import { ConnectorGatewayHub } from "./brain/connector-gateway.js";
 import { readSkill, writeSkillFile, composeSkill, validateSkill, skillTemplate } from "./brain/skills.js";
 import { listApps, writeAppManifest, type AppManifest } from "./brain/apps.js";
 import { reconciledPackMcpEntries, composePreset } from "./brain/pack-config.js";
-import { listPacks, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, provisionKeychainKey, provisionBaseKeychainKey, type InstallDeps } from "./brain/catalog.js";
+import { listPacks, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, provisionKeychainKey, provisionBaseKeychainKey, slotOf, type InstallDeps } from "./brain/catalog.js";
 import { ProvisionFlow } from "./brain/provision.js";
 import { emptyCatalogSource, type CatalogSource } from "./brain/catalog-source.js";
 import { buildAgentView } from "./brain/agent-view.js";
@@ -43,6 +43,7 @@ import { recentChanges } from "./brain/history.js";
 import { fileHistory, fileAtCommit } from "./brain/history.js";
 import { SyncEngine } from "./sync/engine.js";
 import { SyncScheduler, type Clock, type TimerHandle, type SyncStatus } from "./sync/scheduler.js";
+import { unsavedAcross, isStale } from "./sync/unsaved.js";
 import { generateAgentConfig } from "./brain/agent-config.js";
 import { AppBus } from "./miniapp/app-bus.js";
 import { fetchUsage, nodeTokenReader, anthropicUsageCall, type UsageReport } from "./brain/usage.js";
@@ -148,7 +149,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
   const appBus = new AppBus({ idFactory: randomUUID });
   const sync = new SyncEngine({ now: Date.now, actor });
   // The writable (non-core) repo dirs - the only roots the sync loop may commit to (core is read-only).
-  const writableDirs = (): string[] => config.roots.filter((r) => r.name !== "core").map((r) => r.dir);
+  const writableDirs = (): string[] => config.roots.filter((r) => slotOf(r.name) !== "core").map((r) => r.dir);
   // The background sync loop. Assigned below once regenConfig exists; saveDoc/skillEditor/connectors
   // reference it only at request time (well after assignment), so the forward use is safe.
   let scheduler: SyncScheduler;
@@ -248,6 +249,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
   scheduler = new SyncScheduler({
     engine: sync,
     writableRoots: writableDirs,
+    readonlyRoots: () => config.roots.filter((r) => slotOf(r.name) === "core").map((r) => r.dir),
     regenConfig,
     clock: realClock,
     onStatus: (s) => { lastSyncStatus = s; },
@@ -751,14 +753,20 @@ export function buildClientHandler(config: ClientConfig): Handler {
       const root = config.roots.find((r) => r.name !== "core") ?? config.roots[0];
       return root ? recentChanges(root.dir, 12) : [];
     },
-    // Manual/forced sync (POST /api/sync) - flush the whole loop now (regen + every writable repo).
+    // "Save now" (POST /api/sync) - the operator's explicit decision to send everything.
     syncFn: async () => {
-      const s = await scheduler.flushNow();
+      const s = await scheduler.publishAll();
       return s === "needs-help" ? "needs-help" : s === "queued" ? "queued" : s === "local" ? "local" : "ok";
     },
     // The dot's live status (GET /api/sync) - "local" (no account yet) / "queued" (offline) /
     // "needs-help" (conflict backed up).
     syncStatus: () => lastSyncStatus,
+    // What is waiting to be saved, for the pending tray's one card. The staleness comparison
+    // happens here, once, against the real clock - the browser is never handed a comparison to make.
+    unsavedFn: async () => {
+      const u = await unsavedAcross(writableDirs());
+      return { ...u, stale: isStale(u.oldestAt, Date.now()) };
+    },
   });
 }
 

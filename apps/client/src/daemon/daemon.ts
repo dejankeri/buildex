@@ -133,6 +133,9 @@ export interface DaemonDeps {
   syncFn: () => Promise<string>;
   /** Current background-sync status for the header dot: "ok" | "busy" | "queued" | "needs-help". */
   syncStatus?: () => string;
+  /** What is waiting to be saved, for the pending tray's one card. Optional: a daemon without it
+   *  reports nothing waiting rather than failing the status poll. */
+  unsavedFn?: () => Promise<{ files: number; oldestAt: number | null; stale: boolean }>;
   /** Directory of the built operator console (index.html + assets). Served at `/` when set. */
   webRoot?: string;
   /** The read-only vault surface (documents + per-file history). */
@@ -587,11 +590,13 @@ export function createDaemon(deps: DaemonDeps): Handler {
       });
       return json({ ok: deps.broker.resolve(id, verdict) });
     }
+    // "Save now" - the operator's explicit decision to send everything. The only path that pushes.
     if (method === "POST" && path === "/api/sync") {
       return json({ result: await deps.syncFn() });
     }
     if (method === "GET" && path === "/api/sync") {
-      return json({ status: deps.syncStatus?.() ?? "ok" });
+      const unsaved = (await deps.unsavedFn?.()) ?? { files: 0, oldestAt: null, stale: false };
+      return json({ status: deps.syncStatus?.() ?? "ok", unsaved });
     }
 
     // Mini-app bridge: the agent's app-driver MCP posts commands here; the mini-app window

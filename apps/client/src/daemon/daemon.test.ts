@@ -216,13 +216,31 @@ describe("/api/sync", () => {
     const { app } = makeDaemon({ syncStatus: () => "needs-help" });
     const res = await app(new Request("http://127.0.0.1/api/sync"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "needs-help" });
+    expect(await res.json()).toEqual({ status: "needs-help", unsaved: { files: 0, oldestAt: null, stale: false } });
   });
 
   it("GET defaults to ok when no status dep is wired", async () => {
     const { app } = makeDaemon();
     const res = await app(new Request("http://127.0.0.1/api/sync"));
-    expect(await res.json()).toEqual({ status: "ok" });
+    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false } });
+  });
+
+  it("reports status and what is waiting to be saved", async () => {
+    const { app } = makeDaemon({
+      syncStatus: () => "ok",
+      unsavedFn: async () => ({ files: 14, oldestAt: 1_700_000_000_000, stale: false }),
+    });
+    const res = await app(new Request("http://127.0.0.1/api/sync"));
+    expect(await res.json()).toEqual({
+      status: "ok",
+      unsaved: { files: 14, oldestAt: 1_700_000_000_000, stale: false },
+    });
+  });
+
+  it("reports nothing waiting when the daemon has no counter wired", async () => {
+    const { app } = makeDaemon({ syncStatus: () => "ok" });
+    const res = await app(new Request("http://127.0.0.1/api/sync"));
+    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false } });
   });
 });
 

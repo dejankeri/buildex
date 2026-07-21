@@ -17,7 +17,7 @@ const NAME_RE = /^[a-z][a-z0-9-]*$/;
  *  company-suffixed (demo seeds "team-acme"/"private-you"; a synced account may name the team brain
  *  after the company). Map a raw root name to its slot so both the read side (installedIn) and the
  *  write side (targetRoot) speak slots, and the real product (bare "team"/"private") still matches. */
-function slotOf(name: string): string {
+export function slotOf(name: string): string {
   if (name === "core") return "core";
   if (name === "team" || name.startsWith("team-")) return "team";
   if (name === "private" || name.startsWith("private-")) return "private";
