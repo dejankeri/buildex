@@ -1,23 +1,41 @@
-# buildex sync on Fly.io. PUBLIC REPO - placeholders only; the real app name and region live in the
-# private infra notes and are passed at deploy time.
+# buildex sync on Fly.io. PUBLIC REPO - placeholders only. This file intentionally carries NO app
+# identity (no `app =`, no `primary_region =`): those live in the untracked `infra/.env` (FLY_APP,
+# FLY_REGION) and are passed on the `fly deploy`/`fly deploy --build-only` command line by
+# `task deploy:plan` / `task deploy` (see Taskfile.yml). A tracked placeholder like
+# `app = "buildex-sync-REPLACE"` would fail `task deploy:plan` outright, and the only way to make it
+# deployable would be editing this tracked file with the real app name - one `git add -A` away from
+# public history. `task deploy:plan` / `task deploy` are the supported entry points; see Taskfile.yml
+# for the required infra/.env keys and the clear failure if FLY_APP is unset.
 #
-# Deploy from the REPOSITORY ROOT so the build context includes the hoisted toolchain:
-#   fly deploy --config infra/fly.toml --dockerfile apps/sync/Dockerfile
+# Deploy from the REPOSITORY ROOT so the build context includes the hoisted toolchain. There is no
+# [build] block here on purpose: flyctl resolves a relative `[build].dockerfile` against this file's
+# OWN directory (infra/), so "apps/sync/Dockerfile" here would mean "infra/apps/sync/Dockerfile" - the
+# wrong path. `task deploy:plan` / `task deploy` always pass `--dockerfile apps/sync/Dockerfile`
+# explicitly (relative to the CWD they run from, the repo root), which is correct and makes this
+# block unnecessary. Do NOT re-add a `[build]` block with that relative path - it would silently
+# break the one deploy path (a bare `fly deploy -c infra/fly.toml`) that doesn't pass --dockerfile.
 #
 # Secrets are set once, out of band, and never appear here:
 #   fly secrets set BUILDEX_SERVICE_KEY=... BUILDEX_PUBLIC_BASE_URL=https://<host> \
 #     LITESTREAM_BUCKET=... LITESTREAM_ENDPOINT=... \
 #     LITESTREAM_ACCESS_KEY_ID=... LITESTREAM_SECRET_ACCESS_KEY=...
 
-app = "buildex-sync-REPLACE"
-primary_region = "REPLACE"
-
-[build]
-  dockerfile = "apps/sync/Dockerfile"
-
 [env]
   BUILDEX_DATA_DIR = "/srv/buildex"
   PORT = "8080"
+
+# Explicit size, not whatever `fly launch` happens to pick: both apps/sync/src/http/app.ts
+# (`Buffer.from(await req.arrayBuffer())`) and apps/sync/src/git/service.ts (concatenates the whole
+# `git http-backend` CGI response into one buffer) hold an entire request or response body in memory
+# at once - a clone/push of a repo with real history holds its packfile in memory twice over. With
+# `hard_limit = 100` below allowing up to 100 such requests concurrently, an unsized machine risks an
+# OOM kill on the very first clone of a non-trivial repo, which reads as "sync is broken" rather than
+# "undersized". 2GB is a placeholder starting point sized for a handful of concurrent packfile-sized
+# buffers, not 100 - revisit if real traffic proves it wrong.
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 2048
 
 # One volume holds BOTH control.db and repos/. They must stay on the same filesystem: SQLite in WAL
 # mode is unsafe on network storage, and splitting them would buy nothing while doubling the ways a

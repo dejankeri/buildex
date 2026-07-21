@@ -61,7 +61,7 @@ client (Electron, per operator machine)
 
 | Component | Provider | Sizing | Monthly (placeholder) | Notes |
 |---|---|---|---|---|
-| sync machine | Fly.io | one shared-cpu machine + one volume | `$-` | region set at deploy time |
+| sync machine | Fly.io | one shared-cpu machine (1 cpu, 2GB, `infra/fly.toml` `[[vm]]`) + one volume | `$-` | region set at deploy time; sized for in-memory packfile buffering, see `[[vm]]` comment |
 | object storage (backups) | Cloudflare R2 | Litestream target (control.db) | `$-` | zero egress |
 | DNS | Cloudflare | buildexponential.org | `$-` | registrar + DNS |
 | site hosting | Cloudflare Pages | static Eleventy build + `/apply` Pages Function | `$-` | free tier at launch |
