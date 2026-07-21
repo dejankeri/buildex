@@ -104,11 +104,6 @@ export class SyncEngine {
     return "ok";
   }
 
-  /** @deprecated Repointed in Task 3 and deleted there. Identical to `publish`. */
-  async syncWritable(dir: string): Promise<SyncResult> {
-    return this.publish(dir);
-  }
-
   // --- internals ---
 
   /** Stage everything except workspace-internal paths (which must never enter a commit). */

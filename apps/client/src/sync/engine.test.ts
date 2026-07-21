@@ -45,11 +45,11 @@ function engine(now = () => 1_700_000_000_000) {
   return new SyncEngine({ now, actor: "operator" });
 }
 
-describe("syncWritable - clean path", () => {
+describe("publish - clean path", () => {
   it("commits local changes and pushes them; a fresh clone sees them", async () => {
     const op = clone("op1");
     writeFileSync(join(op, "conventions.md"), "# conventions\n");
-    expect(await engine().syncWritable(op)).toBe("ok");
+    expect(await engine().publish(op)).toBe("ok");
 
     const verify = clone("verify");
     expect(readFileSync(join(verify, "conventions.md"), "utf8")).toContain("conventions");
@@ -58,7 +58,7 @@ describe("syncWritable - clean path", () => {
   it("writes a human-readable commit message (actor + changed files)", async () => {
     const op = clone("op1");
     writeFileSync(join(op, "notes.md"), "hi\n");
-    await engine().syncWritable(op);
+    await engine().publish(op);
     const msg = git(["log", "-1", "--pretty=%s"], op);
     expect(msg).toContain("operator");
     expect(msg).toContain("notes.md");
@@ -66,7 +66,7 @@ describe("syncWritable - clean path", () => {
 
   it("returns no-change when there is nothing to sync", async () => {
     const op = clone("op1");
-    expect(await engine().syncWritable(op)).toBe("no-change");
+    expect(await engine().publish(op)).toBe("no-change");
   });
 });
 
@@ -75,7 +75,7 @@ describe("git runs off the event loop (B6)", () => {
     const op = clone("op1");
     writeFileSync(join(op, "x.md"), "hi\n");
     let interleaved = false;
-    const syncP = engine().syncWritable(op);
+    const syncP = engine().publish(op);
     // With synchronous git this call would block to completion before returning; because git is now
     // async, control returns to the event loop and this setImmediate fires WHILE the sync runs.
     await new Promise<void>((r) =>
@@ -98,7 +98,7 @@ describe("first sync to a freshly-provisioned (empty) remote", () => {
     git(["clone", `file://${emptyBare}`, op], root);
 
     writeFileSync(join(op, "conventions.md"), "# conventions\n");
-    expect(await engine().syncWritable(op)).toBe("ok");
+    expect(await engine().publish(op)).toBe("ok");
 
     const verify = join(root, "fresh-verify");
     git(["clone", "--branch", "main", `file://${emptyBare}`, verify], root);
@@ -123,13 +123,13 @@ describe("SYNC-SAFETY INVARIANT [release-gate:sync-safety]: a conflict never los
 
     // op1 changes doc.md and pushes first
     writeFileSync(join(op1, "doc.md"), "op1 version\n");
-    expect(await engine().syncWritable(op1)).toBe("ok");
+    expect(await engine().publish(op1)).toBe("ok");
 
     // op2, from the same base, makes a *different* change to the same file
     const localContent = "op2 precious edit\n";
     writeFileSync(join(op2, "doc.md"), localContent);
 
-    const result = await engine(() => 1_700_000_000_000).syncWritable(op2);
+    const result = await engine(() => 1_700_000_000_000).publish(op2);
     expect(result).toBe("needs-help");
 
     // the operator's version is preserved byte-for-byte under .conflicts/<ts>/
@@ -158,12 +158,12 @@ describe("SYNC-SAFETY INVARIANT [release-gate:sync-safety]: a conflict never los
     git(["config", "core.autocrlf", "true"], op2);
 
     writeFileSync(join(op1, "doc.md"), "op1 version\n");
-    expect(await engine().syncWritable(op1)).toBe("ok");
+    expect(await engine().publish(op1)).toBe("ok");
 
     const localContent = "op2 precious edit\n";
     writeFileSync(join(op2, "doc.md"), localContent);
 
-    expect(await engine(() => 1_700_000_000_000).syncWritable(op2)).toBe("needs-help");
+    expect(await engine(() => 1_700_000_000_000).publish(op2)).toBe("needs-help");
 
     // byte-for-byte: no CRLF crept into the backup...
     const backup = readFileSync(join(op2, ".conflicts", "1700000000000", "doc.md"), "utf8");
@@ -183,7 +183,7 @@ describe("local-only stub repo (no remote): work is committed but there is nothi
     git(["init", "--initial-branch=main", stub], root);
     writeFileSync(join(stub, "notes.md"), "played locally\n");
 
-    expect(await engine().syncWritable(stub)).toBe("local");
+    expect(await engine().publish(stub)).toBe("local");
     // git is the database: the operator's work is captured in local history, not lost
     expect(git(["log", "-1", "--pretty=%s"], stub)).toContain("notes.md");
   });
@@ -196,7 +196,7 @@ describe("local-only stub repo (no remote): work is committed but there is nothi
     git(["commit", "-m", "seed"], stub);
 
     // no changes, no remote - a pull-tick sync must report the neutral local state, not queued
-    expect(await engine().syncWritable(stub)).toBe("local");
+    expect(await engine().publish(stub)).toBe("local");
   });
 
   it("still returns 'queued' when a remote IS configured but unreachable (offline, not local)", async () => {
@@ -204,7 +204,7 @@ describe("local-only stub repo (no remote): work is committed but there is nothi
     const op = clone("op-offline");
     writeFileSync(join(op, "q.md"), "offline\n");
     git(["remote", "set-url", "origin", `file://${join(root, "gone.git")}`], op);
-    expect(await engine().syncWritable(op)).toBe("queued");
+    expect(await engine().publish(op)).toBe("queued");
   });
 });
 
@@ -212,7 +212,7 @@ describe("cloud-guard: refuse to operate inside a cloud-synced folder", () => {
   it("throws for a path under a known cloud provider dir", async () => {
     const dropbox = join(root, "Dropbox", "ws");
     mkdirSync(dropbox, { recursive: true });
-    await expect(engine().syncWritable(dropbox)).rejects.toThrow(/cloud/i);
+    await expect(engine().publish(dropbox)).rejects.toThrow(/cloud/i);
   });
 });
 
@@ -222,13 +222,13 @@ describe("offline queue: unpushed commits survive and a later sync pushes them",
     writeFileSync(join(op, "queued.md"), "made offline\n");
     // simulate offline by pointing origin at a nonexistent remote
     git(["remote", "set-url", "origin", `file://${join(root, "gone.git")}`], op);
-    expect(await engine().syncWritable(op)).toBe("queued");
+    expect(await engine().publish(op)).toBe("queued");
     // the commit is retained locally (not lost)
     expect(git(["log", "-1", "--pretty=%s"], op)).toContain("queued.md");
 
     // reconnect + a NEW engine instance (restart) pushes the queued commit
     git(["remote", "set-url", "origin", `file://${remote}`], op);
-    expect(await engine().syncWritable(op)).toBe("ok");
+    expect(await engine().publish(op)).toBe("ok");
     const verify = clone("verify2");
     expect(existsSync(join(verify, "queued.md"))).toBe(true);
   });

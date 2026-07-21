@@ -2,7 +2,7 @@
 // Owns *when* a sync runs; the SyncEngine primitive owns *how*. Debounces bursts of edits into a
 // single commit, runs a background pull tick, retries offline commits with backoff. Deterministic:
 // all timing goes through an injected clock so tests run on a fake clock with no real timers.
-import type { SyncResult } from "./engine.js";
+import type { SyncResult, CheckpointResult, ReceiveResult } from "./engine.js";
 
 export type SyncStatus = "ok" | "busy" | "queued" | "needs-help" | "local";
 
@@ -16,13 +16,18 @@ export interface Clock {
 }
 
 export interface SyncEngineLike {
-  syncWritable(dir: string): Promise<SyncResult>;
+  checkpoint(dir: string): Promise<CheckpointResult>;
+  receive(dir: string): Promise<ReceiveResult>;
+  publish(dir: string): Promise<SyncResult>;
+  syncReadonly(dir: string): Promise<void>;
 }
 
 export interface SyncSchedulerDeps {
   engine: SyncEngineLike;
-  /** The writable (non-`core`) repo dirs - the only roots the loop may sync. */
+  /** The writable (non-`core`) roots - the only ones that may be checkpointed or published. */
   writableRoots: () => string[];
+  /** Read-only roots (`core`) - pulled on the tick, never sent. */
+  readonlyRoots: () => string[];
   clock: Clock;
   onStatus?: (s: SyncStatus) => void;
   regenConfig?: () => void;
@@ -56,14 +61,33 @@ export class SyncScheduler {
   private schedulePull(): void {
     this.pullTimer = this.deps.clock.setTimer(() => {
       this.schedulePull(); // keep ticking
-      for (const dir of this.deps.writableRoots()) this.dirty.add(dir);
-      void this.flush();
+      void this.receiveAll();
     }, PULL_MS);
   }
 
-  /** Flush any pending work and halt every timer - call on app shutdown so no edit is stranded. The
-   *  final flush is fire-and-forget (sync is async now); any commit it makes is already on local disk
-   *  and is pushed on the next boot if the process exits first (the offline queue). */
+  /** Take in whatever arrived, in both directions of the workspace. Sends nothing, so this is safe
+   *  to run unattended - it is the "other people's work arrives on its own" half of the rule. */
+  private async receiveAll(): Promise<void> {
+    for (const dir of this.deps.readonlyRoots()) {
+      try {
+        await this.deps.engine.syncReadonly(dir);
+      } catch {
+        /* offline or not a repo - core is rebuilt from the remote next tick */
+      }
+    }
+    for (const dir of this.deps.writableRoots()) {
+      try {
+        const r = await this.deps.engine.receive(dir);
+        if (r === "needs-help") this.setStatus("needs-help");
+      } catch {
+        /* nothing arrived; the operator's own work is untouched */
+      }
+    }
+  }
+
+  /** Record any pending work and halt every timer - call on app shutdown so no edit is stranded.
+   *  It does NOT send: saving is the operator's decision, and quitting is not a decision to save.
+   *  The checkpoints are on local disk and go out with their next save. */
   stop(): void {
     this.clearAllTimers();
     if (this.dirty.size > 0) void this.flush();
@@ -77,7 +101,7 @@ export class SyncScheduler {
     this.debounceTimer = this.maxWaitTimer = this.backoffTimer = this.pullTimer = null;
   }
 
-  /** A write landed in `dir` - schedule a sync, coalescing rapid consecutive touches. */
+  /** A write landed in `dir` - schedule a checkpoint, coalescing rapid consecutive touches. */
   touch(dir: string): void {
     if (!this.deps.writableRoots().includes(dir)) return; // core is read-only - never sync it
     this.dirty.add(dir);
@@ -90,15 +114,13 @@ export class SyncScheduler {
     }
   }
 
-  /** Force an immediate sync of every writable root (powers POST /api/sync). */
-  async flushNow(): Promise<SyncStatus> {
-    for (const dir of this.deps.writableRoots()) this.dirty.add(dir);
-    return this.flush();
+  private setStatus(s: SyncStatus): void {
+    this.lastStatus = s;
+    this.deps.onStatus?.(s);
   }
 
+  /** Record dirty roots locally. NO NETWORK - this is what the debounce runs. */
   private async flush(): Promise<SyncStatus> {
-    // If a flush is already running, coalesce: mark for a re-run and return the last known status.
-    // The in-flight flush will loop once it completes and pick up the roots dirtied in the meantime.
     if (this.flushing) {
       this.rerun = true;
       return this.lastStatus;
@@ -112,44 +134,57 @@ export class SyncScheduler {
       const roots = [...this.dirty];
       this.dirty.clear();
       if (roots.length === 0) return this.lastStatus;
-      this.deps.onStatus?.("busy");
       this.deps.regenConfig?.();
-      // A thrown sync (non-repo, cloud-synced folder) must never crash the loop - the file is already
-      // saved on disk. The engine converts offline/wedged into "queued" internally; only config errors
-      // throw. Roots sync concurrently (each is a distinct repo, so no cross-root race).
-      const results = await Promise.all(
-        roots.map(async (dir): Promise<SyncResult> => {
+      // A throw (non-repo, cloud-synced folder) must never crash the loop - the file is already on
+      // disk. Roots are distinct repos, so there is no cross-root race.
+      await Promise.all(
+        roots.map(async (dir) => {
           try {
-            return await this.deps.engine.syncWritable(dir);
+            await this.deps.engine.checkpoint(dir);
           } catch {
-            return "no-change";
+            /* the operator's file is on disk regardless */
           }
         }),
       );
-      const status = worstStatus(results);
-      this.lastStatus = status;
-      this.deps.onStatus?.(status);
-
-      // Offline roots (their commits are retained locally by the engine) get retried after a delay.
-      const queued = roots.filter((_, i) => results[i] === "queued");
-      if (this.backoffTimer !== null) this.deps.clock.clearTimer(this.backoffTimer);
-      this.backoffTimer = null;
-      if (queued.length > 0) {
-        this.backoffTimer = this.deps.clock.setTimer(() => {
-          this.backoffTimer = null;
-          for (const dir of queued) this.dirty.add(dir);
-          void this.flush();
-        }, BACKOFF_MS);
-      }
-      return status;
+      return this.lastStatus;
     } finally {
       this.flushing = false;
-      // A flush was requested while we were running - run once more to drain the new work.
       if (this.rerun) {
         this.rerun = false;
         void this.flush();
       }
     }
+  }
+
+  /** Send everything the operator has. The one path that pushes, and only they trigger it
+   *  (POST /api/sync). */
+  async publishAll(): Promise<SyncStatus> {
+    await this.flush(); // record anything still in the debounce window first
+    const roots = this.deps.writableRoots();
+    this.setStatus("busy");
+    const results = await Promise.all(
+      roots.map(async (dir): Promise<SyncResult> => {
+        try {
+          return await this.deps.engine.publish(dir);
+        } catch {
+          return "no-change";
+        }
+      }),
+    );
+    const status = worstStatus(results);
+    this.setStatus(status);
+
+    // Offline roots keep their checkpoints locally; retry on a delay.
+    const queued = roots.filter((_, i) => results[i] === "queued");
+    if (this.backoffTimer !== null) this.deps.clock.clearTimer(this.backoffTimer);
+    this.backoffTimer = null;
+    if (queued.length > 0) {
+      this.backoffTimer = this.deps.clock.setTimer(() => {
+        this.backoffTimer = null;
+        void this.publishAll();
+      }, BACKOFF_MS);
+    }
+    return status;
   }
 }
 

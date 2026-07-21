@@ -76,6 +76,6 @@ describe("provisionLocalCore - lay core down as a local, no-remote git repo (zer
     const ws = join(tmp, "ws3");
     const root = provisionLocalCore({ workspace: ws, corePackDir: fakePack() });
     const engine = new SyncEngine({ now: () => 1_700_000_000_000, actor: "operator" });
-    expect(await engine.syncWritable(root.dir)).toBe("local");
+    expect(await engine.publish(root.dir)).toBe("local");
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { SyncScheduler } from "./scheduler.js";
-import type { SyncResult } from "./engine.js";
+import type { SyncResult, CheckpointResult, ReceiveResult } from "./engine.js";
 
 /** Let the microtask/macrotask queue drain so an async flush settles before we assert. The scheduler's
  *  own timers run on the FakeClock (advanced explicitly); this only flushes the awaited git work. */
@@ -39,24 +39,47 @@ class FakeClock {
   }
 }
 
-/** A fake SyncEngine: records the dirs it was asked to sync, returns a scripted result queue. Async
- *  (like the real engine now), but resolves immediately - `await tick()` in the test settles it. */
+/** A fake SyncEngine: records the dirs asked of each operation separately (checkpoint/receive/publish
+ *  never fold into one bucket now - the whole point of this task is that they have different callers).
+ *  Each operation's result can be pre-loaded as a queue (shifted per call, for per-root scripting), and
+ *  `publishResult` is a simpler steerable default for tests that just need to flip one behavior. */
 class FakeEngine {
-  calls: string[] = [];
-  results: SyncResult[] = [];
-  async syncWritable(dir: string): Promise<SyncResult> {
-    this.calls.push(dir);
-    return this.results.shift() ?? "ok";
+  calls: { checkpoint: string[]; receive: string[]; publish: string[]; syncReadonly: string[] } = {
+    checkpoint: [],
+    receive: [],
+    publish: [],
+    syncReadonly: [],
+  };
+  checkpointResults: CheckpointResult[] = [];
+  receiveResults: ReceiveResult[] = [];
+  publishResults: SyncResult[] = [];
+  publishResult: SyncResult = "ok";
+
+  async checkpoint(dir: string): Promise<CheckpointResult> {
+    this.calls.checkpoint.push(dir);
+    return this.checkpointResults.shift() ?? "committed";
+  }
+  async receive(dir: string): Promise<ReceiveResult> {
+    this.calls.receive.push(dir);
+    return this.receiveResults.shift() ?? "ok";
+  }
+  async publish(dir: string): Promise<SyncResult> {
+    this.calls.publish.push(dir);
+    return this.publishResults.shift() ?? this.publishResult;
+  }
+  async syncReadonly(dir: string): Promise<void> {
+    this.calls.syncReadonly.push(dir);
   }
 }
 
-function make(opts: { roots?: string[]; engine?: FakeEngine } = {}) {
+function make(opts: { roots?: string[]; readonlyRoots?: string[]; engine?: FakeEngine } = {}) {
   const clock = new FakeClock();
   const engine = opts.engine ?? new FakeEngine();
   const statuses: string[] = [];
   const scheduler = new SyncScheduler({
     engine,
     writableRoots: () => opts.roots ?? ["/team", "/private"],
+    readonlyRoots: () => opts.readonlyRoots ?? [],
     clock,
     onStatus: (s) => statuses.push(s),
   });
@@ -64,13 +87,13 @@ function make(opts: { roots?: string[]; engine?: FakeEngine } = {}) {
 }
 
 describe("SyncScheduler - debounce", () => {
-  it("coalesces a burst of touches into a single sync per root", async () => {
+  it("coalesces a burst of touches into a single checkpoint per root", async () => {
     const { clock, engine, scheduler } = make();
     for (let i = 0; i < 5; i++) scheduler.touch("/team");
-    expect(engine.calls).toEqual([]); // nothing yet - still inside the quiet window
+    expect(engine.calls.checkpoint).toEqual([]); // nothing yet - still inside the quiet window
     clock.advance(2000);
     await tick();
-    expect(engine.calls).toEqual(["/team"]); // exactly one sync, not five
+    expect(engine.calls.checkpoint).toEqual(["/team"]); // exactly one checkpoint, not five
   });
 
   it("forces a flush after maxWait when a continuous stream keeps resetting the debounce", async () => {
@@ -81,94 +104,96 @@ describe("SyncScheduler - debounce", () => {
       clock.advance(1500);
       await tick();
     }
-    // by ~10s the maxWait cap must have forced exactly one flush
-    expect(engine.calls).toEqual(["/team"]);
+    // by ~10s the maxWait cap must have forced exactly one checkpoint
+    expect(engine.calls.checkpoint).toEqual(["/team"]);
   });
 });
 
 describe("SyncScheduler - status", () => {
-  it("emits busy then ok around a successful flush", async () => {
-    const { clock, statuses, scheduler } = make();
+  it("emits busy then the worst status when the operator publishes", async () => {
+    const { statuses, scheduler } = make({ roots: ["/team"] });
     scheduler.touch("/team");
-    clock.advance(2000);
-    await tick();
+    await scheduler.publishAll();
     expect(statuses).toEqual(["busy", "ok"]);
   });
 
-  it("reports needs-help when a root's sync needs attention", async () => {
+  it("reports needs-help when a root's publish needs attention", async () => {
     const engine = new FakeEngine();
-    engine.results = ["needs-help"];
-    const { clock, statuses, scheduler } = make({ engine, roots: ["/team"] });
+    engine.publishResults = ["needs-help"];
+    const { statuses, scheduler } = make({ engine, roots: ["/team"] });
     scheduler.touch("/team");
-    clock.advance(2000);
-    await tick();
+    await scheduler.publishAll();
     expect(statuses).toEqual(["busy", "needs-help"]);
   });
 
   it("takes the worst status across multiple roots", async () => {
     const engine = new FakeEngine();
-    engine.results = ["ok", "queued"]; // /team ok, /private offline
-    const { clock, statuses, scheduler } = make({ engine, roots: ["/team", "/private"] });
+    engine.publishResults = ["ok", "queued"]; // /team ok, /private offline
+    const { statuses, scheduler } = make({ engine, roots: ["/team", "/private"] });
     scheduler.touch("/team");
     scheduler.touch("/private");
-    clock.advance(2000);
-    await tick();
+    await scheduler.publishAll();
     expect(statuses).toEqual(["busy", "queued"]);
   });
 
-  it("regenerates the agent config before syncing", async () => {
+  it("regenerates the agent config before checkpointing", async () => {
     const clock = new FakeClock();
     const order: string[] = [];
     const scheduler = new SyncScheduler({
       engine: {
-        async syncWritable(dir) {
-          order.push("sync:" + dir);
+        async checkpoint(dir: string): Promise<CheckpointResult> {
+          order.push("checkpoint:" + dir);
+          return "committed";
+        },
+        async receive(): Promise<ReceiveResult> {
           return "ok";
         },
+        async publish(): Promise<SyncResult> {
+          return "ok";
+        },
+        async syncReadonly(): Promise<void> {},
       },
       writableRoots: () => ["/team"],
+      readonlyRoots: () => [],
       clock,
       regenConfig: () => order.push("regen"),
     });
     scheduler.touch("/team");
     clock.advance(2000);
     await tick();
-    expect(order).toEqual(["regen", "sync:/team"]);
+    expect(order).toEqual(["regen", "checkpoint:/team"]);
   });
 });
 
 describe("SyncScheduler - local (unsynced) state", () => {
   it("reports 'local' when every root is local-only (no account/remote yet)", async () => {
     const engine = new FakeEngine();
-    engine.results = ["local", "local"];
-    const { clock, statuses, scheduler } = make({ engine, roots: ["/team", "/private"] });
+    engine.publishResults = ["local", "local"];
+    const { statuses, scheduler } = make({ engine, roots: ["/team", "/private"] });
     scheduler.touch("/team");
     scheduler.touch("/private");
-    clock.advance(2000);
-    await tick();
+    await scheduler.publishAll();
     expect(statuses).toEqual(["busy", "local"]);
   });
 
   it("does not schedule a backoff retry for a local root (nothing to retry - it's local by design)", async () => {
     const engine = new FakeEngine();
-    engine.results = ["local"];
-    const { clock, engine: _e, scheduler } = make({ engine, roots: ["/team"] });
+    engine.publishResults = ["local"];
+    const { clock, scheduler } = make({ engine, roots: ["/team"] });
     scheduler.touch("/team");
-    clock.advance(2000);
-    await tick();
+    await scheduler.publishAll();
     clock.advance(60000); // long idle - a local root must not trigger the offline backoff loop
     await tick();
-    expect(engine.calls).toEqual(["/team"]);
+    expect(engine.calls.publish).toEqual(["/team"]);
   });
 
   it("ranks a real problem above local: needs-help/queued win over a local root", async () => {
     const engine = new FakeEngine();
-    engine.results = ["local", "queued"]; // one repo local, one has a remote but is offline
-    const { clock, statuses, scheduler } = make({ engine, roots: ["/team", "/private"] });
+    engine.publishResults = ["local", "queued"]; // one repo local, one has a remote but is offline
+    const { statuses, scheduler } = make({ engine, roots: ["/team", "/private"] });
     scheduler.touch("/team");
     scheduler.touch("/private");
-    clock.advance(2000);
-    await tick();
+    await scheduler.publishAll();
     expect(statuses).toEqual(["busy", "queued"]);
   });
 });
@@ -176,40 +201,40 @@ describe("SyncScheduler - local (unsynced) state", () => {
 describe("SyncScheduler - offline backoff", () => {
   it("retries a queued (offline) root after the backoff delay, then settles", async () => {
     const engine = new FakeEngine();
-    engine.results = ["queued", "ok"]; // offline once, then reconnects
+    engine.publishResults = ["queued", "ok"]; // offline once, then reconnects
     const { clock, statuses, scheduler } = make({ engine, roots: ["/team"] });
     scheduler.touch("/team");
-    clock.advance(2000); // first flush → queued
-    await tick();
-    expect(engine.calls).toEqual(["/team"]);
+    await scheduler.publishAll(); // first publish → queued
+    expect(engine.calls.publish).toEqual(["/team"]);
     expect(statuses).toEqual(["busy", "queued"]);
 
     clock.advance(5000); // backoff elapses → retry, now succeeds
     await tick();
-    expect(engine.calls).toEqual(["/team", "/team"]);
+    expect(engine.calls.publish).toEqual(["/team", "/team"]);
     expect(statuses).toEqual(["busy", "queued", "busy", "ok"]);
   });
 
-  it("does not keep retrying once a flush succeeds", async () => {
+  it("does not keep retrying once a publish succeeds", async () => {
     const engine = new FakeEngine();
-    engine.results = ["ok"];
-    const { clock, engine: _e, scheduler } = make({ engine, roots: ["/team"] });
+    engine.publishResults = ["ok"];
+    const { clock, scheduler } = make({ engine, roots: ["/team"] });
     scheduler.touch("/team");
-    clock.advance(2000);
-    await tick();
+    await scheduler.publishAll();
     clock.advance(60000); // long idle - no backoff retries should fire
     await tick();
-    expect(engine.calls).toEqual(["/team"]);
+    expect(engine.calls.publish).toEqual(["/team"]);
   });
 });
 
 describe("SyncScheduler - pull tick", () => {
-  it("fetches every writable root on the idle pull tick, with no local changes", async () => {
-    const { clock, engine, scheduler } = make({ roots: ["/team", "/private"] });
+  it("receives every writable root and syncs every readonly root on the idle pull tick", async () => {
+    const { clock, engine, scheduler } = make({ roots: ["/team", "/private"], readonlyRoots: ["/core"] });
     scheduler.start();
     clock.advance(45000);
     await tick();
-    expect([...engine.calls].sort()).toEqual(["/private", "/team"]);
+    expect([...engine.calls.receive].sort()).toEqual(["/private", "/team"]);
+    expect(engine.calls.syncReadonly).toEqual(["/core"]);
+    expect(engine.calls.publish).toEqual([]); // the tick never sends
   });
 
   it("keeps ticking on the pull interval", async () => {
@@ -219,21 +244,22 @@ describe("SyncScheduler - pull tick", () => {
     await tick();
     clock.advance(45000);
     await tick();
-    expect(engine.calls).toEqual(["/team", "/team"]);
+    expect(engine.calls.receive).toEqual(["/team", "/team"]);
   });
 });
 
 describe("SyncScheduler - stop", () => {
-  it("flushes pending work and halts all timers on stop()", async () => {
+  it("checkpoints pending work and halts all timers on stop() - it records, it never sends", async () => {
     const { clock, engine, scheduler } = make({ roots: ["/team"] });
     scheduler.start();
     scheduler.touch("/team"); // pending - debounce has not fired yet
     scheduler.stop();
-    await tick(); // the final flush is fire-and-forget (async sync); let it settle
-    expect(engine.calls).toEqual(["/team"]);
+    await tick(); // the final flush is fire-and-forget (async checkpoint); let it settle
+    expect(engine.calls.checkpoint).toEqual(["/team"]);
+    expect(engine.calls.publish).toEqual([]);
     clock.advance(100000); // nothing should fire after stop
     await tick();
-    expect(engine.calls).toEqual(["/team"]);
+    expect(engine.calls.checkpoint).toEqual(["/team"]);
   });
 });
 
@@ -243,44 +269,138 @@ describe("SyncScheduler - writable guard", () => {
     scheduler.touch("/core"); // core is read-only (invariant 6) - must never be committed
     clock.advance(10000);
     await tick();
-    expect(engine.calls).toEqual([]);
+    expect(engine.calls.checkpoint).toEqual([]);
   });
 });
 
-describe("SyncScheduler - flushNow", () => {
-  it("syncs every writable root immediately and returns the worst status", async () => {
+describe("SyncScheduler - publishAll", () => {
+  it("publishes every writable root immediately and returns the worst status", async () => {
     const engine = new FakeEngine();
-    engine.results = ["ok", "queued"];
+    engine.publishResults = ["ok", "queued"];
     const { scheduler } = make({ engine, roots: ["/team", "/private"] });
-    const status = await scheduler.flushNow();
-    expect([...engine.calls].sort()).toEqual(["/private", "/team"]);
+    const status = await scheduler.publishAll();
+    expect([...engine.calls.publish].sort()).toEqual(["/private", "/team"]);
     expect(status).toBe("queued");
   });
 });
 
 describe("SyncScheduler - resilience", () => {
-  it("does not crash when one root's sync throws; other roots still sync", async () => {
+  it("does not crash when one root's checkpoint throws; other roots still checkpoint", async () => {
     const clock = new FakeClock();
     const calls: string[] = [];
     const engine = {
-      async syncWritable(dir: string): Promise<SyncResult> {
+      async checkpoint(dir: string): Promise<CheckpointResult> {
         calls.push(dir);
         if (dir === "/bad") throw new Error("not a git repo");
+        return "committed";
+      },
+      async receive(): Promise<ReceiveResult> {
         return "ok";
       },
+      async publish(): Promise<SyncResult> {
+        return "ok";
+      },
+      async syncReadonly(): Promise<void> {},
     };
-    const statuses: string[] = [];
     const scheduler = new SyncScheduler({
       engine,
       writableRoots: () => ["/bad", "/team"],
+      readonlyRoots: () => [],
       clock,
-      onStatus: (s) => statuses.push(s),
     });
     scheduler.touch("/bad");
     scheduler.touch("/team");
     clock.advance(2000);
     await tick();
     expect([...calls].sort()).toEqual(["/bad", "/team"]);
-    expect(statuses).toEqual(["busy", "ok"]); // the throw is swallowed; the good root still reports
+  });
+
+  it("does not crash when one root's publish throws; the throw is treated as no-change", async () => {
+    const calls: string[] = [];
+    const engine = {
+      async checkpoint(): Promise<CheckpointResult> {
+        return "committed";
+      },
+      async receive(): Promise<ReceiveResult> {
+        return "ok";
+      },
+      async publish(dir: string): Promise<SyncResult> {
+        calls.push(dir);
+        if (dir === "/bad") throw new Error("network error");
+        return "ok";
+      },
+      async syncReadonly(): Promise<void> {},
+    };
+    const statuses: string[] = [];
+    const scheduler = new SyncScheduler({
+      engine,
+      writableRoots: () => ["/bad", "/team"],
+      readonlyRoots: () => [],
+      clock: new FakeClock(),
+      onStatus: (s) => statuses.push(s),
+    });
+    const status = await scheduler.publishAll();
+    expect([...calls].sort()).toEqual(["/bad", "/team"]);
+    expect(status).toBe("ok"); // the throw becomes "no-change", which ranks with "ok"
+    expect(statuses).toEqual(["busy", "ok"]);
+  });
+});
+
+describe("manual save", () => {
+  // The scheduler's own default roots (/team, /private) are also used by other describes in this
+  // file; these use distinct /w/-prefixed names purely so this block's expectations read standalone.
+  function makeScheduler() {
+    return make({ roots: ["/w/team", "/w/private"], readonlyRoots: ["/w/core"] });
+  }
+
+  it("records work on the debounce but never sends it", async () => {
+    const { scheduler, engine, clock } = makeScheduler();
+    scheduler.touch("/w/team");
+    await clock.advance(10_000);
+    expect(engine.calls.checkpoint).toEqual(["/w/team"]);
+    expect(engine.calls.publish).toEqual([]);
+  });
+
+  it("takes teammates' work in on the background tick, and still sends nothing", async () => {
+    const { scheduler, engine, clock } = makeScheduler();
+    scheduler.start();
+    clock.advance(45_000);
+    // receiveAll awaits its two writable roots sequentially (not Promise.all - see scheduler.ts), so
+    // a bare `await advance()` isn't enough microtask draining for the second root; tick() flushes it.
+    await tick();
+    expect(engine.calls.receive).toEqual(["/w/team", "/w/private"]);
+    expect(engine.calls.syncReadonly).toEqual(["/w/core"]);
+    expect(engine.calls.publish).toEqual([]);
+  });
+
+  it("sends everything only when the operator asks", async () => {
+    const { scheduler, engine } = makeScheduler();
+    expect(await scheduler.publishAll()).toBe("ok");
+    expect(engine.calls.publish).toEqual(["/w/team", "/w/private"]);
+  });
+
+  it("never sends core, which is read-only", async () => {
+    const { scheduler, engine } = makeScheduler();
+    scheduler.touch("/w/core");
+    await scheduler.publishAll();
+    expect(engine.calls.checkpoint).not.toContain("/w/core");
+    expect(engine.calls.publish).not.toContain("/w/core");
+  });
+
+  it("records but does not send on shutdown - quitting must not publish", async () => {
+    const { scheduler, engine } = makeScheduler();
+    scheduler.touch("/w/team");
+    scheduler.stop();
+    await Promise.resolve();
+    expect(engine.calls.publish).toEqual([]);
+  });
+
+  it("retries a save that failed while offline", async () => {
+    const { scheduler, engine, clock } = makeScheduler();
+    engine.publishResult = "queued";
+    expect(await scheduler.publishAll()).toBe("queued");
+    engine.publishResult = "ok";
+    await clock.advance(5_000);
+    expect(engine.calls.publish.length).toBeGreaterThan(2);
   });
 });
