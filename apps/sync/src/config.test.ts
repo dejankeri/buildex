@@ -59,4 +59,15 @@ describe("readConfig", () => {
     expect(() => readConfig(env({ PORT: "eighty" }))).toThrow(/PORT/);
     expect(() => readConfig(env({ PORT: "70000" }))).toThrow(/PORT/);
   });
+
+  it("treats an empty or whitespace-only optional value as absent, not as a value", () => {
+    expect(readConfig(env({ BUILDEX_DATA_DIR: "" })).dataDir).toBe("/srv/buildex");
+    expect(readConfig(env({ BUILDEX_DATA_DIR: "   " })).dataDir).toBe("/srv/buildex");
+    expect(readConfig(env({ PORT: "" })).port).toBe(8080);
+    expect(readConfig(env({ PORT: "  " })).port).toBe(8080);
+  });
+
+  it("still honours an explicit port 0, which means 'pick an ephemeral port'", () => {
+    expect(readConfig(env({ PORT: "0" })).port).toBe(0);
+  });
 });

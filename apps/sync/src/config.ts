@@ -16,15 +16,24 @@ export const MIN_SERVICE_KEY_LENGTH = 32;
 
 export class ConfigError extends Error {}
 
+/**
+ * Treat empty and whitespace-only env values as absent. Empty strings are common in Docker
+ * Compose and fly secrets, where PORT="" means "use the default" not "use port 0". Returns
+ * undefined so the caller can supply a default with ??; an explicit empty string never escapes.
+ */
+function trimOrUndefined(value: string | undefined): string | undefined {
+  return value?.trim() || undefined;
+}
+
 export function readConfig(env: Record<string, string | undefined>): SyncConfig {
-  const serviceKey = (env["BUILDEX_SERVICE_KEY"] ?? "").trim();
+  const serviceKey = trimOrUndefined(env["BUILDEX_SERVICE_KEY"]) ?? "";
   if (!serviceKey) throw new ConfigError("BUILDEX_SERVICE_KEY is required");
   if (serviceKey.length < MIN_SERVICE_KEY_LENGTH) {
     throw new ConfigError(`BUILDEX_SERVICE_KEY must be at least ${MIN_SERVICE_KEY_LENGTH} characters`);
   }
 
   // Trailing slashes are stripped here so `${publicBaseUrl}/git/<repo>.git` can never double up.
-  const rawBase = (env["BUILDEX_PUBLIC_BASE_URL"] ?? "").trim().replace(/\/+$/, "");
+  const rawBase = (trimOrUndefined(env["BUILDEX_PUBLIC_BASE_URL"]) ?? "").replace(/\/+$/, "");
   if (!rawBase) throw new ConfigError("BUILDEX_PUBLIC_BASE_URL is required");
   let parsed: URL;
   try {
@@ -37,9 +46,9 @@ export function readConfig(env: Record<string, string | undefined>): SyncConfig 
     throw new ConfigError("BUILDEX_PUBLIC_BASE_URL must be https (except on loopback)");
   }
 
-  const dataDir = (env["BUILDEX_DATA_DIR"] ?? "/srv/buildex").trim();
+  const dataDir = trimOrUndefined(env["BUILDEX_DATA_DIR"]) ?? "/srv/buildex";
 
-  const rawPort = (env["PORT"] ?? "8080").trim();
+  const rawPort = trimOrUndefined(env["PORT"]) ?? "8080";
   const port = Number(rawPort);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new ConfigError(`PORT must be an integer between 0 and 65535, got "${rawPort}"`);
