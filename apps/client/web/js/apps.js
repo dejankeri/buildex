@@ -13,11 +13,55 @@
 
 /* ---------- left: apps ---------- */
 
+/** How many apps the rail shows before "Show N more". Enough to be a real menu, short enough that
+ *  Sessions (directly below) is still on screen without scrolling. */
+const APPS_VISIBLE = 5;
+
+/** localStorage key for the operator's manual app order, scoped to the company so switching orgs
+ *  doesn't inherit another company's ordering. Order is a pure UI preference (like panel collapse),
+ *  so it lives on the machine, not in the repo - nothing about it belongs in company history. */
+function appOrderKey() {
+  const co = (S.config && S.config.company && (S.config.company.id || S.config.company.name)) || "default";
+  return "buildex.appOrder:" + co;
+}
+
+/** The saved order as an array of app names (oldest-first), or [] when nothing was ever reordered. */
+function savedAppOrder() {
+  try {
+    const v = JSON.parse(localStorage.getItem(appOrderKey()) || "[]");
+    return Array.isArray(v) ? v.filter((n) => typeof n === "string") : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** Persist a new order (array of app names) and repaint the rail. */
+function saveAppOrder(names) {
+  try { localStorage.setItem(appOrderKey(), JSON.stringify(names)); } catch (e) {}
+}
+
 /**
- * Reload the installed apps and repaint the left rail: one row per app with its glyph, title, a live
- * connection badge (Connect / connected dot) from the gateway, and a hover "open interface" icon.
- * A row's DEFAULT click starts a new AI chat focused on that app (its MCP tools + skills); the 🌐 icon
- * opens the app's own interface in a tab. (The Store now lives in the section header, not a list row.)
+ * Apply the operator's manual order to the server's list. Apps they have ranked come first in their
+ * chosen order; anything new (installed since the last reorder) keeps the server's alphabetical order
+ * and lands at the end, where it is noticeable rather than silently buried mid-list.
+ * @param {Array} apps - the apps as returned by /api/apps (already alphabetical by title).
+ * @returns {Array} the same apps, reordered.
+ */
+function orderApps(apps) {
+  const order = savedAppOrder();
+  if (!order.length) return apps.slice();
+  const rank = new Map(order.map((n, i) => [n, i]));
+  const ranked = apps.filter((a) => rank.has(a.name)).sort((a, b) => rank.get(a.name) - rank.get(b.name));
+  return ranked.concat(apps.filter((a) => !rank.has(a.name)));
+}
+
+/**
+ * Reload the installed apps and repaint the "Apps & Tools" rail: one row per app with its glyph,
+ * title, a live connection badge from the gateway, and a 🌐 button for the app's own interface.
+ * Clicking the ROW opens an AI chat focused on that app (the main use case - BuildEx is an
+ * integrator + chat); a row whose tools aren't authorized opens the Connect dialog instead.
+ * The list is capped at APPS_VISIBLE with a "Show N more" toggle, and "Edit" (section header) turns
+ * it into a drag-to-reorder list. Both the expansion and the order are remembered locally.
  */
 async function refreshApps() {
   let apps;
@@ -36,34 +80,158 @@ async function refreshApps() {
   } catch (e) {
     /* gateway off → no badges */
   }
+  renderApps();
+  // An OAuth that finished in the browser lands here on the next poll: let any open app chat drop
+  // its "not connected" gate the moment its tools are live, without the operator reloading.
+  if (typeof syncAppConn === "function") (S.tabs || []).forEach(syncAppConn);
+}
+
+/** Paint the rail from S.apps + S.gwStatus (no fetching) — called by refreshApps and by every local
+ *  interaction (expand, edit, reorder) that changes only how the list is shown. */
+function renderApps() {
   const host = $("#applist");
+  if (!host) return;
+  const apps = orderApps(S.apps || []);
+  const editing = !!S.appsEditing;
   host.innerHTML = "";
+  host.className = "applist" + (editing ? " editing" : "");
+  const editBtn = $("#appsEdit");
+  if (editBtn) {
+    editBtn.classList.toggle("on", editing);
+    editBtn.textContent = editing ? "Done" : "Edit";
+    editBtn.hidden = apps.length < 2; // nothing to reorder with 0 or 1 app
+  }
   if (!apps.length) {
     const empty = elt("div", "appempty");
-    empty.innerHTML = 'No apps yet - open the <b>⊕ Store</b> above to add one.';
+    empty.innerHTML = "No apps yet - open the <b>⊕ Store</b> above to add one.";
     host.appendChild(empty);
     return;
   }
-  apps.forEach((a) => {
-    const row = elt("div", "aitem");
-    // short custom icon (≤3 chars) as-is, else a kind glyph: 🌐 external / ◈ local.
-    const glyph = a.icon && a.icon.length <= 3 ? esc(a.icon) : (a.kind === "external" ? "🌐" : "◈");
-    const c = appConn(a.name);
-    const needsAuth = !!(c && c.needsAuth); // gateway-routed app whose tools aren't authorized yet
-    // Two explicit actions per row (the row itself isn't clickable): the AI button starts an agent
-    // chat to work WITH the app; the 🌐 button opens the app's own interface. The AI button doubles as
-    // the connection indicator - "AI chat" when the tools are ready, "AI · not connected" otherwise
-    // (it still opens the chat, where a discrete chip offers to connect).
-    row.innerHTML = '<span class="aemoji">' + glyph + '</span><span class="albl">' + esc(a.title) + "</span>"
-      + '<button class="aiapp' + (needsAuth ? " off" : "") + '" title="' + (needsAuth ? "Tools not connected - open a chat to connect and work with " : "Start an AI chat to work with ") + escAttr(a.title) + '">'
-      + (needsAuth ? "AI · not connected" : "AI chat") + "</button>"
-      + '<button class="aweb" title="Open ' + escAttr(a.title) + '’s interface">🌐</button>';
-    // Not connected → open the Connect dialog first (never drop into a chat with dead tools).
-    // Connected / no-auth-needed → straight into the AI chat.
-    $(".aiapp", row).onclick = () => (needsAuth ? openConnectDialog(a) : openAppChat(a));
-    $(".aweb", row).onclick = () => openAppTab(a);
-    host.appendChild(row);
+  // While editing, show every app: you cannot drag something into a hidden part of the list.
+  const shown = editing || S.appsExpanded ? apps : apps.slice(0, APPS_VISIBLE);
+  shown.forEach((a) => host.appendChild(appRow(a, editing)));
+  if (editing) {
+    const note = elt("div", "editnote");
+    note.textContent = "Drag to reorder. Your order is remembered on this machine.";
+    host.appendChild(note);
+    wireAppDrag(host, apps);
+    return;
+  }
+  const hidden = apps.length - shown.length;
+  if (hidden > 0 || S.appsExpanded) {
+    const more = elt("button", "appmore");
+    more.textContent = S.appsExpanded ? "Show less ▴" : "Show " + hidden + " more ▾";
+    more.onclick = () => {
+      S.appsExpanded = !S.appsExpanded;
+      try { localStorage.setItem("buildex.appsExpanded", S.appsExpanded ? "1" : "0"); } catch (e) {}
+      renderApps();
+    };
+    host.appendChild(more);
+  }
+}
+
+/** An app's text glyph: its own short icon (≤3 chars) as-is, else a kind glyph (🌐 external / ◈ local).
+ *  Returns ESCAPED text, safe to drop into innerHTML. The one definition - the rail, the start screen
+ *  and the settings dialog all read from here. */
+function appGlyph(a) {
+  return a && a.icon && a.icon.length <= 3 ? esc(a.icon) : (a && a.kind === "external" ? "🌐" : "◈");
+}
+
+/**
+ * Progressively upgrade a glyph to the pack's real logo, exactly as the Store card does - so an app
+ * looks the same wherever it appears. The emoji stays if there is no logo for that id (custom apps,
+ * packs without a mark) and in jsdom, which never fires onload; the image is pure enhancement.
+ * @param {Element} host - the element holding the glyph; replaced by the <img> on load.
+ * @param {string} id - the app/pack id (logos are served at /logos/<id>.png).
+ * @param {string} [cls] - the class for the <img> (sizing differs per surface).
+ */
+function mountAppLogo(host, id, cls) {
+  if (!host || typeof Image === "undefined") return;
+  const img = new Image();
+  img.className = cls || "alogo";
+  img.alt = "";
+  img.onload = () => { host.textContent = ""; host.appendChild(img); };
+  img.src = "/logos/" + encodeURIComponent(id) + ".png";
+}
+
+/** One rail row. In edit mode it carries a drag handle and a settings button and no chat action
+ *  (dragging a row must not also open a chat); otherwise the row itself opens the app's AI chat. */
+function appRow(a, editing) {
+  const row = elt("div", "aitem");
+  row.dataset.app = a.name;
+  const glyph = appGlyph(a);
+  const c = appConn(a.name);
+  const needsAuth = !!(c && c.needsAuth); // gateway-routed app whose tools aren't authorized yet
+  if (editing) {
+    row.draggable = true;
+    row.innerHTML = '<span class="adrag" aria-hidden="true">⠿</span><span class="aemoji">' + glyph + '</span>'
+      + '<span class="albl">' + esc(a.title) + "</span>"
+      + '<button class="acog" title="' + escAttr(a.title) + ' settings">⚙</button>';
+    mountAppLogo($(".aemoji", row), a.name);
+    $(".acog", row).onclick = (e) => { e.stopPropagation(); openAppSettings(a); };
+    return row;
+  }
+  row.title = "Start an AI chat to work with " + a.title;
+  row.innerHTML = '<span class="aemoji">' + glyph + '</span><span class="albl">' + esc(a.title) + "</span>"
+    + (needsAuth ? '<button class="aconn" title="' + escAttr(a.title) + ' isn’t connected - the agent can’t use its tools yet">not connected</button>' : "")
+    + '<button class="aweb" title="Open ' + escAttr(a.title) + '’s interface">🌐</button>';
+  mountAppLogo($(".aemoji", row), a.name);
+  // The row IS the AI chat. Not connected → the Connect dialog first (never drop the operator into a
+  // chat with dead tools); connected / no-auth-needed → straight into the chat.
+  row.onclick = () => (needsAuth ? openConnectDialog(a) : openAppChat(a));
+  const conn = $(".aconn", row);
+  if (conn) conn.onclick = (e) => { e.stopPropagation(); openConnectDialog(a); };
+  $(".aweb", row).onclick = (e) => { e.stopPropagation(); openAppTab(a); };
+  return row;
+}
+
+/**
+ * Wire HTML5 drag-and-drop over the rail's rows: dropping a row above/below another commits the new
+ * order to localStorage and repaints. Reads the order from the DOM at drop time, so it stays correct
+ * however many drags happened first.
+ * @param {Element} host - the #applist element (its .aitem children are the draggable rows).
+ * @param {Array} apps - the currently ordered apps (used to seed names not present in the DOM).
+ */
+function wireAppDrag(host, apps) {
+  let dragged = null;
+  const rows = () => [...host.querySelectorAll(".aitem")];
+  rows().forEach((row) => {
+    row.addEventListener("dragstart", (e) => {
+      dragged = row;
+      row.classList.add("dragging");
+      if (e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", row.dataset.app); } catch (err) {} }
+    });
+    row.addEventListener("dragend", () => {
+      row.classList.remove("dragging");
+      rows().forEach((r) => r.classList.remove("over"));
+      dragged = null;
+    });
+    row.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (!dragged || row === dragged) return;
+      rows().forEach((r) => r.classList.remove("over"));
+      row.classList.add("over");
+    });
+    row.addEventListener("drop", (e) => {
+      e.preventDefault();
+      if (!dragged || row === dragged) return;
+      // Drop ABOVE the row when the cursor is in its top half, BELOW it otherwise.
+      const box = row.getBoundingClientRect();
+      const before = e.clientY < box.top + box.height / 2;
+      host.insertBefore(dragged, before ? row : row.nextSibling);
+      const names = rows().map((r) => r.dataset.app).filter(Boolean);
+      // Anything not on screen (shouldn't happen in edit mode, but be safe) keeps its relative place.
+      apps.forEach((a) => { if (!names.includes(a.name)) names.push(a.name); });
+      saveAppOrder(names);
+      renderApps();
+    });
   });
+}
+
+/** Flip the rail between normal and drag-to-reorder mode (the "Edit"/"Done" button in the header). */
+function toggleAppsEdit() {
+  S.appsEditing = !S.appsEditing;
+  renderApps();
 }
 
 /** The App Store catalog, cached after first fetch (used to look up an app's MCP + skills to orient a
@@ -83,10 +251,16 @@ async function appCatalog() {
  * stays EMPTY - the orienting context (the app's MCP tools + bundled skills) is INJECTED invisibly as a
  * system-prompt append on every turn (`tab.systemAppend`), not typed into the box. A discrete context
  * chip above the composer shows it's active and, if the tools aren't connected yet, offers to connect.
- * Every click opens a fresh tab.
+ * One chat per app: clicking the rail row again re-focuses the chat that is already open rather than
+ * stacking up empty duplicates (the rail is now primary navigation, so it gets clicked a lot).
  * @param {object} app - the installed app record (name === catalog pack id).
  */
 async function openAppChat(app) {
+  const open = (S.tabs || []).find((t) => t.type === "chat" && t.app && t.app.name === app.name);
+  if (open) {
+    activateTab(open.id);
+    return;
+  }
   // Look up the app's catalog pack (id === app.name) for its MCP + skills, so the agent is oriented.
   const pack = (await appCatalog()).find((p) => p.id === app.name);
   const skills = (pack && pack.skills) || [];
@@ -102,7 +276,10 @@ async function openAppChat(app) {
   const proj = S.projects && S.projects.find((p) => p.id === S.activeProject);
   const folder = (proj && proj.name) || (S.config.company && S.config.company.name) || "Conversations";
   const { id } = await postJSON("/api/sessions", { folder, title: app.title });
-  if (S.activeProject) await postJSON("/api/projects/" + S.activeProject + "/items", { item: { type: "chat", sessionId: id, title: app.title } });
+  // `app` is persisted on the item so the rail can badge this chat with the app's mark, and so
+  // re-opening the session restores the chat's app context (connect banner + logo) instead of
+  // degrading it to a plain chat.
+  if (S.activeProject) await postJSON("/api/projects/" + S.activeProject + "/items", { item: { type: "chat", sessionId: id, title: app.title, app: app.name } });
   await refreshProjects();
   const tab = addTab({ type: "chat", title: app.title, sessionId: id, status: "idle", systemAppend, app: app, appConn: conn });
   buildChatPane(tab);

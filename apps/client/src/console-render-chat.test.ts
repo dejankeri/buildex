@@ -481,3 +481,95 @@ describe("chat — dropped files", () => {
     expect(c.repoRelative("/Users/x/co/core-evil/x.md")).toBeNull(); // prefix ≠ containment
   });
 });
+
+describe("chat — the app-connect gate (an app chat whose tools aren't authorized)", () => {
+  /** A chat tab scoped to an app whose gateway tools need auth, with a real composer mounted. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function gatedTab(c: Record<string, any>, doc: any) {
+    const tab: any = {
+      id: "g1", type: "chat", title: "Slack", sessionId: "s1",
+      app: { name: "slack", title: "Slack", kind: "external", url: "https://slack.com" },
+      appConn: { name: "slack", needsAuth: true, authUrl: "https://auth.example.com" },
+      systemAppend: "The operator is working with the Slack app.",
+    };
+    tab.pane = doc.createElement("div");
+    (doc.body as any).appendChild(tab.pane);
+    c.buildChatPane(tab);
+    return tab;
+  }
+
+  it("is active only for an app chat that needs auth", () => {
+    const { c } = loadConsole();
+    expect(c.appGateActive({ app: { name: "s" }, appConn: { needsAuth: true } })).toBe(true);
+    expect(c.appGateActive({ app: { name: "s" }, appConn: { connected: true } })).toBe(false);
+    expect(c.appGateActive({ app: { name: "s" } })).toBe(false);           // unrouted app - nothing to connect
+    expect(c.appGateActive({})).toBe(false);                               // a plain chat is never gated
+    expect(c.appGateActive({ app: { name: "s" }, appConn: { needsAuth: true }, connSkipped: true })).toBe(false);
+  });
+
+  it("takes the CENTRE of the pane and locks the composer, naming the app in both", () => {
+    const { doc, c } = loadConsole();
+    const tab = gatedTab(c, doc);
+    const gate = tab.pane.querySelector(".conngate");
+    expect(gate).not.toBeNull();
+    expect(gate.querySelector(".cg-h").textContent).toBe("Slack isn’t connected");
+    expect(gate.querySelector(".cg-p").textContent).toContain("can’t read or act in Slack");
+    expect(gate.querySelector(".cg-go").textContent).toBe("Connect Slack");
+    // The composer is unusable while the gate is up — a turn sent now would be wasted.
+    expect(tab.pane.querySelector(".composer").className).toContain("locked");
+    expect(tab.pane.querySelector("textarea").disabled).toBe(true);
+    expect(tab.pane.querySelector("textarea").placeholder).toContain("Connect Slack");
+  });
+
+  it("Skip drops the app context entirely rather than leaving the agent oriented at dead tools", () => {
+    const { doc, c } = loadConsole();
+    const tab = gatedTab(c, doc);
+    tab.pane.querySelector(".cg-skip").click();
+    expect(tab.pane.querySelector(".conngate")).toBeNull();
+    expect(tab.pane.querySelector(".ctxchip")).toBeNull();   // no chip claiming Slack is loaded
+    expect(tab.systemAppend).toBeNull();                     // …and no invisible append either
+    expect(tab.pane.querySelector("textarea").disabled).toBe(false);
+    expect(tab.pane.querySelector(".empty")).not.toBeNull(); // back to the normal empty thread
+  });
+
+  it("clears itself when the gateway poll reports the app connected — no reload", () => {
+    const { doc, c } = loadConsole();
+    const tab = gatedTab(c, doc);
+    expect(tab.pane.querySelector(".conngate")).not.toBeNull();
+    c.S.gwStatus = { slack: { name: "slack", connected: true } }; // OAuth finished in the browser
+    c.syncAppConn(tab);
+    expect(tab.pane.querySelector(".conngate")).toBeNull();
+    expect(tab.pane.querySelector("textarea").disabled).toBe(false);
+    expect(tab.pane.querySelector(".ctxchip").className).not.toContain("warn");
+    expect(tab.pane.querySelector(".ctxchip").textContent).toContain("tools & skills loaded");
+  });
+
+  it("raises the gate on a chat whose app DISCONNECTS mid-session", () => {
+    const { doc, c } = loadConsole();
+    const tab: any = {
+      id: "g2", type: "chat", title: "Slack", sessionId: "s2",
+      app: { name: "slack", title: "Slack", kind: "external" },
+      appConn: { name: "slack", connected: true },
+      systemAppend: "ctx",
+    };
+    tab.pane = doc.createElement("div");
+    (doc.body as any).appendChild(tab.pane);
+    c.buildChatPane(tab);
+    expect(tab.pane.querySelector(".conngate")).toBeNull();
+    c.S.gwStatus = { slack: { name: "slack", needsAuth: true, authUrl: "https://auth.example.com" } };
+    c.syncAppConn(tab);
+    expect(tab.pane.querySelector(".conngate")).not.toBeNull();
+    expect(tab.pane.querySelector("textarea").disabled).toBe(true);
+  });
+
+  it("leaves a plain (non-app) chat completely alone", () => {
+    const { doc, c } = loadConsole();
+    const tab: any = { id: "p1", type: "chat", title: "New chat", sessionId: "s3" };
+    tab.pane = doc.createElement("div");
+    (doc.body as any).appendChild(tab.pane);
+    c.buildChatPane(tab);
+    c.syncAppConn(tab);
+    expect(tab.pane.querySelector(".conngate")).toBeNull();
+    expect(tab.pane.querySelector("textarea").disabled).toBe(false);
+  });
+});

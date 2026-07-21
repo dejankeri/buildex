@@ -294,6 +294,20 @@ function buildComposer(tab, handlers) {
       save();
       grow();
     },
+    /**
+     * Lock the box entirely, with a reason. Used by the app-connect gate: an app chat whose tools
+     * aren't authorized yet can't do the thing the operator opened it to do, so sending a turn would
+     * only waste it. Unlocking restores the normal placeholder.
+     * @param {boolean} v - true to lock.
+     * @param {string} [why] - shown as the placeholder while locked.
+     */
+    setLocked(v, why) {
+      ta.disabled = !!v;
+      send.disabled = !!v;
+      root.classList.toggle("locked", !!v);
+      ta.placeholder = v ? why || "Connect this app to start" : "Ask your company brain…";
+      if (!v) ta.focus();
+    },
     /** Flip Send↔Stop. While busy the box stays editable (type your next message), Enter is inert. */
     setBusy(v) {
       busy = !!v;

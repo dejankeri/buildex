@@ -210,15 +210,23 @@ function parsePack(dir: string, id: string): PackManifest | undefined {
   return m;
 }
 
-/** The writable (non-core) root a pack is installed in, or undefined. Detected by the app manifest OR
- *  the per-install policy-fragment marker (written for EVERY install) - so an app-less pack
- *  (mcp/skills only) is still recognised as installed and its MCP gets pinned. First match wins. */
+/**
+ * The writable (non-core) root a pack is installed in, or undefined.
+ *
+ * Installing is PER-OPERATOR (see installPack): the app manifest and an install marker land in the
+ * operator's private root, while the pack's skills and policy go to team as company rules that exist
+ * for everyone, inert. So a team `policy/packs/<id>.json` is NOT an install marker - if it were, one
+ * teammate's install would read as "installed" on every machine in the company. Only the private
+ * marker counts. An app manifest in ANY writable root still counts, which keeps packs installed under
+ * the old team/private prompt (before the split) recognised exactly as before.
+ */
 function installedRoot(roots: Root[], id: string): string | undefined {
   for (const root of roots) {
     if (root.name === "core") continue;
     if (existsSync(join(root.dir, "apps", id, "app.json"))) return slotOf(root.name);
-    if (existsSync(join(root.dir, "policy", "packs", `${id}.json`))) return slotOf(root.name);
   }
+  const priv = roots.find((r) => slotOf(r.name) === "private");
+  if (priv && existsSync(join(priv.dir, "policy", "packs", `${id}.json`))) return "private";
   return undefined;
 }
 
@@ -257,7 +265,11 @@ export interface InstallDeps {
 }
 export interface InstallResult {
   id: string;
+  /** The REAL root name (never the slot) holding the operator's app face + install marker. */
   target: string;
+  /** The REAL root name holding the company rules (skills + policy) - team, or `target` on a
+   *  workspace with no team root. Undefined on uninstall, which never touches company rules. */
+  rulesTarget?: string;
   did: { app: boolean; skills: string[]; mcp: boolean; policy: boolean };
 }
 
@@ -340,10 +352,29 @@ export function packApiKeyPin(m: PackManifest, keys: KeyReader | undefined): Mcp
   return { type: "http", url: m.mcp.url, headers: { [header]: `${prefix}${key}` } };
 }
 
-/** Install a pack into a writable root by composing the injected face-writers. Definitions (manifest +
- *  skill folders) come from `source`; the pack is written into the target workspace root. Deterministic. */
-export function installPack(source: CatalogSource, roots: Root[], opts: { id: string; target: string }, deps: InstallDeps): InstallResult {
-  const root = targetRoot(roots, opts.target);
+/**
+ * Where each face of a pack lands. Installing is a PER-OPERATOR act - the app shows in your rail and
+ * you connect it with your own credential (which never leaves your keychain, so a shared install
+ * shares nothing usable anyway). But "what is this tool allowed to do here" and "how does this
+ * company use it" are COMPANY rules: they belong to the team brain whether or not you personally
+ * installed anything, and they sit inert for teammates who haven't.
+ *
+ * Falls back to the app root when the workspace has no team root (a solo/local workspace), where the
+ * distinction has no meaning and one root holds everything.
+ */
+function installRoots(roots: Root[]): { app: Root; rules: Root } {
+  const app = targetRoot(roots, "private");
+  const team = roots.find((r) => r.name !== "core" && slotOf(r.name) === "team");
+  return { app, rules: team ?? app };
+}
+
+/**
+ * Install a pack by composing the injected face-writers. Definitions (manifest + skill folders) come
+ * from `source`. There is no target to choose: the app face is written to the operator's private root
+ * and the skills + policy to team (see installRoots). Deterministic.
+ */
+export function installPack(source: CatalogSource, roots: Root[], opts: { id: string }, deps: InstallDeps): InstallResult {
+  const { app: appRoot, rules: rulesRoot } = installRoots(roots);
   const packSrc = source.dir(opts.id);
   const m = packSrc ? parsePack(packSrc, opts.id) : undefined;
   if (!packSrc || !m) throw new Error(`unknown pack: ${opts.id}`);
@@ -351,30 +382,46 @@ export function installPack(source: CatalogSource, roots: Root[], opts: { id: st
   const did: InstallResult["did"] = { app: false, skills: [], mcp: false, policy: false };
   if (m.app) {
     deps.writeApp(roots, {
-      repo: root.name,
+      repo: appRoot.name,
       name: m.id,
-      manifest: { kind: "external", url: m.app.url, ...(m.app.icon ? { icon: m.app.icon } : {}) },
+      // `name` is the DISPLAY title (readAppMeta falls back to the folder id without it, which is why
+      // installed packs used to show up in the rail as "stripe" rather than "Stripe").
+      manifest: { kind: "external", name: m.name, url: m.app.url, ...(m.app.icon ? { icon: m.app.icon } : {}) },
     });
     did.app = true;
   }
+  // Company rules → team: the skills that describe how this company uses the tool…
   if (m.skills) {
     for (const s of m.skills) {
       if (NAME_RE.test(s) && existsSync(join(packSrc, "skills", s, "SKILL.md"))) {
-        deps.copySkill(join(packSrc, "skills", s), join(root.dir, "skills", s));
+        deps.copySkill(join(packSrc, "skills", s), join(rulesRoot.dir, "skills", s));
         did.skills.push(s);
       }
     }
   }
   if (m.mcp) { deps.pinMcp(`${PACK_KEY_PREFIX}${m.id}`, packMcpConfig(m.mcp)); did.mcp = true; }
-  // Always write the policy fragment - empty when the pack has no hints - so it doubles as the
-  // install marker (installedRoot) for app-less packs. did.policy reflects real hints only.
-  deps.writePolicyFragment(root.dir, m.id, m.policy ?? {});
+  // …and the policy fragment saying what it is allowed to do here. Written to team so it is ONE
+  // reviewable company rule per tool, not one per operator.
+  //
+  // The private fragment is an empty per-operator install marker (it is what installedRoot reads, so
+  // an app-less pack still registers as installed for THIS operator without claiming to be installed
+  // for the whole company). Marker first, rules second: when there is no separate team root the two
+  // are the same file, and the real hints must be the ones that survive.
+  deps.writePolicyFragment(appRoot.dir, m.id, {});
+  deps.writePolicyFragment(rulesRoot.dir, m.id, m.policy ?? {});
   if (m.policy) did.policy = true;
-  return { id: m.id, target: root.name, did };
+  return { id: m.id, target: appRoot.name, rulesTarget: rulesRoot.name, did };
 }
 
-/** Reverse an install: remove the app folder, skill dirs, MCP pin, and policy fragment. The pack's
- *  skill list is read from `source` (the same definition install used). */
+/**
+ * Reverse an install for THIS operator: remove the app folder, the MCP pin, and the install marker
+ * from `target` (the operator's own root).
+ *
+ * It deliberately does NOT reach into the team brain. The skills and policy an install contributed
+ * are company rules, and other people may be working against them; one person removing an app from
+ * their own rail must not quietly change what the company allows. Uninstall still sweeps skill dirs
+ * out of `target`, which is what removes them for a pack installed under the old team/private prompt.
+ */
 export function uninstallPack(source: CatalogSource, roots: Root[], opts: { id: string; target: string }, deps: InstallDeps): InstallResult {
   const root = targetRoot(roots, opts.target);
   if (!NAME_RE.test(opts.id)) throw new Error(`invalid pack id: ${opts.id}`);

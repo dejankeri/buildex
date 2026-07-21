@@ -48,9 +48,15 @@ describe("seedAcmeWorkspace - the non-syncable demo sandbox", () => {
     expect(readFileSync(join(ws, "team-acme", "decisions", "log.md"), "utf8")).toContain("Weekly release cadence");
     expect(readFileSync(join(ws, "team-acme", "finance", "metrics-q3.md"), "utf8")).toContain("$34,200");
     expect(existsSync(join(ws, "private-you", "notes.md"))).toBe(true);
-    // installed apps: the external-app manifest + policy marker + linked skills
-    expect(existsSync(join(ws, "team-acme", "apps", "slack", "app.json"))).toBe(true);
+    // Installed apps split the way a real install splits them (brain/catalog.ts installPack).
+    // Yours: the app manifest + the per-operator install marker.
+    expect(existsSync(join(ws, "private-you", "apps", "slack", "app.json"))).toBe(true);
+    expect(existsSync(join(ws, "private-you", "policy", "packs", "stripe.json"))).toBe(true);
+    expect(existsSync(join(ws, "team-acme", "apps", "slack", "app.json"))).toBe(false);
+    // The company's: the rules and the skills, in the team brain for everyone.
     expect(existsSync(join(ws, "team-acme", "policy", "packs", "stripe.json"))).toBe(true);
+    // The manifest carries the DISPLAY name, so the rail shows "Slack", not "slack".
+    expect(JSON.parse(readFileSync(join(ws, "private-you", "apps", "slack", "app.json"), "utf8")).name).toBe("Slack");
   });
 
   it("seeds the daemon-owned left rail (sessions, projects, automations)", () => {

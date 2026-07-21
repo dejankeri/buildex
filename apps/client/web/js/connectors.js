@@ -193,7 +193,6 @@ async function renderMcpEditor(tab, name) {
           b.disabled = false;
           return;
         }
-        if (S.rightTab === "apps") rGateway();
         renderMcpEditor(tab, name);
       },
   );
@@ -225,7 +224,6 @@ async function renderMcpEditor(tab, name) {
     tab.name = nm;
     tab.title = "MCP: " + nm;
     renderTabbar();
-    if (S.rightTab === "apps") rGateway();
     setTimeout(() => renderMcpEditor(tab, nm), r && r.needsAuth ? 400 : 900);
   };
   // Remove: drop the connector and close the tab.
@@ -237,22 +235,13 @@ async function renderMcpEditor(tab, name) {
       try {
         await postJSON("/api/connectors/gateway/" + encodeURIComponent(name) + "/remove", {});
       } catch (e) {}
-      if (S.rightTab === "apps") rGateway();
       closeTab(tab.id);
     };
 }
 // Legacy connector/gateway management UI hidden here (Task 7 - the App Store is now the one path
 // to add Gmail/Slack/Notion/etc). rGateway/openConnectorEditor/openMcpEditor are left defined but
-// unreached; /api/connectors* + the gateway backend are untouched.
-/**
- * Render the (now legacy) right-rail Apps panel — a pointer to the left-rail Store.
- * @returns {Promise<void>} resolves once the placeholder panel is painted.
- */
-async function rApps() {
-  const p = $("#rpanel");
-  p.innerHTML = '<h4>Apps</h4><div class="rmini"><div class="big">◈</div>Manage apps from the ⊕ Store in the left rail.</div>';
-}
-
+// unreached; /api/connectors* + the gateway backend are untouched. The right rail's Apps panel is
+// gone too - it had become a signpost to the Store, and apps are managed in the left rail + Store.
 // Full editor for a file/source connector (Gmail, Slack, Notion…), opened in a center tab. These
 // sync read-only into sources/<name>/ - connect a credential, run a sync, view what it filed.
 /**
@@ -352,7 +341,6 @@ async function renderConnectorEditor(tab, name) {
         msg.innerHTML = '<span class="bad">failed</span>';
         return;
       }
-      if (S.rightTab === "apps") rApps();
       renderConnectorEditor(tab, name);
     };
   // OAuth authorize: open the provider's sign-in, then poll the catalog until the callback lands
@@ -388,7 +376,6 @@ async function renderConnectorEditor(tab, name) {
         const me = cat.find((x) => x.name === name);
         if ((me && me.connected) || tries <= 0) {
           clearInterval(iv);
-          if (S.rightTab === "apps") rApps();
           renderConnectorEditor(tab, name);
         }
       }, 2000);
@@ -407,7 +394,6 @@ async function renderConnectorEditor(tab, name) {
       }
       sy.disabled = false;
       sy.textContent = "Sync now";
-      if (S.rightTab === "apps") rApps();
       setTimeout(() => renderConnectorEditor(tab, name), 800);
     };
   // View filed: open the source's STATUS.md in a doc tab.
@@ -421,7 +407,6 @@ async function renderConnectorEditor(tab, name) {
       try {
         await postJSON("/api/connectors/" + encodeURIComponent(name) + "/disconnect", {});
       } catch (e) {}
-      if (S.rightTab === "apps") rApps();
       renderConnectorEditor(tab, name);
     };
 }

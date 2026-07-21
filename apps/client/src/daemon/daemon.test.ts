@@ -268,13 +268,15 @@ describe("body validation - malformed input 400s, never a raw 500", () => {
 
 describe("App Store - /api/catalog", () => {
   const okResult = (id: string, target: string) => ({ id, target, did: { app: true, skills: [] as string[], mcp: true, policy: false } });
+  // install() takes no target — the app face always lands in the operator's own root.
+  const okInstall = (id: string) => okResult(id, "private");
 
   it("GET /api/catalog returns the pack list", async () => {
     const { app } = makeDaemon({
       packStore: {
         list: () => [{ id: "notion", name: "Notion", installed: false, faces: { app: true, mcp: true, apiKey: false, provision: false, skills: 1 } }],
-        install: okResult,
-        uninstall: okResult,
+        install: okInstall,
+        uninstall: okInstall,
         setApiKey: () => {},
       },
     });
@@ -292,12 +294,12 @@ describe("App Store - /api/catalog", () => {
   }
 
   it("POST /api/catalog/install runs install after the operator approves the card", async () => {
-    let got: [string, string] | undefined;
+    let got: string | undefined;
     const { app, broker } = makeDaemon({
       packStore: {
         list: () => [],
-        uninstall: okResult,
-        install: (id, t) => { got = [id, t]; return okResult(id, t); },
+        uninstall: okInstall,
+        install: (id) => { got = id; return okResult(id, "private"); },
         setApiKey: () => {},
       },
     });
@@ -305,14 +307,14 @@ describe("App Store - /api/catalog", () => {
     await settle(broker, "approve");
     const res = await p;
     expect(res.status).toBe(200);
-    expect(got).toEqual(["notion", "team"]);
+    expect(got).toBe("notion");
     expect(((await res.json()) as { did: { mcp: boolean } }).did.mcp).toBe(true);
   });
 
   it("POST /api/catalog/apikey stores a key and reports connected (no approval card - local credential)", async () => {
     let got: [string, string | null] | undefined;
     const { app } = makeDaemon({
-      packStore: { list: () => [], install: okResult, uninstall: okResult, setApiKey: (id, key) => { got = [id, key]; } },
+      packStore: { list: () => [], install: okInstall, uninstall: okInstall, setApiKey: (id, key) => { got = [id, key]; } },
     });
     const res = await app(post("/api/catalog/apikey", { id: "stripe", key: "  rk_live_9  " }));
     expect(res.status).toBe(200);
@@ -323,7 +325,7 @@ describe("App Store - /api/catalog", () => {
   it("POST /api/catalog/apikey with an empty key clears it (disconnect)", async () => {
     let got: [string, string | null] | undefined;
     const { app } = makeDaemon({
-      packStore: { list: () => [], install: okResult, uninstall: okResult, setApiKey: (id, key) => { got = [id, key]; } },
+      packStore: { list: () => [], install: okInstall, uninstall: okInstall, setApiKey: (id, key) => { got = [id, key]; } },
     });
     const res = await app(post("/api/catalog/apikey", { id: "stripe", key: "" }));
     expect(res.status).toBe(200);
@@ -334,7 +336,7 @@ describe("App Store - /api/catalog", () => {
   it("POST /api/catalog/install returns 403 when the operator denies", async () => {
     let called = false;
     const { app, broker } = makeDaemon({
-      packStore: { list: () => [], uninstall: okResult, install: (id, t) => { called = true; return okResult(id, t); }, setApiKey: () => {} },
+      packStore: { list: () => [], uninstall: okInstall, install: (id) => { called = true; return okResult(id, "private"); }, setApiKey: () => {} },
     });
     const p = app(post("/api/catalog/install", { id: "notion", target: "team" }));
     await settle(broker, "deny");
@@ -343,20 +345,41 @@ describe("App Store - /api/catalog", () => {
     expect(called).toBe(false); // never ran the install
   });
 
-  it("POST /api/catalog/install rejects a bad target with 400 (before any approval card)", async () => {
+  it("POST /api/catalog/install requires an id, failing fast without opening a card", async () => {
     const { app, broker } = makeDaemon({
-      packStore: { list: () => [], install: okResult, uninstall: okResult, setApiKey: () => {} },
+      packStore: { list: () => [], install: okInstall, uninstall: okInstall, setApiKey: () => {} },
     });
-    const res = await app(post("/api/catalog/install", { id: "notion", target: "core" }));
+    const res = await app(post("/api/catalog/install", {}));
     expect(res.status).toBe(400);
     expect(broker.pending()).toHaveLength(0); // validation fails fast, no card opened
   });
 
+  it("POST /api/catalog/uninstall still rejects target 'core' with 400 (before any approval card)", async () => {
+    const { app, broker } = makeDaemon({
+      packStore: { list: () => [], install: okInstall, uninstall: okInstall, setApiKey: () => {} },
+    });
+    const res = await app(post("/api/catalog/uninstall", { id: "notion", target: "core" }));
+    expect(res.status).toBe(400);
+    expect(broker.pending()).toHaveLength(0);
+  });
+
+  it("the install approval card carries NO target - install has no scope to choose", async () => {
+    const { app, broker } = makeDaemon({
+      packStore: { list: () => [], install: okInstall, uninstall: okInstall, setApiKey: () => {} },
+    });
+    const p = app(post("/api/catalog/install", { id: "notion" }));
+    await delay(2);
+    const card = broker.pending()[0]!;
+    expect(card.tool.input).toEqual({ id: "notion" });
+    broker.resolve(card.id, "approve");
+    await p;
+  });
+
   it("POST /api/catalog/install returns 404 for an unknown pack id (after approval)", async () => {
     const { app, broker } = makeDaemon({
-      packStore: { list: () => [], install: () => { throw new Error("unknown pack: ghost"); }, uninstall: okResult, setApiKey: () => {} },
+      packStore: { list: () => [], install: () => { throw new Error("unknown pack: ghost"); }, uninstall: okInstall, setApiKey: () => {} },
     });
-    const p = app(post("/api/catalog/install", { id: "ghost", target: "team" }));
+    const p = app(post("/api/catalog/install", { id: "ghost" }));
     await settle(broker, "approve");
     const res = await p;
     expect(res.status).toBe(404);
@@ -365,7 +388,7 @@ describe("App Store - /api/catalog", () => {
   it("POST /api/catalog/uninstall routes to uninstall after approval", async () => {
     let called = false;
     const { app, broker } = makeDaemon({
-      packStore: { list: () => [], install: okResult, uninstall: (id, t) => { called = true; return okResult(id, t); }, setApiKey: () => {} },
+      packStore: { list: () => [], install: okInstall, uninstall: (id, t) => { called = true; return okResult(id, t); }, setApiKey: () => {} },
     });
     const p = app(post("/api/catalog/uninstall", { id: "notion", target: "private" }));
     await settle(broker, "approve");
@@ -380,10 +403,12 @@ describe("App Store - /api/catalog", () => {
 // being granted up front, and the callback must never store a credential on a bad state.
 describe("App Store - escape-hatch provisioning", () => {
   const okResult = (id: string, target: string) => ({ id, target, did: { app: true, skills: [] as string[], mcp: true, policy: false } });
+  // install() takes no target — the app face always lands in the operator's own root.
+  const okInstall = (id: string) => okResult(id, "private");
   const base = {
     list: () => [],
-    install: okResult,
-    uninstall: okResult,
+    install: okInstall,
+    uninstall: okInstall,
     setApiKey: () => {},
   };
 

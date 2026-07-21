@@ -1,13 +1,14 @@
 "use strict";
-// ⊕ Store pane, install/uninstall flow, inline approval + target picker.
+// ⊕ Store pane, install/uninstall flow, inline approval.
 //
 // Part of the operator console (web/index.html). Classic script — loaded in order via
 // <script src>, sharing one global scope. NOT an ES module.
 //
 // Renders the left-rail "⊕ Store" (App Store) pane from /api/catalog, and drives the
-// install/uninstall lifecycle: a target picker (team vs private), an inline approval overlay wired
-// to the SAME server-side broker card the Pending tray uses (invariant #5), and a post-install
-// offer to Connect any gateway-routed pack. State it reads on the shared global `S`: `S.tabs` (open
+// install/uninstall lifecycle: a ONE-TAP install (there is no scope to pick - the app face is the
+// operator's, the pack's skills and policy are company rules; see brain/catalog.ts installPack), an
+// inline approval overlay wired to the SAME server-side broker card the Pending tray uses
+// (invariant #5), and a post-install offer to Connect any gateway-routed pack. State it reads on the shared global `S`: `S.tabs` (open
 // tabs, to find/activate an existing Store tab).
 
 /* ---------- left rail: ⊕ Store - App Store pane + install flow ---------- */
@@ -43,7 +44,10 @@ function buildStorePane(tab) {
  * @param {object} tab - the Store tab to (re)paint.
  */
 async function loadStorePane(tab) {
-  const grid = $(".storegrid", tab.pane);
+  // `tab` may be null: the app-settings dialog drives the same install/uninstall/key verbs without a
+  // Store tab open. Fall back to whichever Store tab IS open, so its cards still repaint.
+  const t = tab || (S.tabs || []).find((x) => x.type === "store");
+  const grid = t && t.pane ? $(".storegrid", t.pane) : null;
   if (!grid) return;
   let packs = [];
   try {
@@ -57,6 +61,7 @@ async function loadStorePane(tab) {
     grid.innerHTML = '<div class="storeempty">No packs available.</div>';
     return;
   }
+  const tabForActions = t;
   packs.forEach((p) => {
     const card = elt("div", "storecard");
     // Face badges: an "App" chip, a "Tools" (MCP) chip, and a "Skills ×N" chip, in that order,
@@ -70,28 +75,19 @@ async function loadStorePane(tab) {
       ? (p.apiKeyConnected ? '<button class="mini ghost skeyclear">Key ✓</button>' : '<button class="mini skey">Use API key</button>')
       : "";
     const action = p.installed
-      ? '<div class="srow"><span class="sinstalled">✓ Installed' + (p.installedIn ? (" · " + esc(p.installedIn)) : "") + '</span>' + keyBtn + '<button class="mini ghost suninstall">Uninstall</button></div>'
+      ? '<div class="srow"><span class="sinstalled">✓ Installed</span>' + keyBtn + '<button class="mini ghost scog" title="' + escAttr(p.name) + ' settings">⚙</button></div>'
       : '<button class="sinstall">Install</button>';
     card.innerHTML = '<div class="scardh"><span class="sicon">' + esc(p.icon || "◈") + '</span><span class="sname">' + esc(p.name) + '</span></div>'
       + '<div class="ssum">' + esc(p.summary || "") + '</div>'
       + '<div class="sbadges">' + badges + '</div>' + action;
     if (p.installed) {
-      $(".suninstall", card).onclick = () => startUninstall(p, tab);
-      if ($(".skey", card)) $(".skey", card).onclick = () => startApiKey(p, tab);
-      if ($(".skeyclear", card)) $(".skeyclear", card).onclick = () => clearApiKey(p, tab);
+      $(".scog", card).onclick = () => openAppSettings(p);
+      if ($(".skey", card)) $(".skey", card).onclick = () => startApiKey(p, tabForActions);
+      if ($(".skeyclear", card)) $(".skeyclear", card).onclick = () => clearApiKey(p, tabForActions);
     } else {
-      $(".sinstall", card).onclick = () => startInstall(p, tab);
+      $(".sinstall", card).onclick = () => startInstall(p, tabForActions);
     }
-    // Progressive logo: swap the emoji for the pack's served logo if one exists. jsdom never fires
-    // onload, so renderer tests keep seeing the emoji - the image is pure enhancement.
-    const iconEl = $(".sicon", card);
-    if (iconEl && typeof Image !== "undefined") {
-      const img = new Image();
-      img.className = "slogo";
-      img.alt = "";
-      img.onload = () => { iconEl.textContent = ""; iconEl.appendChild(img); };
-      img.src = "/logos/" + encodeURIComponent(p.id) + ".png";
-    }
+    mountAppLogo($(".sicon", card), p.id, "slogo"); // same progressive logo the rail uses
     grid.appendChild(card);
   });
 }
@@ -103,8 +99,9 @@ async function loadStorePane(tab) {
  * @param {string} kind - "info" for the neutral note style, anything else for the error style.
  */
 function storeNotice(tab, msg, kind) {
-  const grid = $(".storegrid", tab.pane);
-  if (!grid) return;
+  const t = tab || (S.tabs || []).find((x) => x.type === "store");
+  const grid = t && t.pane ? $(".storegrid", t.pane) : null;
+  if (!grid) return; // no Store open (the settings dialog path) - the rail refresh is the feedback
   grid.insertAdjacentHTML("afterbegin", '<div class="' + (kind === "info" ? "storenote" : "storeerr") + '">' + esc(msg) + '</div>');
 }
 
@@ -115,12 +112,13 @@ function storeNotice(tab, msg, kind) {
  * @param {object} tab  - the Store tab driving the flow.
  */
 async function startInstall(pack, tab) {
-  const target = await pickTarget(pack); // team|private (scope) - approval follows in popup #2
-  if (!target) return;
-  // Fire the install (blocks server-side on the broker decision) and DON'T await yet - popup #2
+  // No scope question: installing is one tap. The app face is yours, the pack's skills and policy are
+  // company rules that go to the team brain either way (see brain/catalog.ts installPack), and the
+  // credential never leaves this machine's keychain - so there was never a real choice to offer.
+  // Fire the install (blocks server-side on the broker decision) and DON'T await yet - the overlay
   // resolves the very card this POST creates, so the human-gate is honoured, just surfaced inline.
-  const installP = postJSON("/api/catalog/install", { id: pack.id, target });
-  const outcome = await confirmPending({ verb: "Install", name: pack.name, target, id: pack.id });
+  const installP = postJSON("/api/catalog/install", { id: pack.id });
+  const outcome = await confirmPending({ verb: "Install", name: pack.name, id: pack.id });
   if (outcome === "timeout") storeNotice(tab, "Approve “Install " + pack.name + "” in the Pending tray to finish.", "info");
   let res;
   try {
@@ -240,7 +238,7 @@ async function clearApiKey(pack, tab) {
  * @param {object} tab  - the Store tab driving the flow.
  */
 async function startUninstall(pack, tab) {
-  const target = pack.installedIn || "team";
+  const target = pack.installedIn || "private"; // installs are per-operator now
   const uninstallP = postJSON("/api/catalog/uninstall", { id: pack.id, target });
   const outcome = await confirmPending({ verb: "Uninstall", name: pack.name, target, id: pack.id });
   if (outcome === "timeout") storeNotice(tab, "Approve “Uninstall " + pack.name + "” in the Pending tray to finish.", "info");
@@ -267,27 +265,33 @@ async function startUninstall(pack, tab) {
    card stays in the tray as a fallback. Returns "approved" | "denied" | "timeout" | "dismiss". */
 
 /**
- * Locate the pending broker card whose tool input matches this action's `id` + `target`.
- * @param {object} match - {id, target} identifying the just-created pending action.
+ * Locate the pending broker card whose tool input matches this action's `id` (and `target`, when the
+ * action carries one - install no longer does, since it has no scope to choose).
+ * @param {object} match - {id, target?} identifying the just-created pending action.
  * @returns {Promise<object|null>} the matching card, or null if none is found / the fetch fails.
  */
 function findPendingCard(match) {
   return getJSON("/api/pending")
-    .then((d) => (d.cards || []).find((c) => c.tool && c.tool.input && c.tool.input.id === match.id && c.tool.input.target === match.target))
+    .then((d) => (d.cards || []).find((c) => c.tool && c.tool.input && c.tool.input.id === match.id
+      && (match.target === undefined || c.tool.input.target === match.target)))
     .catch(() => null);
 }
 
 /**
  * Show the inline approval overlay for an install/uninstall and resolve the matching broker card.
- * @param {object} opts - {verb, name, target, id} describing the pending action.
+ * @param {object} opts - {verb, name, id, target?} describing the pending action.
  * @returns {Promise<string>} "approved" | "denied" | "timeout" | "dismiss".
  */
-function confirmPending(opts) { // {verb, name, target, id}
+function confirmPending(opts) { // {verb, name, id, target?}
   return new Promise((resolve) => {
-    const scope = opts.target === "team" ? "everyone on the team" : "just you";
+    // Say what actually happens rather than asking again. An install adds the app for this operator
+    // and files the pack's skills + rules in the team brain; an uninstall only affects one root.
+    const what = opts.target === undefined
+      ? "This adds <b>" + esc(opts.name) + "</b> to your apps, and files its skills and rules in the team brain for everyone."
+      : "This is an outward change for <b>" + (opts.target === "team" ? "everyone on the team" : "just you") + "</b>.";
     const bd = elt("div", "ovbackdrop");
     bd.innerHTML = '<div class="ovcard"><h3 class="ovh">' + esc(opts.verb) + ' ' + esc(opts.name) + '?</h3>'
-      + '<p class="ovp">This is an outward change for <b>' + esc(scope) + '</b>. Approve to continue.</p>'
+      + '<p class="ovp">' + what + ' Approve to continue.</p>'
       + '<div class="ovrow"><button class="mini ovapprove" disabled>Preparing…</button>'
       + '<button class="mini ghost ovlater">Not now</button></div></div>';
     document.body.appendChild(bd);
@@ -335,35 +339,3 @@ function confirmPending(opts) { // {verb, name, target, id}
    real blocking dialogs and break the Electron/extension bridge. The install itself is human-gated
    server-side via the approval broker (Pending tray), so no loopback caller can install unattended. */
 
-/**
- * Show the target-picker overlay for `pack` and resolve to the chosen install scope.
- * @param {object} pack - the pack about to be installed (its faces drive the bullet lines).
- * @returns {Promise<string|null>} "team", "private", or null if cancelled/dismissed.
- */
-function pickTarget(pack) {
-  return new Promise((resolve) => {
-    const faces = pack.faces || {};
-    const lines = [];
-    if (faces.app) lines.push("Add " + pack.name + " to your apps");
-    if (faces.skills) lines.push("Install " + faces.skills + " skill" + (faces.skills > 1 ? "s" : ""));
-    if (faces.mcp) lines.push("Connect " + pack.name + "'s tools - the agent reads automatically, and makes changes only with your approval");
-    const bd = elt("div", "ovbackdrop");
-    bd.innerHTML = '<div class="ovcard"><h3 class="ovh">Install ' + esc(pack.name) + '</h3>'
-      + '<ul class="ovlines">' + lines.map((l) => "<li>" + esc(l) + "</li>").join("") + '</ul>'
-      + '<p class="ovp">Install for the whole team, or just you?</p>'
-      + '<div class="ovrow"><button class="mini ovteam">Team (everyone)</button>'
-      + '<button class="mini ghost ovpriv">Just me (private)</button>'
-      + '<button class="mini ghost ovcancel">Cancel</button></div></div>';
-    document.body.appendChild(bd);
-    const done = (v) => {
-      bd.remove();
-      resolve(v);
-    };
-    bd.onclick = (e) => {
-      if (e.target === bd) done(null);
-    };
-    $(".ovteam", bd).onclick = () => done("team");
-    $(".ovpriv", bd).onclick = () => done("private");
-    $(".ovcancel", bd).onclick = () => done(null);
-  });
-}

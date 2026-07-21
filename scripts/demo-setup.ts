@@ -13,7 +13,7 @@ import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { writeCoreContent, writeAcmeContent, writePrivateContent, writeWorkspaceExtras } from "../apps/client/src/demo/acme-seed.js";
+import { writeCoreContent, writeAcmeContent, writePrivateContent, writeWorkspaceExtras, installDemoPacks } from "../apps/client/src/demo/acme-seed.js";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE_PACK = join(REPO, "packs", "core");
@@ -23,20 +23,24 @@ const reset = process.argv.includes("--reset");
 const ENV = { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "BuildEx demo", GIT_AUTHOR_EMAIL: "demo@buildex.local", GIT_COMMITTER_NAME: "BuildEx demo", GIT_COMMITTER_EMAIL: "demo@buildex.local", PATH: process.env["PATH"] } as NodeJS.ProcessEnv;
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, env: ENV, stdio: ["ignore", "pipe", "pipe"] });
 
-// Seed one repo WITH a local file:// remote (so the dev sync demo can push/pull). The write callback
-// lays down the content (from the shared acme-seed library); we then commit and push to the bare remote.
-function seedRepo(name: string, write: (dir: string) => void) {
+// Give one repo a local file:// remote (so the dev sync demo can push/pull) and a working clone to
+// lay content into. Content and push are SEPARATE phases: installing a pack writes to two repos at
+// once (app face → private, company rules → team), so every clone must exist before anything installs.
+function cloneSeed(name: string): string {
   const bare = join(DEMO, "remotes", `${name}.git`);
   mkdirSync(dirname(bare), { recursive: true });
   git(["init", "--bare", "--initial-branch=main", bare], DEMO);
   const seed = join(DEMO, ".seed", name);
   mkdirSync(seed, { recursive: true });
   git(["clone", `file://${bare}`, seed], DEMO);
-  write(seed);
+  return seed;
+}
+
+/** Commit everything laid down in a seed clone and push it to its bare remote. */
+function pushSeed(name: string, seed: string) {
   git(["add", "-A"], seed);
   git(["commit", "-m", `seed ${name}`], seed);
   git(["push", "origin", "HEAD:main"], seed);
-  return bare;
 }
 
 if (reset && existsSync(DEMO)) rmSync(DEMO, { recursive: true, force: true });
@@ -48,9 +52,14 @@ mkdirSync(DEMO, { recursive: true });
 console.log(`Provisioning the BuildEx demo at ${DEMO} …`);
 
 // The company brain - identical content to the packaged demo sandbox, sourced from the shared library.
-seedRepo("core", (dir) => writeCoreContent(dir, { corePackDir: CORE_PACK }));
-seedRepo("team-acme", (dir) => writeAcmeContent(dir, { corePackDir: CORE_PACK }));
-seedRepo("private-you", (dir) => writePrivateContent(dir));
+const REPOS = ["core", "team-acme", "private-you"] as const;
+const seeds = Object.fromEntries(REPOS.map((n) => [n, cloneSeed(n)])) as Record<(typeof REPOS)[number], string>;
+writeCoreContent(seeds.core, { corePackDir: CORE_PACK });
+writeAcmeContent(seeds["team-acme"], { corePackDir: CORE_PACK });
+writePrivateContent(seeds["private-you"]);
+// …then the installed stack, which spans the private/team pair (see installDemoPacks).
+installDemoPacks(seeds["private-you"], seeds["team-acme"], CORE_PACK);
+for (const name of REPOS) pushSeed(name, seeds[name]);
 
 // --- clone the workspace the daemon operates on ---
 const ws = join(DEMO, "workspace");
