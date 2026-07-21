@@ -11,6 +11,7 @@ import { createApp } from "./app.js";
 const SERVICE_KEY = "svc-secret-key";
 let dir: string;
 let store: ControlPlaneStore;
+let schedules: ScheduleStore;
 let app: (req: Request) => Promise<Response>;
 
 beforeEach(async () => {
@@ -20,11 +21,12 @@ beforeEach(async () => {
   let n = 0;
   const provisioning = new ProvisioningService({ store, git, idFactory: () => `m${++n}` });
   await provisioning.ensureCoreRepo();
-  const schedules = new ScheduleStore(join(dir, "schedules.db"));
+  schedules = new ScheduleStore(join(dir, "schedules.db"));
   app = createApp({ store, provisioning, git, schedules, serviceKey: SERVICE_KEY, publicBaseUrl: "https://sync.test" });
 });
 afterEach(() => {
   store.close();
+  schedules.close();
   rmSync(dir, { recursive: true, force: true });
 });
 

@@ -32,6 +32,10 @@ const check = (c: boolean, m: string) => { console.log(`  ${c ? "✓" : "✗ FAI
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const base = mkdtempSync(join(tmpdir(), "buildex-x1-"));
+// Hoisted so `finally` can always close them: a throw mid-script would otherwise skip the closes
+// and leave rmSync to fail with EBUSY on Windows, masking the real error.
+let storeRef: ControlPlaneStore | undefined;
+let schedulesRef: ScheduleStore | undefined;
 const ENV = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "dan", GIT_AUTHOR_EMAIL: "dan@x", GIT_COMMITTER_NAME: "dan", GIT_COMMITTER_EMAIL: "dan@x" } as NodeJS.ProcessEnv;
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, env: ENV, encoding: "utf8" });
 
@@ -41,11 +45,13 @@ try {
   // ============================================================
   const reposRoot = join(base, "server-repos");
   const store = new ControlPlaneStore(join(base, "control.db"));
+  storeRef = store;
   const gitSvc = new EmbeddedGitService({ reposRoot });
   let mid = 0;
   const provisioning = new ProvisioningService({ store, git: gitSvc, idFactory: () => `m${++mid}` });
   await provisioning.ensureCoreRepo();
   const schedules = new ScheduleStore(join(base, "schedules.db"));
+  schedulesRef = schedules;
   const app = createApp({ store, provisioning, git: gitSvc, schedules, serviceKey: "svc", publicBaseUrl: "https://sync.test" });
   const s2s = (p: string, b: unknown) => new Request(`https://sync.test${p}`, { method: "POST", headers: { "content-type": "application/json", "x-service-key": "svc" }, body: JSON.stringify(b) });
   const post = (p: string, b: unknown) => new Request(`https://sync.test${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
@@ -121,8 +127,9 @@ try {
   check((await sendVerdict) === "allow", "approved from the Pending tray → the send is allowed to proceed");
 
   console.log(`\n${fails === 0 ? "✅ GATE-1 CROSS-MODULE SMOKE PASSED" : `❌ FAILED (${fails} check(s))`}`);
-  store.close();
 } finally {
+  storeRef?.close();
+  schedulesRef?.close();
   rmSync(base, { recursive: true, force: true });
 }
 process.exit(fails === 0 ? 0 : 1);
