@@ -774,6 +774,11 @@ export function buildClientHandler(config: ClientConfig): Handler {
         unsavedAcross(dirs),
         Promise.all(dirs.map((d) => sync.hasRemote(d).catch(() => false))),
       ]);
+      // Assumption: `some(Boolean)` treats the roots as all-or-nothing - true today because
+      // provisioning gives every writable root a remote at the same moment. If roots ever go mixed
+      // (one writable root with a remote, another without), this reads "connected" while the count
+      // still includes the local-only root's files, and the card would keep reporting changes no
+      // save can clear. Revisit this derivation (e.g. per-root connected/unsaved) if that happens.
       return { ...u, stale: isStale(u.oldestAt, Date.now()), connected: remotes.some(Boolean) };
     },
   });

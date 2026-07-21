@@ -90,7 +90,7 @@ const EXPOSE = [
   "renderBrainRail", "renderConnectorEditor", "renderHistory", "renderMcpEditor", "renderPending",
   "renderTabbar", "renderTree", "reorderTab", "resolveCard", "runSkill", "sendPrompt", "setMsg", "setSync",
   "showProjectStart", "startApiKey", "clearApiKey", "startAppHost", "startBrainFlow", "startInstall", "startUninstall", "storeNotice",
-  "stripFrontmatter", "switchRight", "switchToProject", "wireAppBridge", "wysiInline", "wysiToMd",
+  "stripFrontmatter", "switchRight", "switchToProject", "syncDotState", "wireAppBridge", "wysiInline", "wysiToMd",
 ];
 const SHIM = ";globalThis.__c = { " + EXPOSE.join(", ") + " };";
 

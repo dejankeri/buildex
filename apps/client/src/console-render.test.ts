@@ -172,6 +172,44 @@ describe("console renderers (jsdom) — the save card", () => {
   });
 });
 
+describe("console renderers (jsdom) — sync dot state mapping (syncDotState)", () => {
+  // A `/api/sync` response shaped like the daemon's, connected+no-files by default so each test only
+  // overrides what it's actually asserting on.
+  const resp = (over: Record<string, unknown>) => ({ status: "ok", unsaved: { files: 0, connected: true, ...over } });
+
+  it("needs-help wins outright", () => {
+    const { c } = loadConsole();
+    expect(c.syncDotState({ status: "needs-help", unsaved: { files: 0, connected: true } })).toBe("help");
+  });
+
+  it("queued wins outright", () => {
+    const { c } = loadConsole();
+    expect(c.syncDotState({ status: "queued", unsaved: { files: 0, connected: true } })).toBe("queued");
+  });
+
+  it("the daemon's own 'local' status maps straight through", () => {
+    const { c } = loadConsole();
+    expect(c.syncDotState({ status: "local", unsaved: { files: 0, connected: true } })).toBe("local");
+  });
+
+  it("not connected reads as local EVEN WHEN files are waiting — Finding 1's regression: a fresh " +
+    "install (no account) must never read as 'Synced' just because status defaults to ok", () => {
+    const { c } = loadConsole();
+    expect(c.syncDotState(resp({ connected: false, files: 0 }))).toBe("local");
+    expect(c.syncDotState(resp({ connected: false, files: 5 }))).toBe("local");
+  });
+
+  it("connected with files waiting reads as unsaved", () => {
+    const { c } = loadConsole();
+    expect(c.syncDotState(resp({ connected: true, files: 3 }))).toBe("unsaved");
+  });
+
+  it("connected with nothing waiting reads as ok", () => {
+    const { c } = loadConsole();
+    expect(c.syncDotState(resp({ connected: true, files: 0 }))).toBe("ok");
+  });
+});
+
 describe("console a11y (jsdom) — right-rail tablist", () => {
   it("switchRight keeps the tablist aria-selected in step with the active panel", () => {
     const { doc, c } = loadConsole();

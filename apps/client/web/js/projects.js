@@ -9,6 +9,25 @@
 // `S.rightTab`, `S.config`.
 
 /**
+ * Map a `/api/sync` response to the title-bar dot state. Precedence, most urgent first: real
+ * problems (needs-help / queued) win outright; then whether there is anywhere to save TO at all -
+ * not connected reads as `local` even when files are waiting, because a fresh install (or the
+ * local-only demo sandbox) has no account and "unsaved"/"Synced" would both be lies about where the
+ * work is; only once connected do we distinguish unsaved work from fully saved.
+ * @param {{status?: string, unsaved?: {connected?: boolean, files?: number}}} s - the `/api/sync` response.
+ * @returns {"help"|"queued"|"local"|"unsaved"|"ok"}
+ */
+function syncDotState(s) {
+  return (
+    s.status === "needs-help" ? "help" :
+    s.status === "queued" ? "queued" :
+    s.status === "local" ? "local" :
+    s.unsaved && !s.unsaved.connected ? "local" :
+    s.unsaved && s.unsaved.files > 0 ? "unsaved" : "ok"
+  );
+}
+
+/**
  * Reload projects + sessions from the daemon and repaint the left rail; also refresh the sync dot.
  * @returns {Promise<void>}
  */
@@ -26,14 +45,7 @@ async function refreshProjects() {
   let st = "ok";
   try {
     const s = await getJSON("/api/sync");
-    st =
-      s.status === "needs-help" ? "help" :
-      s.status === "queued" ? "queued" :
-      s.status === "local" ? "local" :
-      // Only amber when there is somewhere to save TO. Without an account (a fresh install, or the
-      // local-only demo sandbox) every file reads as unsaved, and a "click to save" dot would lead
-      // to a tray with nothing to click.
-      s.unsaved && s.unsaved.connected && s.unsaved.files > 0 ? "unsaved" : "ok";
+    st = syncDotState(s);
   } catch (e) {}
   setSync(syncBusy ? "busy" : st);
   if (S.rightTab === "synclog") fillSyncLog();

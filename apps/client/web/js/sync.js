@@ -24,7 +24,10 @@ function setSync(state) {
       ok: "Synced",
       busy: "Syncing…",
       off: "Offline - will retry",
-      queued: "Saved - will sync when back online",
+      // The offline retry is bounded (a handful of attempts with backoff) - once it gives up,
+      // coming back online does nothing on its own. Never promise an automatic retry here; say
+      // only what stays true either way: the work is safe on this machine, waiting to be sent.
+      queued: "Saved on this machine - click Save again to send it",
       help: "Needs attention - a change couldn't sync automatically",
       local: "Local workspace - everything stays on your machine (team sync accounts are coming)",
       unsaved: "You have unsaved work · click to save",
