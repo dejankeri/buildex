@@ -62,12 +62,18 @@ jobs:
       - name: Cross-module smoke (GATE-1 whole-platform loop)
         run: npx tsx scripts/cross-module-smoke.ts
 
-  # The product is macOS-first at launch (the keychain shells out to macOS `security`), so Windows
-  # is not a supported runtime and gets no test lane. Typechecking on a Windows runner is still a
-  # cheap guard against path-separator and other portability regressions creeping into the code.
+  # Windows is a supported client runtime: the app launches, drives the operator's `claude`, and keeps
+  # secrets in Credential Manager. So this lane RUNS the client suite - not just a typecheck. Without
+  # it, every Windows-parametrized path (the .cmd-shim resolver, junction tests, path.win32
+  # assertions, backslash normalization, the Credential Manager backend) would merge unverified on
+  # the strength of a one-time dev-machine run.
+  #
+  # `apps/sync` is deliberately excluded: it is the Linux-only cloud service, and its suite has
+  # pre-existing Windows-only failures (EBUSY on rmSync in teardown - Windows holds the SQLite handle
+  # after close()). It is fully covered by the `gate` lane on Ubuntu and macOS.
   windows:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -83,3 +89,9 @@ jobs:
 
       - name: Typecheck every app
         run: npm run typecheck --workspaces --if-present
+
+      # The full client suite already includes the release-gate: suites, so there is no separate gate
+      # step here - unlike the `gate` job, where the explicit run names which of three workspaces
+      # failed. Re-running the subset on the slowest runner would buy signal we already have.
+      - name: Test the client on Windows (the supported client runtime)
+        run: npm run test --workspace @buildex/client
