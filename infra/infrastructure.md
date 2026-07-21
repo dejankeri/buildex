@@ -18,13 +18,18 @@
 - **Image:** `apps/sync/Dockerfile`, multi-stage, build context = repository root. The runtime stage
   carries no `node_modules` (apps/sync has zero dependencies) plus `git` (spawned for smart-HTTP)
   and `litestream`.
-- **Litestream** runs as the container entrypoint (`apps/sync/entrypoint.sh`) - a Fly machine runs one
-  container, so it cannot be a sidecar. `litestream replicate -exec` alone never restores anything;
-  entrypoint.sh runs `litestream restore -if-db-not-exists -if-replica-exists` first, then `exec`s into
-  `litestream replicate -exec "node ..."`, which is what actually gives restore-before-serve ordering
-  on a cold start. Replicates both `control.db` and `schedules.db` (`infra/litestream.yml`).
-  Target: Cloudflare R2 (S3-compatible, zero egress).
-- **Local development:** `infra/compose.yml`, one service, no proxy, no sidecar.
+- **Litestream** runs as the container entrypoint (`apps/sync/entrypoint.sh`), gated on
+  `LITESTREAM_ENDPOINT` being configured - a Fly machine runs one container, so it cannot be a
+  sidecar. When an endpoint is set, `litestream restore -if-db-not-exists -if-replica-exists` runs
+  first for both `control.db` and `schedules.db`, then entrypoint.sh `exec`s into
+  `litestream replicate -exec "node ..."` (`litestream replicate -exec` alone never restores
+  anything; the separate restore step is what gives restore-before-serve ordering on a cold start).
+  When no endpoint is configured, entrypoint.sh skips litestream entirely and runs node directly.
+  Production always sets an endpoint, so production is always replicated. Target: Cloudflare R2
+  (S3-compatible, zero egress).
+- **Local development:** `infra/compose.yml`, one service, no proxy, no sidecar, unreplicated by
+  default - `LITESTREAM_ENDPOINT`/`LITESTREAM_BUCKET`/credentials have no default value, so a
+  developer must opt in via `infra/.env` to exercise replication locally.
 - **Deploy:** `task deploy:plan` (build only) → `task deploy` (prompted).
 - **Onboarding:** `task mint-setup-token -- --base-url https://<host> --onboard ...`.
 - **Backups:** Litestream (control.db + schedules.db, continuous) → R2. **Repo snapshots are still

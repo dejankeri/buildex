@@ -2,6 +2,12 @@
 # terminates TLS and runs one container, so there is no reverse proxy and no litestream sidecar
 # here either - the image's own entrypoint wraps litestream (see apps/sync/Dockerfile).
 #
+# Replication is off by default here: LITESTREAM_ENDPOINT has no default, and entrypoint.sh skips
+# litestream entirely when it is unset, so a fresh `docker compose up` boots unreplicated - no
+# object storage, no credentials, needed to develop locally. To exercise real replication against a
+# bucket, set LITESTREAM_ENDPOINT, LITESTREAM_BUCKET and the LITESTREAM_ACCESS_KEY_ID /
+# LITESTREAM_SECRET_ACCESS_KEY pair in the untracked infra/.env below.
+#
 # PUBLIC REPO - no live values. Real hosts and keys live outside this repo and are supplied via an
 # untracked infra/.env.
 #
@@ -16,8 +22,10 @@ services:
       - BUILDEX_SERVICE_KEY=${BUILDEX_SERVICE_KEY:?set in infra/.env}
       - BUILDEX_PUBLIC_BASE_URL=${BUILDEX_PUBLIC_BASE_URL:-http://127.0.0.1:8080}
       - BUILDEX_DATA_DIR=/srv/buildex
-      - LITESTREAM_BUCKET=${LITESTREAM_BUCKET:-dev}
-      - LITESTREAM_ENDPOINT=${LITESTREAM_ENDPOINT:-http://127.0.0.1:1}
+      - LITESTREAM_BUCKET=${LITESTREAM_BUCKET}
+      - LITESTREAM_ENDPOINT=${LITESTREAM_ENDPOINT}
+      - LITESTREAM_ACCESS_KEY_ID=${LITESTREAM_ACCESS_KEY_ID}
+      - LITESTREAM_SECRET_ACCESS_KEY=${LITESTREAM_SECRET_ACCESS_KEY}
     volumes:
       - buildex_data:/srv/buildex
     ports:

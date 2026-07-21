@@ -7,6 +7,11 @@
 # invocation, a machine that boots on an empty volume would create a fresh (empty) db and immediately
 # replicate it over the real backup.
 #
+# This whole file - and litestream itself - is only invoked when entrypoint.sh sees a configured
+# LITESTREAM_ENDPOINT. Production (Fly) always sets one, so production is always replicated. Local
+# dev (infra/compose.yml) leaves it unset by default, so entrypoint.sh skips litestream entirely and
+# local dev runs unreplicated - there is no implicit dev target here to accidentally write to.
+#
 # Target is Cloudflare R2 (S3-compatible, zero egress). Bucket, endpoint and credentials come from
 # the environment at deploy time - public repo, placeholders only.
 #
@@ -15,8 +20,9 @@
 # `VAR:-default` string as one literal (unresolvable) variable name, resolves it to empty, and exits
 # with "bucket required for s3 replica" before the -exec child (node) ever runs. Since Litestream is
 # the container ENTRYPOINT, that failure means node never starts and /healthz is never reachable.
-# Every environment that runs this image - compose for dev, Fly for prod - MUST supply
-# LITESTREAM_BUCKET and LITESTREAM_ENDPOINT itself; there is no in-file default to fall back to.
+# Every environment that runs this image with replication enabled - compose for dev opt-in, Fly for
+# prod - MUST supply LITESTREAM_BUCKET and LITESTREAM_ENDPOINT itself; there is no in-file default
+# to fall back to.
 dbs:
   - path: /srv/buildex/control.db
     replicas:
