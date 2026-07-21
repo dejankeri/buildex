@@ -5,6 +5,7 @@ import {
   WIN_KEYCHAIN_TIMEOUT_MS,
   defaultWinCredRunner,
   windowsPowerShellPath,
+  windowsKeychainAvailable,
   type WinCredRunner,
   type WinExec,
   type WinExecOptions,
@@ -189,6 +190,52 @@ describe("createKeychain factory - win32", () => {
     createKeychain({ mode: "system", workspace: "/ws/alpha", winRun: run, platform: "win32" }).set("connector:gmail", "a");
     createKeychain({ mode: "system", workspace: "/ws/beta", winRun: run, platform: "win32" }).set("connector:gmail", "b");
     expect(store.size).toBe(2); // two distinct service prefixes
+  });
+});
+
+describe("windowsKeychainAvailable - a functional probe, not a file-existence check", () => {
+  /** A machine where the helper cannot execute: Constrained Language Mode blocks Add-Type. */
+  const broken: WinCredRunner = () => ({ status: 5, stdout: "" });
+
+  it("is available when the helper answers a read of an absent target with WIN_NOT_FOUND", () => {
+    expect(windowsKeychainAvailable(fakeCredManager().run)).toBe(true);
+  });
+
+  it("is NOT available when the helper cannot run at all", () => {
+    // The old check only asked whether powershell.exe exists on disk - true on every Windows box,
+    // including ones where the helper can never execute. That is how a dead vault got selected.
+    expect(windowsKeychainAvailable(broken)).toBe(false);
+  });
+
+  it("costs a single read and never writes to the operator's vault", () => {
+    // A write/read/delete canary would be more thorough, but it spends three PowerShell startups
+    // (~0.5-2s each) on every boot and can strand its own canary if the process dies mid-probe.
+    const { run, store } = fakeCredManager();
+    const seen: string[] = [];
+    windowsKeychainAvailable((op) => {
+      seen.push(op.action);
+      return run(op);
+    });
+    expect(seen).toEqual(["read"]);
+    expect(store.size).toBe(0);
+  });
+
+  it("auto mode falls back to in-memory instead of selecting a vault that cannot work", () => {
+    const kc = createKeychain({ mode: "auto", workspace: "/ws", winRun: broken, platform: "win32" });
+    expect(kc).not.toBeInstanceOf(WindowsKeychain);
+    kc.set("k", "v");
+    expect(kc.get("k")).toBe("v"); // honest: works for this session, forgotten on restart
+  });
+
+  it("system mode refuses to start rather than silently storing nothing", () => {
+    expect(() =>
+      createKeychain({ mode: "system", workspace: "/ws", winRun: broken, platform: "win32" }),
+    ).toThrow(/keychain/i);
+  });
+
+  it("still selects the real vault when the helper works", () => {
+    const kc = createKeychain({ mode: "system", workspace: "/ws", winRun: fakeCredManager().run, platform: "win32" });
+    expect(kc).toBeInstanceOf(WindowsKeychain);
   });
 });
 

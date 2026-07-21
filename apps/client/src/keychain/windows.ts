@@ -117,10 +117,27 @@ export function windowsPowerShellPath(): string {
   return join(sysRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 }
 
-/** True when a real OS credential backend is reachable on this machine (the win32 peer of
- *  existsSync(SECURITY_BIN) on macOS - a lightweight presence check, not a functional probe). */
-export function windowsKeychainAvailable(): boolean {
-  return existsSync(windowsPowerShellPath());
+/** A target that will not exist, so probing it is read-only and side-effect free. */
+const PROBE_TARGET = "buildex:keychain-availability-probe";
+
+/** True when the credential backend actually WORKS here, not merely when powershell.exe is on disk.
+ *
+ *  Existence is not enough: on managed Windows, Constrained Language Mode blocks the helper's
+ *  Add-Type, so every op fails on a machine where the file is plainly present. Selecting that vault
+ *  meant reads returned undefined forever - indistinguishable from "nothing stored".
+ *
+ *  The probe is a single read of a target that cannot exist. It exercises the whole path - PowerShell
+ *  start, Add-Type compile, advapi32 P/Invoke - and a working helper answers WIN_NOT_FOUND. One spawn,
+ *  no write, so it cannot strand a canary of its own if the process dies mid-probe. It does not prove
+ *  writability; a write-denied vault still surfaces at connect time, where set() throws loudly. */
+export function windowsKeychainAvailable(run?: WinCredRunner): boolean {
+  if (!run && !existsSync(windowsPowerShellPath())) return false; // cheap, decisive, no spawn
+  try {
+    const status = (run ?? defaultWinCredRunner())({ action: "read", target: PROBE_TARGET }).status;
+    return status === 0 || status === WIN_NOT_FOUND;
+  } catch {
+    return false;
+  }
 }
 
 /** The production runner: spawns Windows PowerShell (a native .exe, so plain spawn - no shell:true,

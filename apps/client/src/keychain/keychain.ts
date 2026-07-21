@@ -103,7 +103,10 @@ export function createKeychain(opts: {
   if (platform === "darwin" && (opts.run !== undefined || existsSync(SECURITY_BIN))) {
     return new SystemKeychain(keychainService(opts.workspace), opts.run ?? defaultRunner());
   }
-  if (platform === "win32" && (opts.winRun !== undefined || windowsKeychainAvailable())) {
+  // The win32 backend is probed for real, injected runner or not: an existence check cannot tell a
+  // working vault from one whose helper can never execute, and picking the latter reads as "nothing
+  // stored" forever.
+  if (platform === "win32" && windowsKeychainAvailable(opts.winRun)) {
     return new WindowsKeychain(keychainService(opts.workspace), opts.winRun ?? defaultWinCredRunner());
   }
   // No OS backend on this platform: "system" must not silently degrade; "auto" falls back to in-memory
