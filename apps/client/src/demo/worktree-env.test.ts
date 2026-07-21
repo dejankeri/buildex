@@ -1,4 +1,5 @@
 import { describe as suite, it, expect } from "vitest";
+import { basename, dirname, join } from "node:path";
 import { deriveBase, deriveWorktreeEnv } from "./worktree-env.js";
 
 suite("deriveBase", () => {
@@ -15,8 +16,12 @@ suite("deriveBase", () => {
     expect(e.gatewayPort).toBe(e.consolePort + 1);
   });
   it("puts the demo dir under ~/.buildex-demo/<basename>-<6 hex>", () => {
-    const e = deriveBase("/Users/x/code/buildex", "/home/me");
-    expect(e.demoDir).toMatch(/^\/home\/me\/\.buildex-demo\/buildex-[0-9a-f]{6}$/);
+    const home = "/home/me";
+    const e = deriveBase("/Users/x/code/buildex", home);
+    // Assert structure via the same join() the code uses, so the host's separators (backslashes on
+    // Windows) don't fail a POSIX-shaped regex: <home>/.buildex-demo/<worktree-basename>-<6 hex>.
+    expect(dirname(e.demoDir)).toBe(join(home, ".buildex-demo"));
+    expect(basename(e.demoDir)).toMatch(/^buildex-[0-9a-f]{6}$/);
   });
   it("is path-sensitive: different worktrees get different demo dirs", () => {
     const a = deriveBase("/Users/x/code/wt-a", "/h");

@@ -26,15 +26,20 @@ function fakePack(): string {
 
 describe("resolveCorePackDir - locate the bundled pack (packaged vs dev)", () => {
   it("prefers the packaged resources path when it carries a real pack", () => {
-    const seen = new Set(["/res/core-pack/rules/operating.md", "/repo/packs/core/rules/operating.md"]);
+    // Build the fake-exists keys with join() so they match the resolver's own (win32-joined) probe
+    // strings on Windows - the marker it checks is <dir>/rules/operating.md.
+    const packaged = join("/res", "core-pack");
+    const inRepo = join("/repo", "packs", "core");
+    const seen = new Set([join(packaged, "rules", "operating.md"), join(inRepo, "rules", "operating.md")]);
     const dir = resolveCorePackDir({ resourcesPath: "/res", repoRoot: "/repo", exists: (p) => seen.has(p) });
-    expect(dir).toBe("/res/core-pack");
+    expect(dir).toBe(packaged);
   });
 
   it("falls back to the in-repo packs/core in dev when there is no packaged pack", () => {
-    const seen = new Set(["/repo/packs/core/rules/operating.md"]);
+    const inRepo = join("/repo", "packs", "core");
+    const seen = new Set([join(inRepo, "rules", "operating.md")]);
     const dir = resolveCorePackDir({ repoRoot: "/repo", exists: (p) => seen.has(p) });
-    expect(dir).toBe("/repo/packs/core");
+    expect(dir).toBe(inRepo);
   });
 
   it("throws (never provisions an empty core) when no candidate carries a pack", () => {

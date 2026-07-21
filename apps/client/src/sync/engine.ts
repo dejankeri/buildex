@@ -7,6 +7,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { pinnedGit } from "../lib/git-pin.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -167,7 +168,9 @@ export class SyncEngine {
     // daemon. On non-zero exit / timeout this rejects; several probes (isAhead, remoteMainExists) are
     // expected to fail on a fresh remote and are caught by their callers. stderr is captured on the
     // rejected error (err.stderr) rather than leaking to the console.
-    const { stdout } = await execFileAsync("git", args, {
+    // pinnedGit keeps every checkout LF-canonical, so backupAndReset's byte-for-byte backup holds on
+    // a stock Windows install too (invariant 8). See lib/git-pin.ts for why.
+    const { stdout } = await execFileAsync("git", pinnedGit(args), {
       cwd,
       encoding: "utf8",
       timeout: GIT_TIMEOUT_MS,

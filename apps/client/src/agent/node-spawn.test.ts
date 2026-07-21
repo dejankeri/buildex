@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { nodeSpawnAgent, STDERR_TAIL_BYTES } from "./node-spawn.js";
+import { win32 } from "node:path";
+import { nodeSpawnAgent, STDERR_TAIL_BYTES, launchCommand, type LaunchDeps } from "./node-spawn.js";
 
 describe("nodeSpawnAgent", () => {
   it("spawns a real process and streams its stdout", async () => {
@@ -75,5 +76,48 @@ describe("nodeSpawnAgent", () => {
     const code = await proc.exit;
     expect(code).not.toBe(0);
     expect(proc.stderrTail!()).toContain("ENOENT");
+  });
+});
+
+describe("launchCommand - the win32 .cmd-shim seam", () => {
+  const SHIM_DIR = "C:\\Users\\op\\AppData\\Roaming\\npm";
+  const NODE_DIR = "C:\\Program Files\\nodejs";
+  const SHIM = 'endLocal & "%_prog%"  "%dp0%\\node_modules\\@anthropic-ai\\claude-code\\cli.js" %*';
+
+  function deps(platform: string): LaunchDeps {
+    const files: Record<string, string> = {
+      [win32.join(SHIM_DIR, "claude.cmd")]: SHIM,
+      [win32.join(NODE_DIR, "node.exe")]: "",
+    };
+    return {
+      platform,
+      path: [SHIM_DIR, NODE_DIR].join(";"),
+      pathExt: ".COM;.EXE;.BAT;.CMD",
+      exists: (p) => p in files,
+      readFile: (p) => files[p] ?? (() => { throw new Error("ENOENT"); })(),
+    };
+  }
+
+  it("resolves an npm .cmd shim to node.exe + cli.js on win32", () => {
+    expect(launchCommand("claude", ["-p", "hi"], deps("win32"))).toEqual({
+      command: win32.join(NODE_DIR, "node.exe"),
+      args: [win32.join(SHIM_DIR, "node_modules", "@anthropic-ai", "claude-code", "cli.js"), "-p", "hi"],
+    });
+  });
+
+  it("is the identity on darwin/linux - a POSIX host must never take the shim path", () => {
+    for (const platform of ["darwin", "linux"]) {
+      expect(launchCommand("claude", ["-p", "hi"], deps(platform))).toEqual({
+        command: "claude",
+        args: ["-p", "hi"],
+      });
+    }
+  });
+
+  it("falls back to the original command when win32 resolution finds nothing (never worse)", () => {
+    expect(launchCommand("not-installed", ["--version"], deps("win32"))).toEqual({
+      command: "not-installed",
+      args: ["--version"],
+    });
   });
 });

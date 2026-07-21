@@ -6,9 +6,12 @@
 
 const { app, BrowserWindow, shell, session } = require("electron");
 const { spawn } = require("node:child_process");
+const { mkdirSync } = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const { isExternalUrl, sanitizeWebviewSrc } = require("./external-url.cjs");
+const { scopedUserDataDir } = require("./user-data.cjs");
+const { killProcessTree } = require("./kill-tree.cjs");
 
 // The dedicated session partition every external <webview> uses (see web/js/apps.js, browser.js).
 // Isolating third-party content here keeps its cookies/permissions off the loopback console's own
@@ -25,6 +28,22 @@ let daemonUrl = null; // set by bootDaemon() once the daemon is bound
 // App identity: the name shown in the macOS menu bar / app switcher, and the dock/taskbar icon.
 // (Full OS-level branding — installer, bundle id — comes later with the packaging config.)
 app.setName("BuildEx");
+
+// Must run BEFORE requestSingleInstanceLock() below: the lock is keyed on the userData path, and
+// setName() above makes that path identical for every instance. A per-worktree dev launch gets its
+// own userData (and so its own lock); packaged launches keep the default and the global lock.
+const scopedUserData = scopedUserDataDir(process.env);
+if (scopedUserData) {
+  // setPath can reject a path that does not exist yet, and this runs before anything has created it.
+  // Never fatal: a dev-only lock refinement must not stop the app from launching.
+  try {
+    mkdirSync(scopedUserData, { recursive: true });
+    app.setPath("userData", scopedUserData);
+  } catch (e) {
+    console.error("could not scope userData to the demo dir, using the default:", e.message);
+  }
+}
+
 const ICON_PNG = path.join(__dirname, "assets", "icon.png");
 
 // Boot the daemon and resolve daemonUrl. Packaged: require the bundled build/daemon.cjs (a sibling of
@@ -40,10 +59,15 @@ async function bootDaemon() {
   }
   const PORT = process.env.BUILDEX_DEMO_PORT || "4317";
   daemonUrl = `http://127.0.0.1:${PORT}`;
-  daemon = spawn("npx", ["tsx", "scripts/demo.ts"], {
+  // On Windows the npm shims are .cmd files. Modern Node refuses to spawn a .cmd/.bat directly
+  // (EINVAL, per CVE-2024-27980) unless shell:true, so route through the shell there; macOS/Linux
+  // keep the plain spawn. This lets the dev daemon boot the same as on macOS.
+  const isWin = process.platform === "win32";
+  daemon = spawn(isWin ? "npx.cmd" : "npx", ["tsx", "scripts/demo.ts"], {
     cwd: REPO_ROOT,
     env: { ...process.env, BUILDEX_DEMO_PORT: PORT },
     stdio: "inherit",
+    shell: isWin,
   });
   daemon.on("error", (e) => console.error("failed to start daemon:", e.message));
   await new Promise((resolve) => waitForDaemon(daemonUrl, () => resolve()));
@@ -133,7 +157,26 @@ function lockExternalSession() {
   ext.setPermissionCheckHandler(() => false);
 }
 
+// Single instance: the daemon binds a fixed loopback port and owns the workspace, so a second launch
+// would collide on the port and race the first on the same files (skill re-link, sync). Refuse the
+// second instance and focus the running window instead. Without this, the installer's post-install
+// launch plus a manual launch = two daemons racing, which can leave the workspace half-provisioned.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+  });
+}
+
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return; // a second instance is quitting; never boot a daemon
   if (process.platform === "darwin" && app.dock) app.dock.setIcon(ICON_PNG);
   lockExternalSession(); // deny hardware/location permissions to embedded external content
   try {
@@ -149,9 +192,10 @@ app.whenReady().then(async () => {
 
 function stopDaemon() {
   if (!daemon) return;
-  // packaged: RunningDaemon.close() (async, best-effort); dev: kill the child tsx process.
+  // packaged: RunningDaemon.close() (async, best-effort). dev: the child is the cmd.exe shim on
+  // win32, so kill the whole tree - killing just the shim orphans the daemon still holding the port.
   if (typeof daemon.close === "function") daemon.close().catch(() => {});
-  else if (typeof daemon.kill === "function") daemon.kill();
+  else killProcessTree(daemon, { platform: process.platform });
   daemon = null;
 }
 app.on("window-all-closed", () => {

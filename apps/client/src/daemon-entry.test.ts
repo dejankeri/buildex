@@ -4,9 +4,10 @@
 // fallback resolves the repo's own pack in place of the app bundle.
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 import { startPackagedDaemon } from "./daemon-entry.js";
+import { commonBinDirs } from "./agent/resolve-path.js";
 import type { RunningDaemon } from "./server-main.js";
 
 let tmp: string;
@@ -39,16 +40,20 @@ describe("startPackagedDaemon - the shipped app's boot", () => {
   });
 
   it("widens PATH on boot so a Finder-launched app can still find the agent CLI", async () => {
-    // Regression guard for the `spawn claude ENOENT` crash: booting from a bare PATH (what Finder
-    // hands a .app) must leave the common install dirs reachable, or every agent spawn fails.
+    // Regression guard for the `spawn claude ENOENT` crash: booting from a sparse GUI-launch PATH (what
+    // Finder hands a .app) must leave the common install dirs reachable, or every agent spawn fails.
+    // OS-parametric: we prepend a sentinel entry to simulate the sparse PATH but KEEP the real PATH
+    // appended, so the boot's own git seed (execFileSync("git", ...)) still resolves on every host.
     const savedPath = process.env["PATH"];
-    process.env["PATH"] = "/usr/bin:/bin"; // simulate the stripped GUI-launch PATH
+    const sentinel = join(tmp, "operator-tool", "bin"); // an inherited entry that is NOT in commonBinDirs
+    process.env["PATH"] = [sentinel, savedPath].filter(Boolean).join(delimiter);
     try {
       daemon = await startPackagedDaemon({ port: 0, appDataDir: tmp });
-      const dirs = (process.env["PATH"] ?? "").split(":");
-      expect(dirs).toContain("/opt/homebrew/bin");
-      expect(dirs.some((d) => d.endsWith("/.local/bin"))).toBe(true);
-      expect(dirs).toContain("/usr/bin"); // the inherited entries are preserved, not replaced
+      const dirs = (process.env["PATH"] ?? "").split(delimiter);
+      // Every common install dir the widener knows about is now reachable (this is what fixes ENOENT)...
+      for (const d of commonBinDirs(homedir())) expect(dirs).toContain(d);
+      // ...and the operator's pre-existing entry is preserved, not replaced.
+      expect(dirs).toContain(sentinel);
     } finally {
       process.env["PATH"] = savedPath;
     }

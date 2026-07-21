@@ -50,7 +50,7 @@ describe("skill fs surface (read/write, precedence, path-safety)", () => {
     // emulate generated .claude/skills links with team winning
     const dest = join(workspace, ".claude", "skills");
     mkdirSync(dest, { recursive: true });
-    symlinkSync(join(team, "skills", "shared"), join(dest, "shared"));
+    symlinkSync(join(team, "skills", "shared"), join(dest, "shared"), process.platform === "win32" ? "junction" : null);
     roots = [
       { name: "core", dir: core },
       { name: "team", dir: team },

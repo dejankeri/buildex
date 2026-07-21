@@ -4,6 +4,8 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, relative, dirname, basename } from "node:path";
+import { pinnedGit } from "../lib/git-pin.js";
+import { toPosix } from "../lib/to-posix.js";
 
 export interface GraphNode {
   id: string;
@@ -79,7 +81,7 @@ export function buildGraph(roots: Root[]): Graph {
 
 /** Markdown docs changed vs the git index/HEAD (for the "recently touched" map highlight). */
 export function changedDocs(repoDir: string): string[] {
-  const out = execFileSync("git", ["status", "--porcelain"], { cwd: repoDir, encoding: "utf8" });
+  const out = execFileSync("git", pinnedGit(["status", "--porcelain"]), { cwd: repoDir, encoding: "utf8" });
   const files = out
     .split("\n")
     .map((line) => line.slice(3).trim())
@@ -136,9 +138,6 @@ function resolveLinks(
 
 function cmpNode(a: GraphNode, b: GraphNode): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-}
-function toPosix(p: string): string {
-  return p.split("\\").join("/");
 }
 function safeRead(abs: string): string {
   try {

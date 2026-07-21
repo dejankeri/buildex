@@ -40,5 +40,13 @@ const env = {
   BUILDEX_DEMO_GATEWAY_PORT: String(gatewayPort),
 };
 const script = mode === "app" ? "demo:app" : "demo";
-const child = spawn("npm", ["run", script], { cwd: worktreeRoot, env, stdio: "inherit" });
+// On Windows `npm` is the npm.cmd shim, which modern Node refuses to spawn directly (EINVAL, per
+// CVE-2024-27980) unless shell:true; POSIX keeps the plain spawn.
+const isWin = process.platform === "win32";
+const child = spawn(isWin ? "npm.cmd" : "npm", ["run", script], {
+  cwd: worktreeRoot,
+  env,
+  stdio: "inherit",
+  shell: isWin,
+});
 child.on("exit", (code) => process.exit(code ?? 0));

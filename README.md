@@ -69,7 +69,9 @@ A demo company — *Acme Labs*, a small B2B SaaS — running on BuildEx:
 
 **Prerequisites**
 
-- **macOS** (Linux and Windows are on the roadmap — the keychain path is macOS-only today)
+- **macOS**, or **Windows 10/11** (Linux is on the roadmap). macOS has the signed one-click download;
+  Windows runs from source or an unsigned installer, and keeps secrets in Credential Manager
+  ([details](docs/windows-keychain.md))
 - **Node 22+**
 - **git**
 - **[Claude Code](https://claude.com/claude-code)** signed in with **Claude Pro or higher** — BuildEx
@@ -103,7 +105,7 @@ For a guided walkthrough of what to click and what to look for, see [`DEMO.md`](
 | One-click signed & notarized macOS download | — |
 | Your own agent reading + editing the brain, gated at outward actions | Live Gmail/Slack/Notion out of the box (needs your own OAuth app — [guide](docs/guides/connect-a-connector.md)) |
 | Git-as-database: every change a commit, full history + restore | Hosted sync & seats (local-first demo today) |
-| The App Store: install capability packs per company | Linux & Windows (macOS-first at launch) |
+| The App Store: install capability packs per company | A signed Windows download (runs from source today), and Linux |
 | Skills: teach the agent your company's verbs | Fully self-serve, non-technical onboarding |
 
 ## Guides

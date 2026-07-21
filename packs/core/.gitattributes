@@ -1,0 +1,7 @@
+# Company brain repos are LF-canonical on disk. Git is the database (invariant 2) and documents are
+# plain markdown that render identically on every platform (invariant 3), so line endings must never
+# vary by operator OS. This keeps a stock Windows install (core.autocrlf=true) from materializing CRLF
+# working trees - which would make the sync engine's byte-for-byte conflict backups diverge from the
+# operator's file (invariant 8). The client's SyncEngine also pins autocrlf=false on its own git ops;
+# this file is the belt-and-suspenders for any other git access to a provisioned repo.
+* text=auto eol=lf

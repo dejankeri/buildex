@@ -141,6 +141,40 @@ describe("SYNC-SAFETY INVARIANT [release-gate:sync-safety]: a conflict never los
     expect(readFileSync(join(op2, "doc.md"), "utf8")).toBe("op1 version\n");
     expect(existsSync(join(op2, ".sync-needs-help"))).toBe(true);
   });
+
+  it("stays byte-identical LF even with core.autocrlf=true, the Git-for-Windows default", async () => {
+    // WHY THIS EXISTS: engine.git() pins `-c core.autocrlf=false -c core.eol=lf`, and without this
+    // case nothing defends that pin. The test above cannot: it sets GIT_CONFIG_GLOBAL/SYSTEM only for
+    // the harness's own git helper, while the engine under test inherits process.env - so whether the
+    // pin matters depends entirely on the HOST's git config. On Ubuntu and macOS, where autocrlf
+    // defaults to false, deleting the pin changes nothing and the gate stays green.
+    //
+    // core.autocrlf is set REPO-LOCAL here, which no GIT_CONFIG_* neutralises, so this reproduces the
+    // stock Windows condition deterministically on every lane. Delete the pin and this fails with
+    // 'op2 precious edit\r\n' != 'op2 precious edit\n' - the conflict backup no longer matching the
+    // operator's file, which is a breach of invariant 8.
+    const op1 = clone("op1");
+    const op2 = clone("op2");
+    git(["config", "core.autocrlf", "true"], op2);
+
+    writeFileSync(join(op1, "doc.md"), "op1 version\n");
+    expect(await engine().syncWritable(op1)).toBe("ok");
+
+    const localContent = "op2 precious edit\n";
+    writeFileSync(join(op2, "doc.md"), localContent);
+
+    expect(await engine(() => 1_700_000_000_000).syncWritable(op2)).toBe("needs-help");
+
+    // byte-for-byte: no CRLF crept into the backup...
+    const backup = readFileSync(join(op2, ".conflicts", "1700000000000", "doc.md"), "utf8");
+    expect(backup).toBe(localContent);
+    expect(backup).not.toContain("\r");
+
+    // ...nor into the working tree the reset materialised.
+    const reset = readFileSync(join(op2, "doc.md"), "utf8");
+    expect(reset).toBe("op1 version\n");
+    expect(reset).not.toContain("\r");
+  });
 });
 
 describe("local-only stub repo (no remote): work is committed but there is nothing to sync", () => {

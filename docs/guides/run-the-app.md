@@ -5,7 +5,7 @@ provisions a throwaway company and opens the console.
 
 ## Prerequisites
 
-- **macOS** (Linux and Windows are on the roadmap)
+- **macOS**, or **Windows 10/11** (Linux is on the roadmap)
 - **Node 22+**
 - **git**
 - **[Claude Code](https://claude.com/claude-code)** signed in with **Claude Pro or higher** — BuildEx
