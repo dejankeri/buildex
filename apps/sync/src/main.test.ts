@@ -57,13 +57,31 @@ describe("installShutdown", () => {
       handlers.set(signal, handler);
     });
     const stopFn = vi.fn(async () => {});
+    const exit = vi.fn<(code: number) => void>();
 
-    installShutdown(stopFn, on);
+    installShutdown(stopFn, on, exit);
 
     expect([...handlers.keys()].sort()).toEqual(["SIGINT", "SIGTERM"]);
 
     handlers.get("SIGTERM")!();
     handlers.get("SIGINT")!();
     await vi.waitFor(() => expect(stopFn).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0));
+  });
+
+  it("exits non-zero when the graceful stop fails", async () => {
+    const handlers = new Map<string, () => void>();
+    const on = (signal: string, handler: () => void) => {
+      handlers.set(signal, handler);
+    };
+    const stopFn = vi.fn(async () => {
+      throw new Error("close failed");
+    });
+    const exit = vi.fn<(code: number) => void>();
+
+    installShutdown(stopFn, on, exit);
+    handlers.get("SIGTERM")!();
+
+    await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(1));
   });
 });

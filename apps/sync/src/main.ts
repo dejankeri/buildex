@@ -31,15 +31,21 @@ export async function start(env: Record<string, string | undefined>): Promise<St
 type SignalRegistrar = (signal: string, handler: () => void) => void;
 
 /** Wire SIGTERM/SIGINT to a single graceful stop. `on` is injected so this is testable without
- *  installing real handlers on the test runner's own process. */
-export function installShutdown(stop: () => Promise<void>, on: SignalRegistrar): void {
+ *  installing real handlers on the test runner's own process. `exit` is injected too: a hardcoded
+ *  process.exit inside a signal handler makes the handler untestable, since invoking it from a
+ *  test would terminate the test worker itself. */
+export function installShutdown(
+  stop: () => Promise<void>,
+  on: SignalRegistrar,
+  exit: (code: number) => void = (code) => process.exit(code),
+): void {
   let shuttingDown = false;
   const handler = (): void => {
     if (shuttingDown) return; // a second Ctrl-C must not race two closes
     shuttingDown = true;
     void stop().then(
-      () => process.exit(0),
-      () => process.exit(1),
+      () => exit(0),
+      () => exit(1),
     );
   };
   on("SIGTERM", handler);
