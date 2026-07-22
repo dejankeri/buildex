@@ -57,10 +57,14 @@ async function boot() {
   $("#tabAdd").onclick = (e) => openAddMenu(e.currentTarget);
   document.addEventListener("keydown", onAddShortcut); // ⌘/Ctrl shortcuts for the ＋ add-menu
   $$("#rtabs button[data-r]").forEach((b) => b.onclick = () => switchRight(b.dataset.r));
-  // The dot leads to whatever the operator most likely wants: unsaved work means the action lives in
-  // the pending tray, otherwise the change log answers "what happened?".
-  $("#sync").onclick = () =>
-    switchRight($("#sync").classList.contains("unsaved") ? "pending" : "synclog");
+  // The dot leads to whatever the operator most likely wants: no account yet means the action is to
+  // connect one; unsaved work means the action lives in the pending tray; otherwise the change log
+  // answers "what happened?".
+  $("#sync").onclick = () => {
+    const dot = $("#sync");
+    if (dot.classList.contains("local")) { openConnectAccount(); return; } // no account yet → connect
+    switchRight(dot.classList.contains("unsaved") ? "pending" : "synclog");
+  };
   $("#usageRefresh").onclick = () => refreshUsage(true);
   try {
     S.config = await getJSON("/api/config");

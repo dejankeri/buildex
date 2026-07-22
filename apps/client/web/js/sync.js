@@ -30,14 +30,16 @@ function setSync(state) {
       queued: "Saved on this machine - click Save again to send it",
       help: "Needs attention - a change couldn't sync automatically",
       // "local" only ever paints once syncDotState (projects.js) has decided there's no connected
-      // account - so this copy retires on its own the moment the operator connects one (Task 10);
-      // it must never claim accounts are still "coming", since that's exactly what this state means.
-      local: "Local workspace - stays on this machine until you connect an account",
+      // account - so this copy retires on its own the moment the operator connects one; it must never
+      // claim accounts are still "coming", since that's exactly what this state means. Its click opens
+      // the standalone connect modal (see account.js / boot.js), so the copy invites that click.
+      local: "Local workspace - stays on this machine · click to connect an account",
       unsaved: "You have unsaved work · click to save",
     }[state] || "Synced";
-  // "unsaved" already tells the operator what the click does (save); every other state's click opens
-  // the change log, so only those get the generic suffix - otherwise the tooltip would say both.
-  dot.title = state === "unsaved" ? label : label + " · click for recent changes";
+  // "unsaved" already tells the operator what the click does (save) and "local" what it does (connect);
+  // every other state's click opens the change log, so only those get the generic suffix - otherwise
+  // the tooltip would say both.
+  dot.title = state === "unsaved" || state === "local" ? label : label + " · click for recent changes";
   // a11y: #sync is a role="status" live region, so a state change is announced (the dot itself
   // carries no text). Keep the accessible name in step with the state.
   dot.setAttribute("aria-label", "Sync status: " + label);

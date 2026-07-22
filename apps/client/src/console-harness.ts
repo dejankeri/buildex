@@ -80,7 +80,7 @@ const EXPOSE = [
   "findPendingCard", "flattenTree", "fmtNext", "fmtReset", "folderPaths", "getJSON", "hideProjectStart",
   "injectApproval", "kbdLabel", "loadAgentView", "loadBrain", "loadDoc", "loadMap", "loadSession", "loadStorePane",
   "loadTree", "navGo", "navRecord", "navUpdate", "newConversation", "newProject", "offerConnect",
-  "onAddShortcut", "openAddAppForm", "openAddMenu", "openAppTab", "openAutomationEditor",
+  "onAddShortcut", "openAddAppForm", "openAddMenu", "openAppTab", "openAutomationEditor", "openConnectAccount",
   "openBrainTab", "openBrowserTab", "openChatTab", "openConnectorEditor", "openDocTab", "openFilesSettings",
   "openFolderPicker", "openMapTab", "openMarkdownEditor", "openMcpEditor", "openProjectItem", "openSaveMenu",
   "openSkillEditor", "openSkillTab", "openStoreTab", "parseSkill", "pickTarget", "postJSON", "projectMenu",
