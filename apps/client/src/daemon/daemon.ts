@@ -373,7 +373,16 @@ export function createDaemon(deps: DaemonDeps): Handler {
     }
     if (method === "GET" && deps.fileTree && path === "/api/tree") return json({ tree: deps.fileTree() });
     if (method === "GET" && deps.agentView && path === "/api/agent-view") return json(deps.agentView());
-    if (method === "POST" && deps.agentViewRegen && path === "/api/agent-view/regen") return json(deps.agentViewRegen());
+    if (method === "POST" && deps.agentViewRegen && path === "/api/agent-view/regen") {
+      // regenConfig() mutates disk (re-links skills, rewrites CLAUDE.md/.mcp.json, reads the keychain)
+      // and CAN throw - keep the "never a raw 500 for a user-triggered mutation" contract the rest of
+      // the API holds: surface a terse, showable error the viewer already handles (it checks r.error).
+      try {
+        return json(deps.agentViewRegen());
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "regenerate failed" }, 400);
+      }
+    }
     if (method === "GET" && deps.usageFn && path === "/api/usage")
       return json(await deps.usageFn(url.searchParams.get("refresh") === "1"));
 

@@ -155,9 +155,14 @@ describe("console renderers (jsdom) — Documents zones + the media guard", () =
     c.S.extStore = null; // no drive connected
     expect(c.classifyDrop({ name: "notes.md", size: 2000 })).toBe("repo");
     expect(c.classifyDrop({ name: "data.csv", size: 100 * 1024 })).toBe("repo");
+    // extension-less and dotfile light text belongs in the repo, not declined to a drive
+    expect(c.classifyDrop({ name: "LICENSE", size: 10 })).toBe("repo");
+    expect(c.classifyDrop({ name: "Dockerfile", size: 400 })).toBe("repo");
+    expect(c.classifyDrop({ name: ".gitignore", size: 80 })).toBe("repo");
+    expect(c.classifyDrop({ name: ".env", size: 120 })).toBe("repo");
     expect(c.classifyDrop({ name: "big.md", size: 2 * 1024 * 1024 })).toBe("held"); // over the light cap
     expect(c.classifyDrop({ name: "clip.mp4", size: 1000 })).toBe("held"); // media type, no drive
-    expect(c.classifyDrop({ name: "LICENSE", size: 10 })).toBe("held"); // no extension → not light
+    expect(c.classifyDrop({ name: "noext-but-huge", size: 5 * 1024 * 1024 })).toBe("held"); // no ext but over cap → not light
   });
 
   it("classifyDrop routes media to a connected drive when one exists", () => {

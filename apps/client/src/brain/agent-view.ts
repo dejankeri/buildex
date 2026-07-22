@@ -80,8 +80,10 @@ export function buildAgentView(workspace: string, packSkills: Set<string> = new 
   const authored = scanAuthored(roots);
   const linked = new Set(names);
   const discrepancies: AgentDiscrepancy[] = [];
+  const flagged = new Set<string>(); // one verb authored in two roots is still ONE unlinked verb
   for (const { name, root } of authored) {
-    if (!linked.has(name)) {
+    if (!linked.has(name) && !flagged.has(name)) {
+      flagged.add(name);
       discrepancies.push({
         kind: "skill-unlinked",
         message: `"${name}" is written in ${root} but isn't linked for the agent — it won't be seen. Regenerate to link it.`,

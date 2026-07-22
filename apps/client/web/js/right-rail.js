@@ -115,8 +115,13 @@ const REPO_MAX_BYTES = 512 * 1024; // 512 KB — a light document, not a media a
 function classifyDrop(file) {
   const name = (file && file.name) || "";
   const size = (file && file.size) || 0;
-  const ext = name.indexOf(".") >= 0 ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
-  if (REPO_EXTS.includes(ext) && size <= REPO_MAX_BYTES) return "repo";
+  // A leading dot (".gitignore") is not an extension; only a dot AFTER the first char delimits one.
+  // So dotfiles and extension-less files (README, Dockerfile, LICENSE) read as ext "" — light text
+  // that belongs in the repo, not declined to a drive.
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+  const light = (ext === "" || REPO_EXTS.includes(ext)) && size <= REPO_MAX_BYTES;
+  if (light) return "repo";
   return externalDrives().length ? "external" : "held";
 }
 
@@ -423,9 +428,9 @@ function uploadIntoFolder(dir) {
       const where = classifyDrop(f);
       if (where === "held") {
         // No drive to route it to. Decline rather than bloat the repo — the operator's own copy is
-        // untouched (nothing lost), and the prompt says where it should go.
+        // untouched (nothing lost). One toast per file; the "Connect a drive" row in the panel is the
+        // standing affordance, so we don't stack a second toast on top of this one.
         toast("“" + f.name + "” is too big to sync. Connect a drive to store it — it won’t go in your repo.", true);
-        connectDrive();
         continue;
       }
       if (where === "external") {

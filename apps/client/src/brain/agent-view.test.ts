@@ -123,6 +123,21 @@ describe("buildAgentView", () => {
     expect(unlinked[0]!.message).toContain("orphan-verb");
   });
 
+  it("counts a verb authored in two roots but linked from neither as ONE unlinked verb", () => {
+    // Same name in team and private, absent from origins (regen never ran) — the verdict must read
+    // "1 thing", not two.
+    write(".claude/skill-origins.json", JSON.stringify({}));
+    write("team-acme/skills/shared-verb/SKILL.md", "# shared (team)\n");
+    write("private-you/skills/shared-verb/SKILL.md", "# shared (private)\n");
+    const roots: Root[] = [
+      { name: "team-acme", dir: join(ws, "team-acme") },
+      { name: "private-you", dir: join(ws, "private-you") },
+    ];
+    const unlinked = buildAgentView(ws, new Set(), roots).discrepancies.filter((d) => d.kind === "skill-unlinked");
+    expect(unlinked).toHaveLength(1);
+    expect(unlinked[0]!.message).toContain("shared-verb");
+  });
+
   it("flags missing standing instructions and missing policy", () => {
     write(".claude/skill-origins.json", JSON.stringify({ "tidy": "core" }));
     // no CLAUDE.md, no settings.json
