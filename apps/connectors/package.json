@@ -1,6 +1,6 @@
 {
   "name": "@buildex/connectors",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "BuildEx - connector framework + catalog (runs inside the client)",
   "license": "MIT",
