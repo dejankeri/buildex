@@ -42,10 +42,12 @@ export async function signIn(deps: SignInDeps, cfg: { port?: number; timeoutMs?:
   try {
     listened = await deps.loopback.listen(cfg.port ?? DEFAULT_PORT);
   } catch (e) {
-    // Fixed port is taken (e.g. a stale/parallel instance) - retry once with an OS-assigned free
-    // port. Anything else is a real failure and must not be swallowed.
-    if (!isEaddrinuse(e)) throw e;
-    listened = await deps.loopback.listen(0);
+    if (!isEaddrinuse(e)) throw e; // anything else is a real failure and must not be swallowed
+    // Fixed port is taken (e.g. a stale/parallel instance). A random OS-assigned port is NOT a
+    // usable fallback: the owner's Supabase project allowlists only the fixed port's redirect URI,
+    // so a callback on any other port would just be rejected. Fail clearly instead of retrying into
+    // a redirect that can never work.
+    throw new Error("the sign-in port is busy - close any other BuildEx window and try again");
   }
   const { port, waitForCallback } = listened;
   const redirectUri = "http://127.0.0.1:" + port + "/auth/callback";

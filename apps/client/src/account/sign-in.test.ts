@@ -131,7 +131,8 @@ describe("signIn", () => {
     expect(loopback.closed).toBe(true);
   });
 
-  it("EADDRINUSE on the fixed port retries once with port 0 (OS-assigned) and succeeds", async () => {
+  it("EADDRINUSE on the fixed port fails cleanly - a random port is not a usable fallback " +
+    "(the Supabase project only allowlists the fixed port's redirect URI)", async () => {
     const loopback = fakeLoopback(
       async () => new URL("http://127.0.0.1:61234/auth/callback?code=abc123&state=the-state"),
       { failFirstListen: true },
@@ -140,11 +141,10 @@ describe("signIn", () => {
     const openBrowser = vi.fn();
     const deps = baseDeps({ loopback, supabase, openBrowser });
 
-    const result = await signIn(deps, { port: 54121 });
+    await expect(signIn(deps, { port: 54121 })).rejects.toThrow(/sign-in port is busy/i);
 
-    expect(result).toEqual({ jwt: "xjwt_result" });
-    expect(loopback.listenCalls).toEqual([54121, 0]); // fixed port failed, retried with OS-assigned
-    expect(supabase.exchangeCalls[0]).toMatchObject({ redirectUri: "http://127.0.0.1:61234/auth/callback" });
-    expect(loopback.closed).toBe(true);
+    expect(loopback.listenCalls).toEqual([54121]); // no fallback retry on a random port
+    expect(openBrowser).not.toHaveBeenCalled();
+    expect(supabase.exchangeCalls).toEqual([]);
   });
 });

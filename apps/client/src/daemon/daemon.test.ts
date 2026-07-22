@@ -216,13 +216,13 @@ describe("/api/sync", () => {
     const { app } = makeDaemon({ syncStatus: () => "needs-help" });
     const res = await app(new Request("http://127.0.0.1/api/sync"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "needs-help", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
+    expect(await res.json()).toEqual({ status: "needs-help", unsaved: { files: 0, oldestAt: null, stale: false, connected: false }, signInAvailable: false });
   });
 
   it("GET defaults to ok when no status dep is wired", async () => {
     const { app } = makeDaemon();
     const res = await app(new Request("http://127.0.0.1/api/sync"));
-    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
+    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false }, signInAvailable: false });
   });
 
   it("GET includes the per-root status map when wired", async () => {
@@ -240,13 +240,14 @@ describe("/api/sync", () => {
     expect(await res.json()).toEqual({
       status: "ok",
       unsaved: { files: 14, oldestAt: 1_700_000_000_000, stale: false, connected: true },
+      signInAvailable: false,
     });
   });
 
   it("reports nothing waiting when the daemon has no counter wired", async () => {
     const { app } = makeDaemon({ syncStatus: () => "ok" });
     const res = await app(new Request("http://127.0.0.1/api/sync"));
-    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
+    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false }, signInAvailable: false });
   });
 
   it("reports connected:false when no root has an account yet - the card must not offer a save", async () => {
@@ -258,7 +259,20 @@ describe("/api/sync", () => {
     expect(await res.json()).toEqual({
       status: "ok",
       unsaved: { files: 3, oldestAt: 1_700_000_000_000, stale: false, connected: false },
+      signInAvailable: false,
     });
+  });
+
+  it("reports signInAvailable:false when no signIn dep is wired (Finding 1 - CTAs must not dead-end)", async () => {
+    const { app } = makeDaemon();
+    const res = await app(new Request("http://127.0.0.1/api/sync"));
+    expect((await res.json() as { signInAvailable: boolean }).signInAvailable).toBe(false);
+  });
+
+  it("reports signInAvailable:true when a signIn dep IS wired", async () => {
+    const { app } = makeDaemon({ signIn: async () => ({ state: "connected" }) });
+    const res = await app(new Request("http://127.0.0.1/api/sync"));
+    expect((await res.json() as { signInAvailable: boolean }).signInAvailable).toBe(true);
   });
 
   it("counts once per TTL window, not once per poll (two console pollers hit this route)", async () => {
@@ -284,7 +298,7 @@ describe("/api/sync", () => {
     });
     const res = await app(new Request("http://127.0.0.1/api/sync"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
+    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false }, signInAvailable: false });
   });
 
   it("keeps the last good count when a later count is incomplete, instead of blanking the card", async () => {

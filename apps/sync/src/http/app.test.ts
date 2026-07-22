@@ -169,6 +169,12 @@ describe("POST /session (Supabase sign-in, dormant-safe)", () => {
     expect(await res.json()).toEqual({ error: "sign-in not configured" });
   });
 
+  it("501s (not 400) on a dormant /session with an empty body - the dormant check runs before jwt validation", async () => {
+    const res = await app(json("/session", {}));
+    expect(res.status).toBe(501);
+    expect(await res.json()).toEqual({ error: "sign-in not configured" });
+  });
+
   it("verifies the session and provisions a company-of-one, same shape as /provision", async () => {
     const sessionApp = createApp({
       store,

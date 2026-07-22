@@ -46,7 +46,7 @@ token the S2S `/provision` path already mints — so everything downstream (repo
 ```
 Client (Electron)                     Supabase                 Sync service (Fly) — engine UNCHANGED
 ─────────────────                     ────────                 ─────────────────────────────────────
-click "Sign in"  ──system browser──▶  OAuth (Google) / email
+click "Sign in"  ──system browser──▶  OAuth (Google) — email deferred
   PKCE + one-time state                 ↳ signed JWT (access token)
    ◀── loopback 127.0.0.1:<fixed>/auth/callback?code=… (state validated, one-time, short TTL)
         │  exchange code → Supabase session (JWT)
@@ -98,8 +98,9 @@ click "Sign in"  ──system browser──▶  OAuth (Google) / email
 10. **Pending-panel CTA** — a contextual card in the pending tray shown only when signed-out AND there is
     real local work (`unsaved.files > 0`): "Your work only lives on this machine. Sign in free to back it up."
     Click → same flow. Reuses the existing pending-card rendering idiom; jsdom-tested.
-11. **Sign-in modal** — the connect surface (sync-dot / onboarding) leads with "Sign in with Google" +
-    "Email me a link"; "Have a setup code?" is a secondary disclosure (keeps the admin path).
+11. **Sign-in modal** — the connect surface (sync-dot / onboarding) leads with "Sign in with Google";
+    "Have a setup code?" is a secondary disclosure (keeps the admin path). Email magic-link is
+    DEFERRED (Google-only shipped) - see the handoff checklist and decisions log below.
 
 ## Testing & invariants
 
@@ -117,7 +118,9 @@ click "Sign in"  ──system browser──▶  OAuth (Google) / email
 
 ## What you plug in when back (the handoff checklist)
 
-1. Create a Supabase project; enable **Google** provider + **email** magic-link.
+1. Create a Supabase project; enable the **Google** provider. (Email magic-link is DEFERRED - Google-only
+   shipped in v1; do not enable an email provider, nothing in the client uses it yet. Wiring it up is a
+   future follow-up that needs its own backend magic-link flow.)
 2. Add the loopback redirect URL (`http://127.0.0.1:<fixed>/auth/callback`) to Supabase's allowed redirects.
 3. `fly secrets set BUILDEX_SUPABASE_JWKS_URL=… BUILDEX_SUPABASE_ISSUER=… BUILDEX_SUPABASE_AUDIENCE=… --app <app>`
    then `task deploy` — `/session` goes from `501` to live.
@@ -125,10 +128,13 @@ click "Sign in"  ──system browser──▶  OAuth (Google) / email
 
 ## Decisions Log (calls made without a live answer — override any on review)
 
-- **Providers:** Google OAuth + email magic-link in v1 (the two a non-technical operator expects). More
-  providers are config, not code.
+- **Providers:** Google OAuth shipped in v1. Email magic-link is DEFERRED - a future follow-up that needs
+  its own backend magic-link flow; nothing in the shipped client offers or depends on it. More providers
+  (incl. email, once built) are config, not code.
 - **Desktop flow:** system browser + PKCE + fixed-port loopback (not a webview — Google blocks webview OAuth
-  and it's less secure). Fixed port with a free-port fallback; state one-time + short TTL (inv 7).
+  and it's less secure). Fixed port only - a busy port fails cleanly with an operator-facing error rather
+  than retrying on a random port, since the Supabase project allowlists only the fixed port's redirect
+  URI and a random-port redirect would just be rejected. State one-time + short TTL (inv 7).
 - **JWT lib:** none — `node:crypto` only, to preserve `apps/sync`'s zero-dependency property. RS256 + ES256.
 - **Identity key:** Supabase `sub` (stable), with `email` for the derived slug + display only. Re-sign-in and
   new devices resolve to the same company by `sub`.

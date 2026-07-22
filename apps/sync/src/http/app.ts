@@ -98,9 +98,12 @@ async function route(deps: AppDeps, req: Request): Promise<Response> {
 
   // --- sign-in (Supabase JWT) → company-of-one, dormant-safe ---
   if (method === "POST" && path === "/session") {
+    // Dormant-check FIRST, before reading/validating the body: an operator hitting a dormant
+    // /session (no Supabase config wired) must see the documented 501, not a 400 about a field that
+    // was never going to matter anyway.
+    if (!deps.verifySession) return json({ error: "sign-in not configured" }, 501);
     const b = await body<{ jwt?: string; machineName?: string }>(req);
     if (!b.jwt) throw new ValidationError("missing jwt");
-    if (!deps.verifySession) return json({ error: "sign-in not configured" }, 501);
 
     // A rejected verification MUST NOT reach provisionBySession - the whole point of the check.
     let claims: { sub: string; email?: string };

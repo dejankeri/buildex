@@ -684,6 +684,10 @@ export function createDaemon(deps: DaemonDeps): Handler {
       return json({
         status: deps.syncStatus?.() ?? "ok",
         unsaved: await unsavedCached(),
+        // Whether `/api/signin` is anything more than a 501 - the console's sign-in CTAs (the
+        // left-rail pill, the pending tray's not-connected card) must not dead-end at a dormant
+        // route, so they gate on this rather than inferring availability from `unsaved.connected`.
+        signInAvailable: !!deps.signIn,
         ...(deps.perRootStatus ? { perRoot: deps.perRootStatus() } : {}),
       });
     }

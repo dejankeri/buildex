@@ -154,10 +154,12 @@ describe("console (jsdom) — startSignIn() modal", () => {
 });
 
 describe("console (jsdom) — sign-in CTAs render only while signed out", () => {
-  const routes = (connected: boolean, files: number): Array<[string, unknown]> => [
+  // signInAvailable defaults true - these tests are about the connected/not-connected gating; the
+  // dormant (signInAvailable:false) gating gets its own test below.
+  const routes = (connected: boolean, files: number, signInAvailable = true): Array<[string, unknown]> => [
     ["/api/projects", { projects: [{ id: "p1", name: "Workspace", items: [] }] }],
     ["/api/sessions", { sessions: [] }],
-    ["/api/sync", { status: "ok", unsaved: { files, oldestAt: files ? Date.now() : null, stale: false, connected } }],
+    ["/api/sync", { status: "ok", unsaved: { files, oldestAt: files ? Date.now() : null, stale: false, connected }, signInAvailable }],
     ["/api/pending", { cards: [] }],
   ];
 
@@ -210,5 +212,25 @@ describe("console (jsdom) — sign-in CTAs render only while signed out", () => 
     await c.rPending();
     (doc.querySelector("#rpanel #signin-now") as unknown as { click(): void }).click();
     expect(doc.querySelector(".signin-modal")).not.toBeNull();
+  });
+
+  it("signed out but sign-in is dormant (not configured): NEITHER CTA renders, even though connected:false", async () => {
+    // Finding 1's regression: signInAvailable:false must suppress both CTAs regardless of
+    // unsaved.connected, so a signed-out operator is never offered a "Sign in" button that
+    // dead-ends at the daemon's dormant /api/signin 501.
+    const { doc, w, c } = loadConsole();
+    routeFetch(w, routes(false, 3, false));
+    await c.refreshProjects();
+    expect(doc.querySelector("#signinCta .signin-pill")).toBeNull();
+    expect(doc.querySelector("#signinCta")!.getAttribute("hidden")).not.toBeNull();
+
+    c.S.rightTab = "pending";
+    await c.rPending();
+    // The not-connected card still renders (there IS real local work to state), but purely
+    // informationally - no button, no "sign in" language.
+    const card = doc.querySelector("#rpanel .pcard.save");
+    expect(card).not.toBeNull();
+    expect(doc.querySelector("#rpanel #signin-now")).toBeNull();
+    expect(card!.textContent).not.toMatch(/sign in/i);
   });
 });

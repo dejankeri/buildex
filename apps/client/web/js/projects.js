@@ -33,14 +33,16 @@ function syncDotState(s) {
  * visible only while the workspace has no connected account (invariant 1 - the operator's work is
  * safe either way; this just offers to also keep a copy with the company). Its click opens the same
  * front door as the pending tray's save card (js/pending.js): startSignIn() (js/signin.js).
- * @param {{unsaved?: {connected?: boolean}}|null} sync - the `/api/sync` response, or null if the
- *   fetch failed (the pill stays hidden rather than guess).
+ * @param {{unsaved?: {connected?: boolean}, signInAvailable?: boolean}|null} sync - the `/api/sync`
+ *   response, or null if the fetch failed (the pill stays hidden rather than guess).
  * @returns {void}
  */
 function renderSigninPill(sync) {
   const host = $("#signinCta");
   if (!host) return;
-  const show = !!(sync && sync.unsaved && sync.unsaved.connected === false);
+  // Gated on signInAvailable too: with no Supabase config wired, /api/signin is a dormant 501, so a
+  // signed-out operator must never be offered a "Sign in" CTA that dead-ends there.
+  const show = !!(sync && sync.unsaved && sync.unsaved.connected === false && sync.signInAvailable);
   host.hidden = !show;
   if (!show) {
     host.replaceChildren();
