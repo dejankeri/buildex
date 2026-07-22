@@ -63,6 +63,9 @@ export class SyncScheduler {
   private flushing = false;
   private rerun = false;
   private lastStatus: SyncStatus = "ok";
+  /** The per-root result of the last publish - lets the console say WHICH root is stuck, alongside
+   *  the collapsed worst status. Populated in `publishRoots`; `perRoot()` hands out a copy. */
+  private lastPerRoot: Record<string, SyncStatus> = {};
   /** One promise chain per repository - the per-root mutex (see the file comment). */
   private readonly chain = new Map<string, Promise<unknown>>();
 
@@ -233,6 +236,12 @@ export class SyncScheduler {
     );
     const status = worstStatus(results);
     this.setStatus(status);
+    // "no-change" is a SyncResult, not a SyncStatus - worstStatus() already treats it as "ok" (it
+    // isn't needs-help/queued/local), so the per-root map collapses it the same way for consistency.
+    for (let i = 0; i < roots.length; i++) {
+      const r = results[i]!;
+      this.lastPerRoot[roots[i]!] = r === "no-change" ? "ok" : r;
+    }
 
     // Offline roots keep their checkpoints locally; retry those roots (only those) on a doubling
     // delay, a bounded number of times. When the retries run out the status stays "queued" - the
@@ -250,6 +259,11 @@ export class SyncScheduler {
       );
     }
     return status;
+  }
+
+  /** The per-root status of the last publish, keyed by dir - a copy, never the internal object. */
+  perRoot(): Record<string, SyncStatus> {
+    return { ...this.lastPerRoot };
   }
 }
 

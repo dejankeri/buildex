@@ -820,6 +820,8 @@ export function buildClientHandler(config: ClientConfig): Handler {
     // The dot's live status (GET /api/sync) - "local" (no account yet) / "queued" (offline) /
     // "needs-help" (conflict backed up).
     syncStatus: () => lastSyncStatus,
+    // Per-root status of the last publish - lets the console say WHICH root is stuck.
+    perRootStatus: () => scheduler.perRoot(),
     // What is waiting to be saved, for the pending tray's one card. The staleness comparison
     // happens here, once, against the real clock - the browser is never handed a comparison to make.
     // `connected` is derived from the REPOSITORIES, not from the last sync status: that status

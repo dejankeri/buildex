@@ -133,6 +133,10 @@ export interface DaemonDeps {
   syncFn: () => Promise<string>;
   /** Current background-sync status for the header dot: "ok" | "busy" | "queued" | "needs-help". */
   syncStatus?: () => string;
+  /** Per-root sync status, keyed by root dir - lets the console say WHICH root is stuck, alongside
+   *  the collapsed `syncStatus`. Optional: `perRoot` is omitted from `GET /api/sync` entirely when
+   *  this is not wired, so existing callers see no shape change. */
+  perRootStatus?: () => Record<string, string>;
   /** What is waiting to be saved, for the pending tray's one card. `connected` says whether there is
    *  anywhere to save TO yet (any writable root with a remote): with no account, work waiting is not
    *  a nudge to act, it is a fact to state. Optional, and a throwing implementation degrades to
@@ -643,7 +647,11 @@ export function createDaemon(deps: DaemonDeps): Handler {
       return json({ result: await deps.syncFn() });
     }
     if (method === "GET" && path === "/api/sync") {
-      return json({ status: deps.syncStatus?.() ?? "ok", unsaved: await unsavedCached() });
+      return json({
+        status: deps.syncStatus?.() ?? "ok",
+        unsaved: await unsavedCached(),
+        ...(deps.perRootStatus ? { perRoot: deps.perRootStatus() } : {}),
+      });
     }
     if (method === "POST" && deps.openAccount && path === "/api/account") {
       const b = await body<{ baseUrl: string; setupToken: string }>(req, { baseUrl: "string!", setupToken: "string!" });

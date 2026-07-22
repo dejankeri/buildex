@@ -225,6 +225,12 @@ describe("/api/sync", () => {
     expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
   });
 
+  it("GET includes the per-root status map when wired", async () => {
+    const { app } = makeDaemon({ syncStatus: () => "queued", perRootStatus: () => ({ "/team": "ok", "/private": "queued" }) });
+    const body = (await (await app(new Request("http://127.0.0.1/api/sync"))).json()) as { perRoot: unknown };
+    expect(body.perRoot).toEqual({ "/team": "ok", "/private": "queued" });
+  });
+
   it("reports status and what is waiting to be saved", async () => {
     const { app } = makeDaemon({
       syncStatus: () => "ok",

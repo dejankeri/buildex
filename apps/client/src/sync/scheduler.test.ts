@@ -282,6 +282,14 @@ describe("SyncScheduler - publishAll", () => {
     expect([...engine.calls.publish].sort()).toEqual(["/private", "/team"]);
     expect(status).toBe("queued");
   });
+
+  it("records the per-root status of the last publish", async () => {
+    const engine = new FakeEngine();
+    engine.publishResults = ["ok", "queued"];
+    const { scheduler } = make({ engine, roots: ["/team", "/private"] });
+    await scheduler.publishAll();
+    expect(scheduler.perRoot()).toEqual({ "/team": "ok", "/private": "queued" });
+  });
 });
 
 describe("SyncScheduler - resilience", () => {
