@@ -15,3 +15,9 @@
   .wz-field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);}
   .wz-field input{font:inherit;font-size:13px;color:var(--ink);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px;}
   .wz-err{color:var(--gate);font-size:12.5px;}
+  /* the sign-in modal (js/signin.js): Google only in v1 - email magic-link is deferred (needs a
+     backend flow that doesn't exist yet) - a plain-text link steps aside into the existing
+     setup-code flow (account.js) rather than duplicating those fields. */
+  .wz-full{width:100%;box-sizing:border-box;text-align:center;}
+  .wz-link{display:inline-block;margin-top:10px;padding:0;background:none;border:0;color:var(--muted);font:inherit;font-size:12px;text-decoration:underline;cursor:pointer;}
+  .wz-link:hover{color:var(--ink);}

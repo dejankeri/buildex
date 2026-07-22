@@ -42,6 +42,12 @@ export interface OrgManagerDeps {
   seedReal: (workspace: string) => Root[];
   /** Seed the DEMO SANDBOX org's workspace (rich Acme brain, NO remotes). Returns its roots. */
   seedDemo: (workspace: string) => Root[];
+  /** Purge any orphaned OS-vault secrets at a workspace path just before it is FRESHLY seeded. Closes
+   *  the path-reuse edge (invariant 6): the keychain service id is sha256(path), the vault lives outside
+   *  the workspace dir, so a path reused by a new company (the stable demo dir on `demo:setup --reset`,
+   *  or a real org re-provisioned at a freed path) would otherwise inherit the old company's namespace.
+   *  Default no-op keeps this class hermetic; the daemon wires the real keychain clear. */
+  purge?: (workspace: string) => void;
   /** Injectable for hermetic tests. */
   idFactory?: () => string;
   now?: () => number;
@@ -51,6 +57,7 @@ export class OrgManager {
   private readonly orgsRoot: string;
   private readonly seedReal: (workspace: string) => Root[];
   private readonly seedDemo: (workspace: string) => Root[];
+  private readonly purge: (workspace: string) => void;
   private readonly idFactory: () => string;
   private readonly now: () => number;
 
@@ -58,6 +65,7 @@ export class OrgManager {
     this.orgsRoot = deps.orgsRoot;
     this.seedReal = deps.seedReal;
     this.seedDemo = deps.seedDemo;
+    this.purge = deps.purge ?? (() => {});
     this.idFactory = deps.idFactory ?? (() => randomUUID().slice(0, 8));
     this.now = deps.now ?? (() => Date.now());
   }
@@ -134,6 +142,7 @@ export class OrgManager {
     const dir = this.orgDir(DEMO_ORG_ID);
     const workspace = join(dir, "workspace");
     mkdirSync(workspace, { recursive: true });
+    this.purge(workspace); // clear any orphaned secrets at this (stable) path before re-seeding it
     const roots = this.seedDemo(workspace);
     const meta: OrgMeta = {
       id: DEMO_ORG_ID,
@@ -163,6 +172,17 @@ export class OrgManager {
     return active;
   }
 
+  /** Clear the OS-vault secrets for EVERY org on this machine and return how many were cleared. The
+   *  honest answer to "uninstall leaves credentials behind" (macOS runs no code on drag-to-Trash): the
+   *  operator taps this in-app, before uninstalling, to wipe every connector token / git credential the
+   *  app ever stored. Reuses the same per-workspace purge as fresh provisioning. Leaves the workspace
+   *  FILES intact (invariant 8 - never lose the operator's work); only the vault namespace is cleared. */
+  forgetAllSecrets(): number {
+    const orgs = this.list();
+    for (const org of orgs) this.purge(org.workspace);
+    return orgs.length;
+  }
+
   /** Create a real (syncable-later) local org and make it active. */
   create(opts: { name: string }): Org {
     const name = opts.name.trim();
@@ -172,6 +192,7 @@ export class OrgManager {
     const dir = this.orgDir(id);
     const workspace = join(dir, "workspace");
     mkdirSync(workspace, { recursive: true });
+    this.purge(workspace); // defensive: a freed id reused at this path must not inherit old secrets
     const roots = this.seedReal(workspace);
     const meta: OrgMeta = {
       id,

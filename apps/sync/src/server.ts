@@ -8,8 +8,10 @@ import { ControlPlaneStore } from "./store/store.js";
 import { ScheduleStore } from "./automations/schedule-store.js";
 import { EmbeddedGitService } from "./git/service.js";
 import { ProvisioningService } from "./provisioning/service.js";
-import { createApp, type Handler } from "./http/app.js";
+import { createApp, type Handler, type AppDeps } from "./http/app.js";
 import type { SyncConfig } from "./config.js";
+import { makeJwksCache } from "./auth/jwks-cache.js";
+import { verifyJwt } from "./auth/jwt-verify.js";
 
 export interface Services {
   handler: Handler;
@@ -73,6 +75,24 @@ export async function createServices(
     throw err;
   }
 
+  // Sign-in is dormant by default: `config.signIn` is only present when all three Supabase vars
+  // are set (config.ts's all-or-nothing rule), so a half-configured deploy never stands up a
+  // broken verifier - `verifySession` simply stays undefined and `/session` answers 501.
+  const verifySession: AppDeps["verifySession"] = config.signIn
+    ? (() => {
+        const signIn = config.signIn;
+        const keys = makeJwksCache({ url: signIn.jwksUrl, fetch, now: Date.now });
+        return async (jwt: string) => {
+          const claims = await verifyJwt(jwt, {
+            keys,
+            now: Date.now,
+            config: { issuer: signIn.issuer, audience: signIn.audience },
+          });
+          return { sub: claims.sub, email: claims.email };
+        };
+      })()
+    : undefined;
+
   const handler = createApp({
     store,
     provisioning,
@@ -80,6 +100,7 @@ export async function createServices(
     schedules,
     serviceKey: config.serviceKey,
     publicBaseUrl: config.publicBaseUrl,
+    ...(verifySession ? { verifySession } : {}),
   });
 
   // BOTH stores must close, even if the first throws - otherwise the second handle leaks, which

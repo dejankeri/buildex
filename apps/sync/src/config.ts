@@ -11,6 +11,12 @@ export interface SyncConfig {
   publicBaseUrl: string;
   dataDir: string;
   port: number;
+  /**
+   * Supabase sign-in, off by default. Present only when all three vars are set - a half-configured
+   * deploy (e.g. issuer set, audience forgotten) must come up dormant, not with a broken verifier,
+   * so this is all-or-nothing rather than three independent optionals.
+   */
+  signIn?: { jwksUrl: string; issuer: string; audience: string };
 }
 
 /** A shorter service key is a misconfiguration, not a valid deployment. */
@@ -63,5 +69,13 @@ export function readConfig(env: Record<string, string | undefined>): SyncConfig 
     throw new ConfigError(`PORT must be an integer between 0 and 65535, got "${rawPort}"`);
   }
 
-  return { serviceKey, publicBaseUrl: rawBase, dataDir, port };
+  // All-or-nothing: a partially set trio would stand up a JWT verifier with a missing piece
+  // (e.g. no audience check), which is a silent security hole, not a lenient default. Absent
+  // altogether is the only safe "off".
+  const jwksUrl = trimOrUndefined(env["BUILDEX_SUPABASE_JWKS_URL"]);
+  const issuer = trimOrUndefined(env["BUILDEX_SUPABASE_ISSUER"]);
+  const audience = trimOrUndefined(env["BUILDEX_SUPABASE_AUDIENCE"]);
+  const signIn = jwksUrl && issuer && audience ? { jwksUrl, issuer, audience } : undefined;
+
+  return { serviceKey, publicBaseUrl: rawBase, dataDir, port, ...(signIn ? { signIn } : {}) };
 }

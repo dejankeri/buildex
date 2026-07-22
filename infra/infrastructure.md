@@ -5,7 +5,8 @@
 > No real hosts, IDs, or costs.
 
 **Snapshot date:** 2026-07-22 (sync service DEPLOYED live on Fly + Tigris; end-to-end verified over
-real HTTPS: provision → clone/push `team` succeeds → push `core` rejected 403 → Litestream replicating).
+real HTTPS: provision → clone/push `team` succeeds → push `core` rejected 403 → Litestream replicating.
+Phase 3 self-serve sign-in (`POST /session`) deployed **dormant** the same day - see the sign-in bullet).
 
 ## Deploy stack
 
@@ -38,7 +39,16 @@ real HTTPS: provision → clone/push `team` succeeds → push `core` rejected 40
   default - `LITESTREAM_ENDPOINT`/`LITESTREAM_BUCKET`/credentials have no default value, so a
   developer must opt in via `infra/.env` to exercise replication locally.
 - **Deploy:** `task deploy:plan` (build only) → `task deploy` (prompted).
-- **Onboarding:** `task mint-setup-token -- --base-url https://<host> --onboard ...`.
+- **Onboarding:** `task mint-setup-token -- --base-url https://<host> --onboard ...` (S2S admin path).
+- **Self-serve sign-in (Phase 3, DEPLOYED DORMANT):** `POST /session` verifies a Supabase JWT
+  (`node:crypto` only, zero-dep) → find-or-create company-of-one → the SAME machine token `/provision`
+  mints. Ships **dormant** (`501 "sign-in not configured"`) until `BUILDEX_SUPABASE_JWKS_URL` /
+  `BUILDEX_SUPABASE_ISSUER` / `BUILDEX_SUPABASE_AUDIENCE` are all set (all-or-nothing) - verified live
+  that the dormant deploy is a no-op (existing `/provision` + git push/reject unchanged). **Owner
+  cutover:** create a Supabase project (Google provider - email magic-link is deferred, Google-only
+  shipped), allow-list the loopback redirect `http://127.0.0.1:54121/auth/callback`, `fly secrets set`
+  the three vars + `task deploy`, then put the Supabase URL + anon key into the client config. Full
+  checklist + decisions: `docs/superpowers/specs/2026-07-22-self-serve-signin-sync-design.md`.
 - **Backups:** Litestream (control.db + schedules.db, continuous) → Tigris. The `buildex_data` volume
   has **scheduled daily snapshots enabled (retention 5)**, which cover `/srv/buildex/repos` as the
   interim answer; a repo-level continuous backup (not just point-in-time volume snapshots) remains a

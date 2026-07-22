@@ -87,9 +87,9 @@ const EXPOSE = [
   "refreshOrgs", "renderOrgSwitcher", "toggleOrgMenu", "switchOrg", "createOrg",
   "projectRename", "projectStatus", "rAuto", "rFiles", "rGateway", "rPending", "rSkills", "rSyncLog", "refreshApps",
   "refreshPending", "refreshProjects", "refreshUsage", "removeProjectItem", "renderAgentHealth", "rootSlot", "toggleTreeNode", "treeActions", "wireTreeActions", "openFileMenu", "openTreeMoreMenu", "uploadIntoFolder", "fsDo", "promptAction", "toast", "renderBrain",
-  "renderBrainRail", "renderConnectorEditor", "renderHistory", "renderMcpEditor", "renderPending",
+  "renderBrainRail", "renderConnectorEditor", "renderHistory", "renderMcpEditor", "renderPending", "renderSigninPill",
   "renderTabbar", "renderTree", "reorderTab", "resolveCard", "runSkill", "scrollTabIntoView", "sendPrompt", "setMsg", "setSync",
-  "showProjectStart", "startApiKey", "clearApiKey", "startAppHost", "startBrainFlow", "startInstall", "startUninstall", "storeNotice",
+  "showProjectStart", "startApiKey", "clearApiKey", "startAppHost", "startBrainFlow", "startInstall", "startSignIn", "startUninstall", "storeNotice",
   // Apps & Tools rail: manual order, the visible cap, edit mode, and the chat-side connect gate.
   "appOrderKey", "savedAppOrder", "saveAppOrder", "orderApps", "renderApps", "appRow", "wireAppDrag", "toggleAppsEdit",
   "openAppChat", "openConnectDialog", "appConnectRoutes", "connectAppApi",

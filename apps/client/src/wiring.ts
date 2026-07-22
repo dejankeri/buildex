@@ -56,7 +56,10 @@ import { fetchUsage, nodeTokenReader, anthropicUsageCall, type UsageReport } fro
 import { AccountStore } from "./account/account-store.js";
 import { makeTokenProvider } from "./account/token-provider.js";
 import { gitAuthEnv } from "./account/credentials.js";
-import { openAccount as runOpenAccount } from "./account/open-account.js";
+import { openAccount as runOpenAccount, persistAndAttach } from "./account/open-account.js";
+import { signIn as runSignIn } from "./account/sign-in.js";
+import { postSession } from "./account/session-client.js";
+import { openBrowser, realLoopbackServer, realSupabaseAuthClient, randomState, pkce } from "./account/real-seams.js";
 
 export interface ClientConfig {
   workspace: string;
@@ -135,6 +138,14 @@ export interface ClientConfig {
   /** Whether the active org is the local-only demo sandbox - it can never attach an account
    *  (see account/attach.ts). Populated from `org.sandbox` in orgs/router.ts. */
   sandbox?: boolean;
+  /** Supabase project config for the browser OAuth sign-in seam (Task 10). Absent is the DEFAULT
+   *  today (the owner hasn't configured Supabase yet) - it keeps `signIn` unwired and
+   *  `POST /api/signin` dormant (501), exactly like an absent `orgId`/`orgDir` keeps `openAccount`
+   *  unwired. `url`/`anonKey` are the Supabase project's OAuth endpoint + public anon key (anon keys
+   *  are public by Supabase's design - RLS enforces access - so this is not a secret); `baseUrl` is
+   *  BuildEx's OWN sync server, the same one `/api/account`'s setup-token flow talks to (its
+   *  `POST /session` trades the Supabase JWT for the machineToken/refreshToken/repos triple). */
+  supabase?: { url: string; anonKey: string; baseUrl: string };
 }
 
 export function buildClientHandler(config: ClientConfig): Handler {
@@ -337,6 +348,42 @@ export function buildClientHandler(config: ClientConfig): Handler {
     const a = account?.load();
     return a ? { state: "connected", operatorId: a.operatorId, companySlug: a.companySlug, remotes: a.repos } : { state: "local" };
   };
+  // The browser sign-in→attach chain (Task 10): system-browser OAuth via Supabase (sign-in.ts), then
+  // the SAME postSession→persistAndAttach tail the setup-token flow above ends in. Gated on BOTH an
+  // account seam (org id+dir - openAccount's own precondition) and a Supabase project config -
+  // absent either, `signIn` stays undefined and `/api/signin` stays dormant (501). This is the
+  // DEFAULT today (the owner hasn't configured Supabase), so a normal boot is unaffected. Captured
+  // into local consts (`acc`/`supabaseCfg`) once, here, rather than re-checked inside the closure -
+  // this is the one narrowing TypeScript can't carry through a later-called async closure.
+  const signIn: (() => Promise<{ state: "connected" | "needs-help" }>) | undefined = (() => {
+    if (!account || !config.supabase) return undefined;
+    const acc = account;
+    const supabaseCfg = config.supabase;
+    return async (): Promise<{ state: "connected" | "needs-help" }> => {
+      // Refuse a sandbox org BEFORE ever opening the OAuth browser. persistAndAttach below also
+      // self-guards, but only after a real browser round-trip and a spent authorization code; failing
+      // here is cheaper and a sandbox org never even sees a browser window launch (see open-account.ts
+      // for why persist-then-attach itself guards this early too - belt and suspenders).
+      if (config.sandbox) throw new Error("the sandbox org is local-only and cannot attach an account");
+      const { jwt } = await runSignIn(
+        {
+          openBrowser,
+          loopback: realLoopbackServer(),
+          supabase: realSupabaseAuthClient({ supabaseUrl: supabaseCfg.url, anonKey: supabaseCfg.anonKey, fetch: fetchImpl }),
+          now: Date.now,
+          randomState,
+          pkce,
+        },
+        {},
+      );
+      const result = await postSession({ fetch: fetchImpl, baseUrl: supabaseCfg.baseUrl }, { jwt, machineName: hostname() });
+      return persistAndAttach(
+        { account: acc, engine: sync, roots: config.roots, sandbox: config.sandbox ?? false },
+        supabaseCfg.baseUrl,
+        result,
+      );
+    };
+  })();
   // Regenerate the native agent config, threading the (optional) gate-hook command. Used after a
   // skill is authored and by the sync route, so the workspace's .claude stays consistent.
   const regenConfig = () => {
@@ -851,6 +898,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
     usageFn,
     openAccount,
     accountState,
+    signIn,
     vault,
     saveDoc,
     fsOps,

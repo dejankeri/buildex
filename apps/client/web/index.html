@@ -69,6 +69,10 @@
   <div class="body" id="bodyGrid">
     <!-- LEFT -->
     <aside class="left">
+      <!-- "Back up & sync" pill (js/projects.js, renderSigninPill). A persistent, low-emphasis nudge
+           at the very top of the rail, shown ONLY while the workspace has no connected account -
+           gone the moment the operator signs in. Click opens the sign-in modal (js/signin.js). -->
+      <div class="signin-cta" id="signinCta" hidden></div>
       <!-- Organization switcher (B2a). Populated by js/orgs.js from /api/orgs; stays hidden on a
            single-workspace daemon (route absent). The demo org is a local-only sandbox, badged. -->
       <div class="orgbar" id="orgbar" hidden></div>
@@ -115,6 +119,7 @@
 <script src="js/boot.js"></script>
 <script src="js/onboarding.js"></script>
 <script src="js/account.js"></script>
+<script src="js/signin.js"></script>
 <script src="js/tour.js"></script>
 <script src="js/orgs.js"></script>
 <script src="js/projects.js"></script>

@@ -222,6 +222,10 @@ export interface DaemonDeps {
   openAccount?: (input: { baseUrl: string; setupToken: string }) => Promise<{ state: "connected" | "needs-help" }>;
   /** Current account state for the console. */
   accountState?: () => { state: "local" | "connected"; operatorId?: string; companySlug?: string; remotes?: { core: string; team: string; private: string } };
+  /** Run the browser sign-in→attach chain (system browser + PKCE, then session→persist→attach).
+   *  Optional: absent whenever no Supabase client config is wired (the default today), so
+   *  `POST /api/signin` stays dormant (501) rather than half-working. */
+  signIn?: () => Promise<{ state: "connected" | "needs-help" }>;
 }
 
 export interface TreeNode {
@@ -693,6 +697,10 @@ export function createDaemon(deps: DaemonDeps): Handler {
       return json({
         status: deps.syncStatus?.() ?? "ok",
         unsaved: await unsavedCached(),
+        // Whether `/api/signin` is anything more than a 501 - the console's sign-in CTAs (the
+        // left-rail pill, the pending tray's not-connected card) must not dead-end at a dormant
+        // route, so they gate on this rather than inferring availability from `unsaved.connected`.
+        signInAvailable: !!deps.signIn,
         ...(deps.perRootStatus ? { perRoot: deps.perRootStatus() } : {}),
       });
     }
@@ -710,6 +718,19 @@ export function createDaemon(deps: DaemonDeps): Handler {
     }
     if (method === "GET" && deps.accountState && path === "/api/account") {
       return json(deps.accountState());
+    }
+    // The browser sign-in→attach chain. Dormant (501) whenever `signIn` isn't wired - the default
+    // today, with no Supabase config - so the console can treat "not configured" and "failed" as
+    // distinct outcomes. Errors map exactly like /api/account above: sandbox → 409, else 400, never 500.
+    if (method === "POST" && path === "/api/signin") {
+      if (!deps.signIn) return json({ error: "sign-in not configured" }, 501);
+      try {
+        return json(await deps.signIn());
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "could not sign in";
+        const status = /sandbox/i.test(msg) ? 409 : 400;
+        return json({ error: msg }, status);
+      }
     }
 
     // Mini-app bridge: the agent's app-driver MCP posts commands here; the mini-app window

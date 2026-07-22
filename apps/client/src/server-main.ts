@@ -6,6 +6,7 @@ import { buildClientHandler, type ClientConfig } from "./wiring.js";
 import { createNodeServer } from "./daemon/node-adapter.js";
 import type { Root } from "./brain/graph.js";
 import { OrgManager } from "./orgs/manager.js";
+import { createKeychain } from "./keychain/keychain.js";
 import { createOrgRouter, type OrgBaseConfig } from "./orgs/router.js";
 
 export interface StartOpts extends ClientConfig {
@@ -69,7 +70,16 @@ export interface StartOrgOpts {
  *  loopback. Mirrors startDaemon's binding (127.0.0.1 + best-effort ::1), but the served handler
  *  swaps its underlying single-workspace handler as the active org changes. */
 export async function startOrgDaemon(opts: StartOrgOpts): Promise<RunningDaemon> {
-  const manager = new OrgManager({ orgsRoot: opts.orgsRoot, seedReal: opts.seedReal, seedDemo: opts.seedDemo });
+  const manager = new OrgManager({
+    orgsRoot: opts.orgsRoot,
+    seedReal: opts.seedReal,
+    seedDemo: opts.seedDemo,
+    // Before a fresh workspace is seeded, wipe any orphaned secrets left at that path by a prior company
+    // (invariant 6 - the keychain service id is sha256(path), and the OS vault lives outside the deleted
+    // workspace dir). Built from the same keychainMode every org uses, so it selects the real backend in
+    // production and in-memory (a harmless no-op) in tests. Never throws - clear() is best-effort.
+    purge: (workspace) => createKeychain({ mode: opts.base.keychainMode ?? "memory", workspace }).clear(),
+  });
   const router = createOrgRouter({ manager, baseConfig: opts.base });
 
   const server = createNodeServer(router.handler);

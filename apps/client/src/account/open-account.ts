@@ -12,6 +12,7 @@ import { provision } from "./provision-client.js";
 import { attachOrg } from "./attach.js";
 import type { AccountStore } from "./account-store.js";
 import type { SyncEngine } from "../sync/engine.js";
+import type { ProvisionResult } from "./provision-client.js";
 
 export interface OpenAccountDeps {
   fetch: typeof fetch;
@@ -25,6 +26,25 @@ export interface OpenAccountDeps {
   machineName: string;
 }
 
+/** The tail shared by every entry point that ends in a live account: setup-code provisioning today,
+ *  a JWT sign-in (session-client's /session) tomorrow. Both hand this the same ProvisionResult shape
+ *  and get the same persist-then-attach guarantees - persist first, so a crash mid-attach can be
+ *  resumed from a saved account rather than re-provisioning. This function guards itself against a
+ *  sandbox org too (redundant with openAccount's own guard on that path, since by the time a
+ *  ProvisionResult exists here the one-time credential that produced it is already spent) - so ANY
+ *  future caller (e.g. a JWT sign-in wired straight to this function) is safe even if it forgets its
+ *  own guard: nothing is persisted for a sandbox org before this throws. */
+export async function persistAndAttach(
+  deps: { account: AccountStore; engine: SyncEngine; roots: { name: string; dir: string }[]; sandbox: boolean },
+  baseUrl: string,
+  result: ProvisionResult,
+): Promise<{ state: "connected" | "needs-help" }> {
+  if (deps.sandbox) throw new Error("the sandbox org is local-only and cannot attach an account");
+  deps.account.save(baseUrl, result);
+  const res = await attachOrg({ engine: deps.engine, roots: deps.roots, repos: result.repos, sandbox: deps.sandbox });
+  return { state: res.status === "needs-help" ? "needs-help" : "connected" };
+}
+
 export async function openAccount(
   deps: OpenAccountDeps,
   input: { baseUrl: string; setupToken: string },
@@ -34,7 +54,5 @@ export async function openAccount(
     { fetch: deps.fetch, baseUrl: input.baseUrl },
     { setupToken: input.setupToken, machineName: deps.machineName },
   );
-  deps.account.save(input.baseUrl, result);
-  const res = await attachOrg({ engine: deps.engine, roots: deps.roots, repos: result.repos, sandbox: deps.sandbox });
-  return { state: res.status === "needs-help" ? "needs-help" : "connected" };
+  return persistAndAttach(deps, input.baseUrl, result);
 }

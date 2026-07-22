@@ -216,13 +216,13 @@ describe("/api/sync", () => {
     const { app } = makeDaemon({ syncStatus: () => "needs-help" });
     const res = await app(new Request("http://127.0.0.1/api/sync"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "needs-help", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
+    expect(await res.json()).toEqual({ status: "needs-help", unsaved: { files: 0, oldestAt: null, stale: false, connected: false }, signInAvailable: false });
   });
 
   it("GET defaults to ok when no status dep is wired", async () => {
     const { app } = makeDaemon();
     const res = await app(new Request("http://127.0.0.1/api/sync"));
-    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
+    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false }, signInAvailable: false });
   });
 
   it("GET includes the per-root status map when wired", async () => {
@@ -240,13 +240,14 @@ describe("/api/sync", () => {
     expect(await res.json()).toEqual({
       status: "ok",
       unsaved: { files: 14, oldestAt: 1_700_000_000_000, stale: false, connected: true },
+      signInAvailable: false,
     });
   });
 
   it("reports nothing waiting when the daemon has no counter wired", async () => {
     const { app } = makeDaemon({ syncStatus: () => "ok" });
     const res = await app(new Request("http://127.0.0.1/api/sync"));
-    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
+    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false }, signInAvailable: false });
   });
 
   it("reports connected:false when no root has an account yet - the card must not offer a save", async () => {
@@ -258,7 +259,20 @@ describe("/api/sync", () => {
     expect(await res.json()).toEqual({
       status: "ok",
       unsaved: { files: 3, oldestAt: 1_700_000_000_000, stale: false, connected: false },
+      signInAvailable: false,
     });
+  });
+
+  it("reports signInAvailable:false when no signIn dep is wired (Finding 1 - CTAs must not dead-end)", async () => {
+    const { app } = makeDaemon();
+    const res = await app(new Request("http://127.0.0.1/api/sync"));
+    expect((await res.json() as { signInAvailable: boolean }).signInAvailable).toBe(false);
+  });
+
+  it("reports signInAvailable:true when a signIn dep IS wired", async () => {
+    const { app } = makeDaemon({ signIn: async () => ({ state: "connected" }) });
+    const res = await app(new Request("http://127.0.0.1/api/sync"));
+    expect((await res.json() as { signInAvailable: boolean }).signInAvailable).toBe(true);
   });
 
   it("counts once per TTL window, not once per poll (two console pollers hit this route)", async () => {
@@ -284,7 +298,7 @@ describe("/api/sync", () => {
     });
     const res = await app(new Request("http://127.0.0.1/api/sync"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
+    expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false }, signInAvailable: false });
   });
 
   it("keeps the last good count when a later count is incomplete, instead of blanking the card", async () => {
@@ -600,5 +614,45 @@ describe("App Store - escape-hatch provisioning", () => {
     const { app } = makeDaemon({ packStore: base });
     expect((await app(post("/api/catalog/provision", { id: "protocol" }))).status).toBe(404);
     expect((await app(new Request("http://127.0.0.1/oauth/provision/protocol/callback?code=x&state=S"))).status).toBe(404);
+  });
+});
+
+// The sign-in→attach chain (Task 10). Dormant (501) whenever `signIn` isn't wired - the default
+// today (no Supabase config) - and never a raw 500 once it is.
+describe("/api/signin", () => {
+  it("501s when sign-in isn't configured (dormant by default)", async () => {
+    const { app } = makeDaemon();
+    const res = await app(post("/api/signin", {}));
+    expect(res.status).toBe(501);
+    expect(((await res.json()) as { error: string }).error).toMatch(/sign-in not configured/i);
+  });
+
+  it("runs the wired sign-in and returns its resulting state", async () => {
+    const { app } = makeDaemon({ signIn: async () => ({ state: "connected" }) });
+    const res = await app(post("/api/signin", {}));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ state: "connected" });
+  });
+
+  it("can resolve to needs-help", async () => {
+    const { app } = makeDaemon({ signIn: async () => ({ state: "needs-help" }) });
+    const res = await app(post("/api/signin", {}));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ state: "needs-help" });
+  });
+
+  it("maps a sandbox refusal to 409", async () => {
+    const { app } = makeDaemon({
+      signIn: async () => { throw new Error("the sandbox org is local-only and cannot attach an account"); },
+    });
+    const res = await app(post("/api/signin", {}));
+    expect(res.status).toBe(409);
+  });
+
+  it("maps any other throw to a terse 400, never a 500", async () => {
+    const { app } = makeDaemon({ signIn: async () => { throw new Error("sign-in was denied: access_denied"); } });
+    const res = await app(post("/api/signin", {}));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/access_denied/);
   });
 });

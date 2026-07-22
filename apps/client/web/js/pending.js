@@ -17,7 +17,7 @@ let lastSync = null;
 // One pinned card above the approvals. Sending work to the company is an outward action, so this is
 // the right tray for it (invariant 5) - but it is a single action with no decline, so it is shaped
 // differently from the Approve/Deny pairs.
-function saveCardHtml(sync, connected) {
+function saveCardHtml(sync, connected, signInAvailable) {
   const n = sync.unsaved.files;
   if (n === 0) return "";
   const noun = n === 1 ? "change" : "changes";
@@ -26,16 +26,29 @@ function saveCardHtml(sync, connected) {
   const stale = sync.unsaved.stale;
   const days = stale ? Math.max(1, Math.round((Date.now() - sync.unsaved.oldestAt) / DAY_MS)) : 0;
 
-  // No account yet: there is nowhere to save TO. State that plainly and offer no button - the
-  // console has no account-creation surface, so a "Connect an account" button promised something
-  // the product cannot do and led to the Apps tab.
+  // No account yet: there is nowhere to save TO automatically. When sign-in IS available (js/signin.js
+  // is wired to a real Supabase config), this card offers a real next step instead of stating the fact
+  // and stopping. "connected" here still means "an account exists to save to", so the card reads as a
+  // straightforward context: this work is local, and signing in would fix that.
+  if (!connected && signInAvailable) {
+    return (
+      '<div class="pcard save signin' + (stale ? " stale" : "") + '">' +
+      "<b>Your work only lives on this machine</b>" +
+      "<p>" + n + " " + noun + " " + are + " saved here and nowhere else. Sign in free to back " +
+      (n === 1 ? "it" : "them") + " up." +
+      "</p>" +
+      '<button class="pbtn" id="signin-now" type="button">Sign in</button>' +
+      "</div>"
+    );
+  }
+  // No account yet, and sign-in is dormant (not configured) - there is no working next step to
+  // offer, so this is purely informational: the fact that work is local, nothing more. No "Sign in"
+  // button, no sign-in language - it would dead-end at a 501.
   if (!connected) {
     return (
       '<div class="pcard save' + (stale ? " stale" : "") + '">' +
-      "<b>This work is on this machine only</b>" +
-      "<p>" + n + " " + noun + " " + are + " saved here and nowhere else. If you lose this computer, " +
-      "you lose " + (n === 1 ? "it" : "them") + "." +
-      "</p>" +
+      "<b>Your work only lives on this machine</b>" +
+      "<p>" + n + " " + noun + " " + are + " saved here and nowhere else.</p>" +
       "</div>"
     );
   }
@@ -121,7 +134,7 @@ function renderPending(cards, sync) {
   // Connectivity comes from the daemon's view of the repositories (`unsaved.connected`), never from
   // `sync.status` - that field starts at "ok" and only moves when the operator saves, so it says
   // "connected" on a fresh install that has no account at all.
-  const saveHtml = sync ? saveCardHtml(sync, !!(sync.unsaved && sync.unsaved.connected)) : "";
+  const saveHtml = sync ? saveCardHtml(sync, !!(sync.unsaved && sync.unsaved.connected), !!sync.signInAvailable) : "";
   const kids = [];
   if (saveHtml) kids.push(el("div", { id: "savecard", html: saveHtml }));
   kids.push(
@@ -230,6 +243,10 @@ function wireSaveCard() {
       rPending(); // re-render: the count is now zero, or the failure shows in the dot
     };
   }
+  // The not-connected variant of the same card (js/pending.js's saveCardHtml) - same tray, same
+  // idiom, but there is nowhere to save TO yet, so the button opens the sign-in modal instead.
+  const signinBtn = $("#signin-now");
+  if (signinBtn) signinBtn.onclick = () => startSignIn();
 }
 
 /**
