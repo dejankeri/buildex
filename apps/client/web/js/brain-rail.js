@@ -68,6 +68,11 @@ function renderBrainPanel() {
   const nodes = brainNodes(d);
   p.innerHTML = "";
 
+  // Top-right: "what my agent sees" — the certainty check that the brain actually reaches Claude.
+  const hdr = elt("div", "brailhdr", '<button class="actx-btn" title="What your agent sees — verify the brain reaches Claude"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>');
+  p.appendChild(hdr);
+  $(".actx-btn", hdr).onclick = () => openAgentContextTab();
+
   // The star — a small, LIVE version of the poster. Node dots (and the hub) open the full brain in
   // the centre, focused on that stage; the sections below are the in-rail drill-in.
   const star = elt("div", "brailstar");

@@ -211,7 +211,10 @@ export interface DaemonDeps {
   fileTree?: () => TreeNode[];
   /** The derived agent surface (.claude/skills, .mcp.json, policy, assembled CLAUDE.md) - a health
    *  summary + tree fragment revealed by the Files panel's "Show agent files" toggle. Zero LLM. */
-  agentView?: () => { summary: unknown; tree: TreeNode[] };
+  agentView?: () => { summary: unknown; tree: TreeNode[]; discrepancies?: unknown };
+  /** Force a config rebuild (re-link skills, re-assemble CLAUDE.md, re-pin MCP) then return the fresh
+   *  agent view - powers the Agent Context viewer's "Regenerate & re-verify" action. */
+  agentViewRegen?: () => { summary: unknown; tree: TreeNode[]; discrepancies?: unknown };
   /** Live Claude subscription usage for the bottom status strip. `force` bypasses the cache
    *  (the manual-refresh affordance). */
   usageFn?: (force?: boolean) => Promise<UsageReport> | UsageReport;
@@ -370,6 +373,7 @@ export function createDaemon(deps: DaemonDeps): Handler {
     }
     if (method === "GET" && deps.fileTree && path === "/api/tree") return json({ tree: deps.fileTree() });
     if (method === "GET" && deps.agentView && path === "/api/agent-view") return json(deps.agentView());
+    if (method === "POST" && deps.agentViewRegen && path === "/api/agent-view/regen") return json(deps.agentViewRegen());
     if (method === "GET" && deps.usageFn && path === "/api/usage")
       return json(await deps.usageFn(url.searchParams.get("refresh") === "1"));
 

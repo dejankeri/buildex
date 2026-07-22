@@ -60,6 +60,9 @@
   .skhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px;flex-wrap:wrap;} .ska{display:flex;gap:7px;}
   .editorpane{overflow-y:auto;padding:24px 30px;} .editor{max-width:660px;} .editor h3{margin:0 0 18px;font-size:16px;} .editor label{display:block;font-size:12px;color:var(--muted);margin-bottom:15px;} .editor input,.editor textarea,.editor select{display:block;width:100%;margin-top:6px;background:var(--bg);border:1px solid var(--line-2);border-radius:8px;padding:9px 11px;color:var(--ink);font:inherit;font-size:13px;box-sizing:border-box;} .editor input:disabled{opacity:.6;} .editor textarea{font-family:var(--mono);font-size:12.5px;line-height:1.55;resize:vertical;} .editor .ebar{display:flex;align-items:center;gap:12px;} .emsg{font-size:12px;} .emsg .good{color:var(--good);} .emsg .warn{color:var(--gate);} .emsg .bad{color:var(--crit);} .ehint{font-size:12px;color:var(--faint);margin-top:14px;line-height:1.55;}
   /* ---------- Brain map (right panel): compact live star + scope lens + accordion loop stages ---------- */
+  .brailhdr{display:flex;justify-content:flex-end;margin:-4px -2px -2px;}
+  .actx-btn{width:26px;height:26px;border:1px solid var(--line-2);background:var(--panel-2);border-radius:7px;color:var(--faint);display:grid;place-items:center;cursor:pointer;padding:0;}
+  .actx-btn:hover{color:var(--brand);border-color:var(--brand);} .actx-btn svg{width:15px;height:15px;display:block;}
   .brailstar{display:grid;place-items:center;padding:4px 0 12px;}
   .brailstar .bsvg{max-width:188px;}
   /* the sections below carry every label + count, so the mini star drops its node labels and reads as

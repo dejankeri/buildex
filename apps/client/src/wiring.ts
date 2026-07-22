@@ -803,7 +803,14 @@ export function buildClientHandler(config: ClientConfig): Handler {
   const agentView = () => {
     const packSkills = new Set<string>();
     for (const p of listPacks(catalogSource, config.roots)) if (p.installed && p.skills) for (const s of p.skills) packSkills.add(s);
-    return buildAgentView(config.workspace, packSkills);
+    return buildAgentView(config.workspace, packSkills, config.roots);
+  };
+  // Force a config rebuild (re-link skills, re-assemble CLAUDE.md, re-pin MCP) then return the fresh
+  // view - the "Regenerate & re-verify" action in the Agent Context viewer, so an operator can PROVE a
+  // just-authored verb landed rather than wait for the next sync.
+  const agentViewRegen = () => {
+    regenConfig();
+    return agentView();
   };
 
   // Bottom status strip - the real Claude subscription usage (opt-in; a documented bright-line
@@ -856,6 +863,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
     projects,
     fileTree,
     agentView,
+    agentViewRegen,
     onboarding,
     ...(config.company ? { company: config.company } : {}),
     ...(config.webRoot ? { webRoot: config.webRoot } : {}),

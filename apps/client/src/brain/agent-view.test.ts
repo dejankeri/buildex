@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildAgentView } from "./agent-view.js";
+import type { Root } from "./graph.js";
 
 let ws: string;
 
@@ -39,7 +40,7 @@ describe("buildAgentView", () => {
     expect(summary.skills.total).toBe(4);
     expect(summary.skills.byRoot).toEqual({ "core": 1, "team-acme": 2, "private-you": 1 });
     expect(summary.skills.fromPacks).toBe(3);
-    expect(summary.mcp).toEqual({ total: 3, fromPacks: 2 });
+    expect(summary.mcp).toEqual({ total: 3, fromPacks: 2, servers: ["buildex-pack:gmail", "buildex-pack:calendly", "some-other"] });
     expect(summary.policyOk).toBe(true);
     expect(summary.claudeMdOk).toBe(true);
   });
@@ -101,5 +102,40 @@ describe("buildAgentView", () => {
     expect(summary.policyOk).toBe(false);
     expect(summary.claudeMdOk).toBe(false);
     expect(tree).toHaveLength(1); // the node still renders, just with empty/absent children
+  });
+
+  it("flags an authored-but-unlinked verb — the check that proves the brain reached the agent", () => {
+    // 'linked-verb' authored AND in origins → wired. 'orphan-verb' authored but NOT in origins → the
+    // agent will never see it. That gap is the whole reason the viewer exists.
+    write("CLAUDE.md", "# rules\n");
+    write(".claude/settings.json", "{}");
+    write(".claude/skill-origins.json", JSON.stringify({ "linked-verb": "team-acme" }));
+    write("team-acme/skills/linked-verb/SKILL.md", "# linked\n");
+    write("team-acme/skills/orphan-verb/SKILL.md", "# orphan\n");
+    const roots: Root[] = [{ name: "team-acme", dir: join(ws, "team-acme") }];
+
+    const { summary, discrepancies } = buildAgentView(ws, new Set(), roots);
+    expect(summary.skills.total).toBe(1); // only the linked one is seen
+    expect(summary.skills.authored).toBe(2); // but two exist on disk
+    const unlinked = discrepancies.filter((d) => d.kind === "skill-unlinked");
+    expect(unlinked).toHaveLength(1);
+    expect(unlinked[0]!.path).toBe("team-acme/skills/orphan-verb/SKILL.md");
+    expect(unlinked[0]!.message).toContain("orphan-verb");
+  });
+
+  it("flags missing standing instructions and missing policy", () => {
+    write(".claude/skill-origins.json", JSON.stringify({ "tidy": "core" }));
+    // no CLAUDE.md, no settings.json
+    const { discrepancies } = buildAgentView(ws, new Set());
+    expect(discrepancies.map((d) => d.kind).sort()).toEqual(["claudemd-missing", "policy-missing"]);
+  });
+
+  it("reports no discrepancies when everything authored is linked and the standing files exist", () => {
+    write("CLAUDE.md", "# rules\n");
+    write(".claude/settings.json", "{}");
+    write(".claude/skill-origins.json", JSON.stringify({ "tidy": "team-acme" }));
+    write("team-acme/skills/tidy/SKILL.md", "# tidy\n");
+    const roots: Root[] = [{ name: "team-acme", dir: join(ws, "team-acme") }];
+    expect(buildAgentView(ws, new Set(), roots).discrepancies).toEqual([]);
   });
 });
