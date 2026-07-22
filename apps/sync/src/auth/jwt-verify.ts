@@ -72,6 +72,7 @@ function isJwtClaims(value: unknown): value is JwtClaims {
   if (typeof c.iss !== "string") return false;
   if (typeof c.exp !== "number") return false;
   if (typeof c.aud !== "string" && !Array.isArray(c.aud)) return false;
+  if (c.nbf !== undefined && typeof c.nbf !== "number") return false;
   return true;
 }
 
@@ -106,7 +107,12 @@ export async function verifyJwt(
   }
   if (signature.length === 0) throw new JwtError("missing signature");
 
-  const jwk = await deps.keys.resolve(header.kid);
+  let jwk: JsonWebKey;
+  try {
+    jwk = await deps.keys.resolve(header.kid);
+  } catch (e) {
+    throw e instanceof JwtError ? e : new JwtError("key resolution failed");
+  }
 
   let publicKey;
   try {
@@ -119,11 +125,14 @@ export async function verifyJwt(
   // '.'), never over the decoded header/payload bytes.
   const signingInput = Buffer.from(`${headerSeg}.${payloadSeg}`, "ascii");
 
+  // Dispatch explicitly on `alg` - no implicit "anything else = ES256" fallthrough. The allow-list
+  // check above already rejects unsupported algs, but this keeps that guard from being the SOLE
+  // gate: an alg that somehow slipped past it still can't ride into either verify branch silently.
   let signatureValid: boolean;
   try {
     if (header.alg === "RS256") {
       signatureValid = cryptoVerify("RSA-SHA256", signingInput, publicKey, signature);
-    } else {
+    } else if (header.alg === "ES256") {
       // ES256 JWT signatures are raw r||s (64 bytes for P-256), not the DER Node expects by
       // default - dsaEncoding: "ieee-p1363" is required or verification silently fails.
       signatureValid = cryptoVerify(
@@ -132,9 +141,12 @@ export async function verifyJwt(
         { key: publicKey, dsaEncoding: "ieee-p1363" },
         signature,
       );
+    } else {
+      // Unreachable given the allow-list check above, but no silent fallthrough on our watch.
+      throw new JwtError(`unsupported alg: ${header.alg}`);
     }
-  } catch {
-    throw new JwtError("signature verification error");
+  } catch (e) {
+    throw e instanceof JwtError ? e : new JwtError("signature verification error");
   }
   if (!signatureValid) throw new JwtError("invalid signature");
 

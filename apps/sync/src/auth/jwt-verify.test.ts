@@ -152,27 +152,32 @@ describe("verifyJwt (RS256)", () => {
     await expect(verifyJwt(token, { keys, now, config: CONFIG })).rejects.toThrow(JwtError);
   });
 
-  it("rejects alg:none outright, never trusting the header to pick 'no signature'", async () => {
+  it("rejects alg:none outright, never trusting the header to pick 'no signature' - isolated from the empty-signature check via a well-formed, non-empty signature segment", async () => {
     const { privateKey, jwk } = generateRsaPair();
-    const header = { alg: "none", typ: "JWT", kid: "test-key-1" };
-    const payload = {
-      sub: "user-123",
-      iss: ISSUER,
-      aud: AUDIENCE,
-      exp: Math.floor(NOW_MS / 1000) + 3600,
-    };
-    const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`;
-    const token = `${signingInput}.`; // alg:none tokens carry an empty signature segment
+    // Deliberately well-formed and non-empty (a real RSA signature over the signing input) so this
+    // test proves the alg allow-list is doing the rejecting, not the separate empty-signature check.
+    const { token } = makeToken(privateKey, jwk, { alg: "none" });
     const keys = makeResolver({ ...jwk, kid: "test-key-1" });
 
     await expect(verifyJwt(token, { keys, now, config: CONFIG })).rejects.toThrow(JwtError);
-    void privateKey; // unused in this alg:none case, kept for symmetry with other tests
   });
 
-  it("rejects an unsupported alg (e.g. HS256) even if otherwise well-formed", async () => {
+  it("rejects an unsupported alg (e.g. HS256) even if otherwise well-formed - isolated from the empty-signature check via a well-formed, non-empty signature segment", async () => {
     const { privateKey, jwk } = generateRsaPair();
     const { token } = makeToken(privateKey, jwk, { alg: "HS256" });
     const keys = makeResolver({ ...jwk, kid: "test-key-1" });
+
+    await expect(verifyJwt(token, { keys, now, config: CONFIG })).rejects.toThrow(JwtError);
+  });
+
+  it("wraps a raw resolver error (e.g. JWKS fetch/network failure) as JwtError, never letting it escape as-is", async () => {
+    const { privateKey, jwk } = generateRsaPair();
+    const { token } = makeToken(privateKey, jwk);
+    const keys: JwkResolver = {
+      resolve: async () => {
+        throw new Error("network down");
+      },
+    };
 
     await expect(verifyJwt(token, { keys, now, config: CONFIG })).rejects.toThrow(JwtError);
   });
