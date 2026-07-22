@@ -7,11 +7,12 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
     // Cap the worker pool. These real-git suites each fork many `git` subprocesses; at the default
-    // one-worker-per-core the heaviest of them (attach / open-account / no-token-on-disk) contend on
-    // disk I/O and flakily blow the 30s timeout - not CPU-bound (the box sits near 48% during a run),
-    // just oversubscribed on concurrent git. Bounding to 4 workers removes the timeouts with NO
-    // wall-clock cost (the suite was never CPU-limited); verified 88/88 files green, deterministically.
-    maxWorkers: 4,
+    // one-worker-per-core the heaviest of them (attach / open-account / no-token-on-disk /
+    // anonymous's real-rebase-conflict case) contend on disk I/O and flakily blow the 30s timeout -
+    // not CPU-bound, just oversubscribed on concurrent git. Started at 4; lowered to 2 as more heavy
+    // real-git files landed (Phase 3 + anonymous onboarding) and 4 began flaking under `task ci` load.
+    // 2 keeps at most two heavy git files running at once; costs some wall-clock, buys determinism.
+    maxWorkers: 2,
     minWorkers: 1,
   },
 });
