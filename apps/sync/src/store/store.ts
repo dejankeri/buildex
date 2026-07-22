@@ -91,6 +91,22 @@ export class ControlPlaneStore {
       );
       CREATE INDEX IF NOT EXISTS idx_runs_company_state ON automation_runs (company_id, state);
     `);
+    this.migrateSupabaseSub();
+  }
+
+  /** Additive migration: link an operator to a Supabase auth user (`sub`), one-to-one.
+   *  node:sqlite's ALTER TABLE cannot add a UNIQUE column directly ("Cannot add a UNIQUE
+   *  column"), so the column is added plain and uniqueness is enforced by a separate unique
+   *  index (SQLite unique indexes still allow any number of NULL rows). Guarded via
+   *  `pragma table_info` so re-running on an already-migrated db is a no-op. */
+  private migrateSupabaseSub(): void {
+    const cols = this.db.prepare("PRAGMA table_info(operators)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "supabase_sub")) {
+      this.db.exec("ALTER TABLE operators ADD COLUMN supabase_sub TEXT");
+    }
+    this.db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_operators_supabase_sub ON operators (supabase_sub)",
+    );
   }
 
   // --- companies & operators ---
@@ -132,6 +148,38 @@ export class ControlPlaneStore {
       email: row["email"] as string,
       status: row["status"] as Status,
     };
+  }
+
+  /** Resolve the operator (and its company) linked to a Supabase auth user's `sub`, or null. */
+  findOperatorBySupabaseSub(sub: string): { operatorId: string; companyId: string } | null {
+    const row = this.db
+      .prepare("SELECT id, company_id FROM operators WHERE supabase_sub = ?")
+      .get(sub) as { id: string; company_id: string } | undefined;
+    if (!row) return null;
+    return { operatorId: row.id, companyId: row.company_id };
+  }
+
+  /** Link a Supabase auth user's `sub` to an operator, one-to-one. Throws if that sub is
+   *  already linked to a different operator (enforced by the unique index). */
+  linkOperatorSupabaseSub(operatorId: string, sub: string): void {
+    this.db.prepare("UPDATE operators SET supabase_sub = ? WHERE id = ?").run(sub, operatorId);
+  }
+
+  /** Does a company with this slug already exist? Used by `slugFromEmail` to find a free slug. */
+  private companyExistsBySlug(slug: string): boolean {
+    return this.db.prepare("SELECT 1 FROM companies WHERE slug = ?").get(slug) !== undefined;
+  }
+
+  /** Derive a company-of-one slug from an email's local-part: lowercased, non-alphanumerics
+   *  collapsed to '-', trimmed; suffixed -2, -3, ... until a free slug is found. */
+  slugFromEmail(email: string): string {
+    const local = email.split("@")[0] ?? "";
+    const base = local.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "company";
+    let slug = base;
+    for (let n = 2; this.companyExistsBySlug(slug); n++) {
+      slug = `${base}-${n}`;
+    }
+    return slug;
   }
 
   // --- setup tokens (one-time, TTL) ---

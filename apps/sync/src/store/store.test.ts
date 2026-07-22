@@ -174,6 +174,52 @@ describe("secrets invariant: hash-at-rest", () => {
   });
 });
 
+describe("supabase_sub mapping (company-of-one)", () => {
+  it("returns null when no operator is linked to the sub", () => {
+    expect(store.findOperatorBySupabaseSub("s1")).toBeNull();
+  });
+
+  it("links a sub to an operator and resolves it back to operator+company", () => {
+    store.createCompany({ id: "c1", slug: "acme", name: "Acme" });
+    store.createOperator({ id: "o1", companyId: "c1", email: "a@acme.com" });
+    store.linkOperatorSupabaseSub("o1", "s1");
+    expect(store.findOperatorBySupabaseSub("s1")).toEqual({ operatorId: "o1", companyId: "c1" });
+  });
+
+  it("rejects linking the same sub to a second operator (UNIQUE)", () => {
+    store.createCompany({ id: "c1", slug: "acme", name: "Acme" });
+    store.createOperator({ id: "o1", companyId: "c1", email: "a@acme.com" });
+    store.createOperator({ id: "o2", companyId: "c1", email: "b@acme.com" });
+    store.linkOperatorSupabaseSub("o1", "s1");
+    expect(() => store.linkOperatorSupabaseSub("o2", "s1")).toThrow();
+  });
+
+  it("does not error when the migration runs again on an existing db (idempotent)", () => {
+    store.createCompany({ id: "c1", slug: "acme", name: "Acme" });
+    store.createOperator({ id: "o1", companyId: "c1", email: "a@acme.com" });
+    store.linkOperatorSupabaseSub("o1", "s1");
+    store.close();
+
+    const reopened = new ControlPlaneStore(join(dir, "control.db"), clock.now);
+    expect(reopened.findOperatorBySupabaseSub("s1")).toEqual({ operatorId: "o1", companyId: "c1" });
+    reopened.close();
+  });
+});
+
+describe("slugFromEmail - de-duplicating slug helper", () => {
+  it("derives a slug from the local part of an email: lowercased, non-alphanumerics collapsed to '-'", () => {
+    expect(store.slugFromEmail("Ann.Lee@acme.io")).toBe("ann-lee");
+  });
+
+  it("suffixes -2, -3, ... when the slug is already taken by a company", () => {
+    store.createCompany({ id: "c1", slug: "ann-lee", name: "Ann Lee" });
+    expect(store.slugFromEmail("ann.lee@x.com")).toBe("ann-lee-2");
+
+    store.createCompany({ id: "c2", slug: "ann-lee-2", name: "Ann Lee 2" });
+    expect(store.slugFromEmail("ann.lee@y.com")).toBe("ann-lee-3");
+  });
+});
+
 describe("persistence across reopen", () => {
   it("survives a close and reopen", () => {
     store.createCompany({ id: "c1", slug: "acme", name: "Acme" });
