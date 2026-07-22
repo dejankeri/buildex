@@ -57,7 +57,14 @@ async function post(deps: Deps, path: string, body: unknown): Promise<ProvisionR
     }
     throw new ProvisionError(msg, res.status);
   }
-  const parsed = (await res.json()) as unknown;
+  let parsed: unknown;
+  try {
+    parsed = (await res.json()) as unknown;
+  } catch {
+    // An unparseable 200 body is as malformed as a missing field - symmetric with the error path,
+    // so it too surfaces as a typed ProvisionError, never a raw SyntaxError escaping the module.
+    throw new ProvisionError("sync server returned a malformed credential response", res.status);
+  }
   if (!isResult(parsed)) throw new ProvisionError("sync server returned a malformed credential response", res.status);
   return parsed;
 }

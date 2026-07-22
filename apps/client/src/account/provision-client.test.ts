@@ -47,6 +47,14 @@ describe("provision", () => {
     const f = fakeFetch(200, { repos: OK.repos }); // no machineToken
     await expect(refresh({ fetch: f, baseUrl: "https://sync.test" }, "xrefresh_x")).rejects.toBeInstanceOf(ProvisionError);
   });
+
+  it("rejects an unparseable 200 body as a ProvisionError, not a raw SyntaxError", async () => {
+    // Symmetric with the error path, which already guards res.json(). A garbage 200 must not escape
+    // the module as a SyntaxError - callers only handle ProvisionError.
+    const f = (async () => new Response("this is not json{", { status: 200 })) as unknown as typeof fetch;
+    await expect(provision({ fetch: f, baseUrl: "https://sync.test" }, { setupToken: "x", machineName: "m" }))
+      .rejects.toBeInstanceOf(ProvisionError);
+  });
 });
 
 describe("refresh", () => {
