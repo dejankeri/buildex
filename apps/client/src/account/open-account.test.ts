@@ -97,6 +97,27 @@ describe("openAccount", () => {
 });
 
 describe("persistAndAttach", () => {
+  it("refuses a SANDBOX org before account.save runs - self-guards even without a caller-side check", async () => {
+    // persistAndAttach must be safe to call directly (e.g. a future sign-in path), not just via
+    // openAccount's guard. Calling it with sandbox:true must throw BEFORE account.save, so no
+    // credentials land on the keychain and no account.json is written.
+    const roots = localRoots();
+    const provisioned = {
+      machineToken: "xmachine_" + "e".repeat(48),
+      refreshToken: "xrefresh_" + "f".repeat(48),
+      repos: { core: "file:///unused-core", team: "file:///unused-team", private: "file:///unused-private" },
+    };
+    const keychain = new InMemoryKeychain();
+    const account = new AccountStore({ orgId: "sandbox-org", orgDir: join(root, "org"), keychain });
+
+    await expect(
+      persistAndAttach({ account, engine: engine(), roots, sandbox: true }, "https://sync.test", provisioned),
+    ).rejects.toThrow(/sandbox/i);
+
+    expect(keychain.get("org:sandbox-org:machine-token")).toBeUndefined(); // no credentials persisted
+    expect(existsSync(join(root, "org", "account.json"))).toBe(false); // no account.json written
+  });
+
   it("saves account.json and first-publishes the team ref on a real file:// bare set - proving the extraction preserved openAccount's guarantees", async () => {
     const repos = bares();
     const roots = localRoots();
