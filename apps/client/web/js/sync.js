@@ -29,7 +29,10 @@ function setSync(state) {
       // only what stays true either way: the work is safe on this machine, waiting to be sent.
       queued: "Saved on this machine - click Save again to send it",
       help: "Needs attention - a change couldn't sync automatically",
-      local: "Local workspace - everything stays on your machine (team sync accounts are coming)",
+      // "local" only ever paints once syncDotState (projects.js) has decided there's no connected
+      // account - so this copy retires on its own the moment the operator connects one (Task 10);
+      // it must never claim accounts are still "coming", since that's exactly what this state means.
+      local: "Local workspace - stays on this machine until you connect an account",
       unsaved: "You have unsaved work · click to save",
     }[state] || "Synced";
   // "unsaved" already tells the operator what the click does (save); every other state's click opens
