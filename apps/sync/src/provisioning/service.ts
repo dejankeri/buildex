@@ -65,7 +65,12 @@ export class ProvisioningService {
    *  instead of a setup token: no invite required, one operator per company. Idempotent - the
    *  same `sub` always resolves to the same company/operator; each call mints a fresh machine
    *  token pair. */
-  async provisionBySession(opts: { sub: string; email?: string; machineName: string }): Promise<Credentials> {
+  async provisionBySession(opts: {
+    sub: string;
+    email?: string;
+    companyName?: string;
+    machineName: string;
+  }): Promise<Credentials> {
     const { store, git } = this.deps;
 
     const existing = store.findOperatorBySupabaseSub(opts.sub);
@@ -75,9 +80,9 @@ export class ProvisioningService {
 
     // Tight read -> create: no `await` between resolving the slug and inserting the company, so
     // two concurrent sign-ins for a brand-new email can't both land on the same fallback slug.
-    const slug = store.slugFromEmail(opts.email ?? "user");
+    const slug = opts.companyName ? store.slugFromName(opts.companyName) : store.slugFromEmail(opts.email ?? "user");
     const companyId = this.deps.idFactory();
-    store.createCompany({ id: companyId, slug, name: slug });
+    store.createCompany({ id: companyId, slug, name: opts.companyName ?? slug });
     const operatorId = this.deps.idFactory();
     store.createOperator({ id: operatorId, companyId, email: opts.email ?? "" });
     store.linkOperatorSupabaseSub(operatorId, opts.sub);

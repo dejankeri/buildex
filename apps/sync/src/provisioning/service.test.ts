@@ -162,4 +162,30 @@ describe("provisionBySession", () => {
     expect(creds.machineToken.startsWith("xmachine_")).toBe(true);
     expect(store.findOperatorBySupabaseSub("s3")).not.toBeNull();
   });
+
+  it("uses a typed companyName for the slug and stores it as the company's display name", async () => {
+    const creds = await svc.provisionBySession({ sub: "a1", companyName: "Acme Labs", machineName: "m" });
+
+    expect(creds.repos.team).toBe("team-acme-labs");
+    const link = store.findOperatorBySupabaseSub("a1");
+    expect(link).not.toBeNull();
+    const company = store.getCompany(link!.companyId);
+    expect(company).toMatchObject({ slug: "acme-labs", name: "Acme Labs" });
+  });
+
+  it("is idempotent for the same sub even when companyName is passed again", async () => {
+    const first = await svc.provisionBySession({ sub: "a2", companyName: "Acme Labs", machineName: "m1" });
+    const firstLink = store.findOperatorBySupabaseSub("a2");
+
+    const second = await svc.provisionBySession({ sub: "a2", companyName: "Acme Labs", machineName: "m2" });
+    const secondLink = store.findOperatorBySupabaseSub("a2");
+
+    expect(secondLink).toEqual(firstLink);
+    expect(second.repos).toEqual(first.repos);
+  });
+
+  it("falls back to slugFromEmail/'user' when companyName is not given", async () => {
+    const creds = await svc.provisionBySession({ sub: "a3", email: "b@beta.io", machineName: "m1" });
+    expect(creds.repos.team).toBe("team-b");
+  });
 });
