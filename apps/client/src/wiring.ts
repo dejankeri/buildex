@@ -58,6 +58,7 @@ import { makeTokenProvider } from "./account/token-provider.js";
 import { gitAuthEnv } from "./account/credentials.js";
 import { openAccount as runOpenAccount, persistAndAttach } from "./account/open-account.js";
 import { signIn as runSignIn } from "./account/sign-in.js";
+import { signUpAnonymous } from "./account/anonymous.js";
 import { postSession } from "./account/session-client.js";
 import { openBrowser, realLoopbackServer, realSupabaseAuthClient, randomState, pkce } from "./account/real-seams.js";
 
@@ -383,6 +384,29 @@ export function buildClientHandler(config: ClientConfig): Handler {
         result,
       );
     };
+  })();
+  // Anonymous onboarding (Task 4): the operator never leaves the app - an anonymous Supabase user is
+  // minted no-browser (signUpAnonymous), then handed to the SAME postSession→persistAndAttach tail as
+  // `signIn` above. Gated identically (account seam + Supabase project config); absent either,
+  // `onboard` stays undefined and `/api/onboard` stays dormant (501) - the default today.
+  const onboard: ((input: { companyName: string }) => Promise<{ state: "connected" | "needs-help" }>) | undefined = (() => {
+    if (!account || !config.supabase) return undefined;
+    const acc = account;
+    const supabaseCfg = config.supabase;
+    return (input: { companyName: string }): Promise<{ state: "connected" | "needs-help" }> =>
+      signUpAnonymous(
+        {
+          supabase: realSupabaseAuthClient({ supabaseUrl: supabaseCfg.url, anonKey: supabaseCfg.anonKey, fetch: fetchImpl }),
+          account: acc,
+          engine: sync,
+          roots: config.roots,
+          sandbox: config.sandbox ?? false,
+          fetch: fetchImpl,
+          baseUrl: supabaseCfg.baseUrl,
+          machineName: hostname(),
+        },
+        input,
+      );
   })();
   // Regenerate the native agent config, threading the (optional) gate-hook command. Used after a
   // skill is authored and by the sync route, so the workspace's .claude stays consistent.
@@ -892,6 +916,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
     openAccount,
     accountState,
     signIn,
+    onboard,
     vault,
     saveDoc,
     fsOps,

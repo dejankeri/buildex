@@ -223,6 +223,10 @@ export interface DaemonDeps {
    *  Optional: absent whenever no Supabase client config is wired (the default today), so
    *  `POST /api/signin` stays dormant (501) rather than half-working. */
   signIn?: () => Promise<{ state: "connected" | "needs-help" }>;
+  /** Anonymous onboarding: mint an anonymous account no-browser and attach it under the given company
+   *  name. Optional: absent whenever no Supabase client config is wired (the same gate as `signIn`),
+   *  so `POST /api/onboard` stays dormant (501) rather than half-working. */
+  onboard?: (input: { companyName: string }) => Promise<{ state: "connected" | "needs-help" }>;
 }
 
 export interface TreeNode {
@@ -715,6 +719,22 @@ export function createDaemon(deps: DaemonDeps): Handler {
         return json(await deps.signIn());
       } catch (e) {
         const msg = e instanceof Error ? e.message : "could not sign in";
+        const status = /sandbox/i.test(msg) ? 409 : 400;
+        return json({ error: msg }, status);
+      }
+    }
+    // Anonymous onboarding: the operator names their company and gets an anonymous account with no
+    // browser round-trip. Dormant (501) whenever `onboard` isn't wired - the same gate as `/api/signin`
+    // - so the console can treat "not configured" and "failed" as distinct outcomes. Errors map
+    // exactly like /api/signin above: sandbox → 409, else 400, never a raw 500.
+    if (method === "POST" && path === "/api/onboard") {
+      if (!deps.onboard) return json({ error: "sign-in not configured" }, 501);
+      const { companyName } = await body<{ companyName?: string }>(req, { companyName: "string" });
+      if (!companyName || !companyName.trim()) return json({ error: "companyName is required" }, 400);
+      try {
+        return json(await deps.onboard({ companyName }));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "could not onboard";
         const status = /sandbox/i.test(msg) ? 409 : 400;
         return json({ error: msg }, status);
       }
