@@ -709,3 +709,29 @@ describe("/api/onboard", () => {
     expect(((await res.json()) as { error: string }).error).toMatch(/taken/);
   });
 });
+
+// Local disconnect of the active org (Task 2). Unwired whenever `logout` isn't gated in (no account
+// store - e.g. the sandbox), matching /api/account's own unwired shape: the route just doesn't match
+// and the request falls through to the daemon's terminal 404, never a raw 500.
+describe("/api/logout", () => {
+  it("falls through to the daemon's 404 when logout isn't wired", async () => {
+    const { app } = makeDaemon();
+    const res = await app(post("/api/logout", {}));
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not found" });
+  });
+
+  it("runs the wired logout and returns its resulting state", async () => {
+    const { app } = makeDaemon({ logout: async () => ({ state: "local" as const }) });
+    const res = await app(post("/api/logout", {}));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ state: "local" });
+  });
+
+  it("maps any throw to a terse 400, never a 500", async () => {
+    const { app } = makeDaemon({ logout: async () => { throw new Error("could not remove remote"); } });
+    const res = await app(post("/api/logout", {}));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/could not remove remote/);
+  });
+});

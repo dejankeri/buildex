@@ -57,6 +57,7 @@ import { AccountStore } from "./account/account-store.js";
 import { makeTokenProvider } from "./account/token-provider.js";
 import { gitAuthEnv } from "./account/credentials.js";
 import { openAccount as runOpenAccount, persistAndAttach } from "./account/open-account.js";
+import { disconnect as runDisconnect } from "./account/disconnect.js";
 import { signIn as runSignIn } from "./account/sign-in.js";
 import { signUpAnonymous } from "./account/anonymous.js";
 import { postSession } from "./account/session-client.js";
@@ -350,6 +351,15 @@ export function buildClientHandler(config: ClientConfig): Handler {
     const a = account?.load();
     return a ? { state: "connected", operatorId: a.operatorId, companySlug: a.companySlug, remotes: a.repos } : { state: "local" };
   };
+  // Local disconnect (Task 2): the reverse of openAccount - detach every root's remote and clear the
+  // account store, reverting to a clean local-only state while keeping git history (invariant 8).
+  // Gated identically to openAccount/accountState (an account store must exist - absent for the
+  // sandbox, which has nothing to disconnect), reusing the SAME `sync` engine and `account` store
+  // those closures already read from above. Absent, `logout` stays undefined and `POST /api/logout`
+  // is simply unwired (falls through to the daemon's terminal 404) - a normal boot is unaffected.
+  const logout = account
+    ? (): Promise<{ state: "local" }> => runDisconnect({ engine: sync, account, roots: config.roots })
+    : undefined;
   // The browser sign-in→attach chain (Task 10): system-browser OAuth via Supabase (sign-in.ts), then
   // the SAME postSession→persistAndAttach tail the setup-token flow above ends in. Gated on BOTH an
   // account seam (org id+dir - openAccount's own precondition) and a Supabase project config -
@@ -923,6 +933,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
     usageFn,
     openAccount,
     accountState,
+    logout,
     signIn,
     onboard,
     vault,
