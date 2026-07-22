@@ -117,6 +117,12 @@ export class SyncEngine {
     return "ok";
   }
 
+  /** Point (or re-point) a root's `origin` at `url`, idempotently. No fetch, no auth needed. */
+  async addRemote(dir: string, url: string): Promise<void> {
+    if (await this.hasRemote(dir)) await this.git(["remote", "set-url", "origin", url], dir);
+    else await this.git(["remote", "add", "origin", url], dir);
+  }
+
   // --- internals ---
 
   /** Stage everything except workspace-internal paths (which must never enter a commit). */
