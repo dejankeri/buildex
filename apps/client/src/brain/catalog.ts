@@ -102,6 +102,31 @@ export interface PackProvision {
   /** Public page describing the grant. */
   docsUrl: string;
 }
+/** The e2e-testing face: how the test engine mints, seeds, and destroys a THROWAWAY workspace on
+ *  the provider. A client, not a faucet - the provider's server gates who may mint (the operator's
+ *  sandbox admin secret lives in the keychain, never here). The minted workspace credential rides
+ *  the pack's existing mcp-bearer api-key path, so a sandbox-testable pack needs that face too.
+ *  Spec: docs/sandbox-face.md. */
+export interface PackSandbox {
+  /** POST mints a workspace ({name, host} body). Must NOT contain `{id}`. */
+  createUrl: string;
+  /** DELETE destroys it. Must contain the literal `{id}` placeholder. */
+  destroyUrl: string;
+  /** Optional POST bulk-seed. Must contain `{id}` when present. */
+  seedUrl?: string;
+  /** Header carrying the sandbox admin secret. Default "x-sandbox-key". */
+  authHeader?: string;
+  /** Dotted path to the workspace id in the create response. */
+  idPath: string;
+  /** Dotted path to the workspace-scoped API key in the create response. */
+  keyPath: string;
+  /** Dotted path to a workspace-specific MCP url; default = the pack's own mcp.url. */
+  mcpUrlPath?: string;
+  /** Public page describing the provider's sandbox program. */
+  docsUrl: string;
+  /** Short hint shown where the operator pastes the sandbox admin secret. */
+  hint?: string;
+}
 
 export interface PackManifest {
   id: string;
@@ -112,6 +137,7 @@ export interface PackManifest {
   mcp?: PackMcp;
   apiKey?: PackApiKey;
   provision?: PackProvision;
+  sandbox?: PackSandbox;
   skills?: string[];
   policy?: { allow?: string[]; ask?: string[]; deny?: string[] };
 }
@@ -119,7 +145,7 @@ export interface PackMeta extends PackManifest {
   installed: boolean;
   /** The writable root a pack is installed in (team|private), or undefined if not installed. */
   installedIn?: string;
-  faces: { app: boolean; mcp: boolean; apiKey: boolean; provision: boolean; skills: number };
+  faces: { app: boolean; mcp: boolean; apiKey: boolean; provision: boolean; sandbox: boolean; skills: number };
   /** True when this pack's escape-hatch credential has been provisioned on this machine. */
   provisioned?: boolean;
   /** True when a static API key is stored for this pack (set by callers with keychain access, e.g.
@@ -188,6 +214,29 @@ function validProvision(p: PackProvision): boolean {
   return true;
 }
 
+/** Validate the sandbox face. Face-level fail-closed: unlike a malformed policy (which drops the
+ *  whole pack, because a silently missing gate is dangerous), a malformed sandbox face only strips
+ *  ITSELF - a broken test seam must never cost an operator a working app. The cross-face rule is
+ *  structural: the minted key can only reach the provider over the pack's mcp-bearer api-key pin,
+ *  so without that face (and an http mcp url for it to ride) the sandbox face is meaningless. */
+function validSandbox(m: PackManifest): boolean {
+  const s = m.sandbox;
+  if (typeof s !== "object" || s === null) return false;
+  const str = (v: unknown) => typeof v === "string" && v.trim().length > 0;
+  if (!str(s.createUrl) || !str(s.destroyUrl) || !str(s.idPath) || !str(s.keyPath) || !str(s.docsUrl)) return false;
+  for (const u of [s.createUrl, s.destroyUrl, ...(s.seedUrl !== undefined ? [s.seedUrl] : []), s.docsUrl]) {
+    if (typeof u !== "string" || !u.startsWith("https://")) return false;
+  }
+  if (s.createUrl.includes("{id}")) return false;
+  if (!s.destroyUrl.includes("{id}")) return false;
+  if (s.seedUrl !== undefined && !s.seedUrl.includes("{id}")) return false;
+  for (const k of ["authHeader", "mcpUrlPath", "hint"] as const) {
+    if (s[k] !== undefined && !str(s[k])) return false;
+  }
+  if (m.apiKey?.transport !== "mcp-bearer" || m.mcp?.kind !== "http" || !m.mcp.url) return false;
+  return true;
+}
+
 /** Validate + normalize a raw manifest; returns undefined if it must be skipped. */
 function parsePack(dir: string, id: string): PackManifest | undefined {
   let m: PackManifest;
@@ -206,6 +255,7 @@ function parsePack(dir: string, id: string): PackManifest | undefined {
     if (m.mcp.policy !== undefined && !validPackPolicy(m.mcp.policy)) return undefined;
   }
   if (m.provision && !validProvision(m.provision)) return undefined;
+  if (m.sandbox && !validSandbox(m)) delete m.sandbox;
   if (!m.app && !m.mcp && countSkills(dir, m.skills) === 0) return undefined; // must have ≥1 face
   return m;
 }
@@ -249,7 +299,7 @@ export function listPacks(source: CatalogSource, roots: Root[]): PackMeta[] {
       ...m,
       installed: !!inRoot,
       ...(inRoot ? { installedIn: inRoot } : {}),
-      faces: { app: !!m.app, mcp: !!m.mcp, apiKey: !!m.apiKey, provision: !!m.provision, skills: countSkills(dir, m.skills) },
+      faces: { app: !!m.app, mcp: !!m.mcp, apiKey: !!m.apiKey, provision: !!m.provision, sandbox: !!m.sandbox, skills: countSkills(dir, m.skills) },
     });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
@@ -330,6 +380,12 @@ export function provisionKeychainKey(id: string): string {
 /** Keychain key holding the API base URL issued alongside that credential. */
 export function provisionBaseKeychainKey(id: string): string {
   return `connector:${id}:provisioned-base`;
+}
+/** Keychain key holding the operator's sandbox admin secret (the provider-minted faucet key). A
+ *  FOURTH namespace: distinct from :apikey / OAuth / :provisioned so clearing one never silently
+ *  revokes another - and this one only ever mints throwaway workspaces. */
+export function sandboxKeychainKey(id: string): string {
+  return `connector:${id}:sandbox`;
 }
 
 /** A minimal secret reader - the client Keychain satisfies it structurally. */
