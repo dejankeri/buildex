@@ -1,6 +1,6 @@
 // apps/client/src/account/attach.test.ts
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -63,5 +63,38 @@ describe("attachOrg", () => {
   it("refuses to attach a sandbox org", async () => {
     const roots = [{ name: "team", dir: localRoot("team", "t.md") }];
     await expect(attachOrg({ engine: engine(), roots, repos: repos(), sandbox: true })).rejects.toThrow(/sandbox/i);
+  });
+
+  it("rebases local work on top of a teammate's existing upstream, then pushes both up (second operator)", async () => {
+    const r = repos();
+
+    // A teammate already pushed to the team remote. Seed it by cloning the bare, committing, pushing.
+    const seed = join(root, "seed");
+    git(["clone", r.team.replace("file://", ""), seed], root);
+    writeFileSync(join(seed, "teammate.md"), "from teammate\n");
+    git(["add", "-A"], seed); git(["commit", "-m", "teammate work"], seed);
+    git(["push", "origin", "HEAD:main"], seed);
+
+    // This laptop has its OWN local team work that never touched the remote.
+    const roots = [
+      { name: "core", dir: localRoot("core", "c.md") },
+      { name: "team", dir: localRoot("team", "mine.md") },
+      { name: "private", dir: localRoot("private", "p.md") },
+    ];
+
+    const res = await attachOrg({ engine: engine(), roots, repos: r, sandbox: false });
+    expect(res.status).toBe("connected");
+
+    // Local now contains BOTH the teammate's file (rebased under it) and its own file (rebased on top).
+    const teamDir = roots[1]!.dir;
+    expect(existsSync(join(teamDir, "teammate.md"))).toBe(true); // upstream work was taken in
+    expect(existsSync(join(teamDir, "mine.md"))).toBe(true);     // local work was preserved (invariant 8)
+
+    // The remote received the local commit on top of the teammate's - nothing was lost either way.
+    const log = git(["log", "--oneline", "origin/main"], teamDir);
+    expect(log).toContain("teammate work");
+    const remoteHead = git(["ls-remote", r.team.replace("file://", ""), "refs/heads/main"], root);
+    const localHead = git(["rev-parse", "HEAD"], teamDir).trim();
+    expect(remoteHead).toContain(localHead); // local HEAD is what the remote now points at
   });
 });
