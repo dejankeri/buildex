@@ -21,18 +21,20 @@ function routeFetch(w: any, routes: Array<[string, unknown]>): void {
 }
 
 describe("console (jsdom) — startSignIn() modal", () => {
-  it("opens a modal offering Sign in with Google, an email option, and a setup-code fallback", () => {
+  it("opens a modal offering Sign in with Google and a setup-code fallback", () => {
     const { doc, c } = loadConsole();
     c.startSignIn();
     const card = doc.querySelector(".wz-card");
     expect(card).not.toBeNull();
     expect(doc.querySelector("#wz-signin-google")).not.toBeNull();
-    expect(doc.querySelector("#wz-signin-email")).not.toBeNull();
-    expect(doc.querySelector("#wz-signin-emailgo")).not.toBeNull();
     expect(doc.querySelector("#wz-signin-code")).not.toBeNull();
     expect(card!.textContent).toContain("Sign in with Google");
-    expect(card!.textContent).toContain("Email me a link");
     expect(card!.textContent).toContain("Have a setup code?");
+    // The "Email me a link" button was removed - there is no email-magic-link backend, and the
+    // daemon's /api/signin reads no request body so it can't tell email apart from Google anyway.
+    expect(doc.querySelector("#wz-signin-email")).toBeNull();
+    expect(doc.querySelector("#wz-signin-emailgo")).toBeNull();
+    expect(card!.textContent).not.toContain("Email me a link");
     // operator copy only - no engineer jargon leaks into the dialog
     expect(card!.textContent).not.toMatch(BANNED);
   });
@@ -83,28 +85,47 @@ describe("console (jsdom) — startSignIn() modal", () => {
     expect(doc.querySelector("#convos .project")).not.toBeNull(); // refreshProjects() repainted the rail
   });
 
-  it("Email me a link POSTs {email} once a value is entered, and does nothing while it's empty", async () => {
+  it("on {state:'needs-help'} shows an attention message, leaves the modal up, and does not refresh", async () => {
     const { doc, w, c } = loadConsole();
-    let posted: unknown = null;
+    const fetched: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (w as any).fetch = (url: string, opts: any) => {
+      const u = String(url);
+      fetched.push(u);
+      if (u.includes("/api/signin") && opts && opts.method === "POST") {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ state: "needs-help" }) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+    };
+    c.startSignIn();
+    (doc.querySelector("#wz-signin-google") as unknown as { click(): void }).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(doc.querySelector(".signin-modal")).not.toBeNull(); // modal stays up - not a "connected" state
+    expect(doc.querySelector(".wz-card")!.textContent).toContain(
+      "Connected, but your account needs attention - please contact your company."
+    );
+    // refreshProjects() was NOT invoked - it would have hit /api/projects
+    expect(fetched.some((u) => u.includes("/api/projects"))).toBe(false);
+    expect(doc.querySelector(".wz-card")!.textContent).not.toMatch(BANNED);
+  });
+
+  it("on {error:'sign-in not configured'} (the dormant 501) shows friendly copy, never the raw string", async () => {
+    const { doc, w, c } = loadConsole();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (w as any).fetch = (url: string, opts: any) => {
       const u = String(url);
       if (u.includes("/api/signin") && opts && opts.method === "POST") {
-        posted = JSON.parse(opts.body);
-        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ state: "sent" }) });
+        return Promise.resolve({ ok: false, status: 501, json: () => Promise.resolve({ error: "sign-in not configured" }) });
       }
-      return Promise.reject(new Error("no route: " + u));
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
     };
     c.startSignIn();
-    (doc.querySelector("#wz-signin-emailgo") as unknown as { click(): void }).click();
+    (doc.querySelector("#wz-signin-google") as unknown as { click(): void }).click();
     await new Promise((r) => setTimeout(r, 0));
-    expect(posted).toBeNull(); // empty email - never posted
-    expect(doc.querySelector(".signin-modal")).not.toBeNull(); // still open
-
-    (doc.querySelector("#wz-signin-email") as unknown as { value: string }).value = "dan@acme.dev";
-    (doc.querySelector("#wz-signin-emailgo") as unknown as { click(): void }).click();
-    await new Promise((r) => setTimeout(r, 0));
-    expect(posted).toEqual({ email: "dan@acme.dev" });
+    const text = doc.querySelector(".wz-card")!.textContent!;
+    expect(text).not.toContain("sign-in not configured"); // never the raw internal string
+    expect(text).toMatch(/setup code/i); // nudges toward the working fallback
+    expect(text).not.toMatch(BANNED);
   });
 
   it("shows the returned error inline on a 4xx and leaves the form up to retry", async () => {

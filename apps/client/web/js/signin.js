@@ -7,16 +7,24 @@
 // (pending.js), both shown only while the workspace has no connected account. Complements
 // openConnectAccount() (account.js), which asks for a Company URL + Setup code straight away -
 // right for an operator who already has those details (e.g. from an invite). This modal leads with
-// Sign in with Google (no setup code needed at all), offers an email link as a fallback, and tucks
-// the setup-code flow behind a "Have a setup code?" disclosure that hands off to
-// openConnectAccount() unchanged.
+// Sign in with Google (no setup code needed at all), and tucks the setup-code flow behind a
+// "Have a setup code?" disclosure that hands off to openConnectAccount() unchanged.
+//
+// DEFERRED: an "Email me a link" option was dropped from this modal. The daemon's /api/signin
+// reads no request body (see daemon.ts), so it cannot tell an email flow from a Google flow - there
+// is no email-magic-link backend behind it, and the wired handler always does Google OAuth.
+// Shipping an email button here would silently run Google anyway. Re-add it once a real
+// magic-link backend exists.
 // Operator copy only: "Sign in", "back up & sync", "your company" - never push/commit/branch/merge/diff/token/JWT.
 
 /**
- * Open the sign-in modal. Two primary actions - "Sign in with Google" and "Email me a link" - each
- * POST /api/signin; on {state:"connected"} the modal tears down and refreshProjects() repaints the
- * console. A returned error shows inline and the form stays up to retry. A secondary "Have a setup
- * code?" link steps aside entirely into the existing connect-an-account flow.
+ * Open the sign-in modal. Its one primary action - "Sign in with Google" - POSTs /api/signin; on
+ * {state:"connected"} the modal tears down and refreshProjects() repaints the console. On
+ * {state:"needs-help"} - a real conflict flagged during attach, not a retry failure - a message
+ * explaining the account needs attention shows inline and the form stays up (mirrors
+ * openConnectAccount() in account.js). Any other error shows inline the same way, for the operator
+ * to retry. A secondary "Have a setup code?" link steps aside entirely into the existing
+ * connect-an-account flow.
  * @returns {void}
  */
 function startSignIn() {
@@ -32,9 +40,6 @@ function startSignIn() {
       '<div class="wz-body"><p>Back up your work to your company, free.</p>' +
       '<div class="wz-connect">' +
       '<button class="wz-primary wz-full" id="wz-signin-google" type="button">Sign in with Google</button>' +
-      '<div class="wz-or"><span>or</span></div>' +
-      '<label class="wz-field">Email<input id="wz-signin-email" type="email" autocomplete="off" placeholder="you@yourcompany.com"></label>' +
-      '<button class="wz-ghost wz-full" id="wz-signin-emailgo" type="button">Email me a link</button>' +
       (error ? '<div class="wz-err">' + esc(error) + '</div>' : '') +
       '</div>' +
       '<button class="wz-link" id="wz-signin-code" type="button">Have a setup code?</button>' +
@@ -62,18 +67,20 @@ function startSignIn() {
         if (typeof refreshProjects === "function") refreshProjects().catch(() => {});
       } else {
         btn.disabled = false; btn.textContent = label;
-        error = (res && res.error) || "Could not sign in - please try again.";
+        if (res && res.state === "needs-help") {
+          error = "Connected, but your account needs attention - please contact your company.";
+        } else if (res && res.error === "sign-in not configured") {
+          // The daemon's /api/signin is dormant until the owner wires up Supabase - never surface
+          // that raw internal string to the operator; point them at the flow that already works.
+          error = "Sign-in isn't available yet - you can connect with a setup code instead.";
+        } else {
+          error = (res && res.error) || "Could not sign in - please try again.";
+        }
         draw();
       }
     };
     card.querySelector("#wz-signin-google").onclick = () =>
       signIn({ provider: "google" }, card.querySelector("#wz-signin-google"), "Opening Google…");
-    card.querySelector("#wz-signin-emailgo").onclick = () => {
-      const emailInput = card.querySelector("#wz-signin-email");
-      const email = emailInput.value.trim();
-      if (!email) { emailInput.focus(); return; } // nothing to send yet - stay put, don't POST
-      signIn({ email }, card.querySelector("#wz-signin-emailgo"), "Sending…");
-    };
   };
   draw();
 }
