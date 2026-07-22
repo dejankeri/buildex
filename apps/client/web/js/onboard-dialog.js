@@ -3,8 +3,10 @@
 //
 // Part of the operator console (web/index.html). Classic script — loaded in order via
 // <script src>, sharing one global scope. NOT an ES module.
-// Fired once on first run (see boot.js, which checks GET /api/onboarding's `firstRun` before
-// calling openOnboard(), the same gate checkOnboarding() in onboarding.js uses for the wizard).
+// Fired once on first run, BEFORE the wizard (see boot.js, which checks GET /api/onboarding's
+// `firstRun` - the same gate checkOnboarding() in onboarding.js uses - then awaits openOnboard()
+// and always runs checkOnboarding() after it; this dialog never marks onboarding complete, so the
+// wizard still sees firstRun:true and runs its full step sequence, including "Connect your agent").
 // Reads GET /api/sync for `signInAvailable` to decide whether to offer a cloud option at all: when
 // sign-in is dormant (today's default - no Supabase config), the dialog never advertises a cloud
 // backup that would only dead-end at /api/onboard's 501. Complements startSignIn() (signin.js),
@@ -24,8 +26,10 @@
  *   posting anything.
  * - false (today's default): no cloud option renders - a bare Company name + Continue proceeds
  *   local-only, never posting.
- * Either path marks onboarding complete via POST /api/onboarding/complete before tearing down, so
- * the dialog (and the wizard that gates on the same marker) never shows again.
+ * Neither path marks onboarding complete - this dialog PRECEDES the first-run wizard
+ * (checkOnboarding() in onboarding.js), which owns the ".onboarded" completion marker (POST
+ * /api/onboarding/complete) as it already does today. Either path just tears down the modal (the
+ * cloud-connected path also calls refreshProjects() to repaint the console).
  * @returns {Promise<void>}
  */
 async function openOnboard() {
@@ -43,10 +47,6 @@ async function openOnboard() {
   let mode = "cloud"; // default selection when the cloud option is offered
   let error = "";
   const close = () => back.remove();
-  const finish = () => {
-    postJSON("/api/onboarding/complete", {}).catch(() => {});
-    close();
-  };
   const draw = () => {
     const nameInput = card.querySelector("#wz-company-name");
     const nameVal = nameInput ? nameInput.value : "";
@@ -80,9 +80,9 @@ async function openOnboard() {
       });
     }
     card.querySelector("#wz-onboard-continue").onclick = async () => {
-      // Local-only: never posts anything - just marks onboarding complete and proceeds.
+      // Local-only: never posts anything - just tears down and proceeds to the wizard.
       if (!signInAvailable || mode === "local") {
-        finish();
+        close();
         return;
       }
       // Cloud: requires a company name before /api/onboard can mint an anonymous account.
@@ -105,7 +105,7 @@ async function openOnboard() {
         res = { error: "Could not reach your company's server - check your connection and try again." };
       }
       if (res && res.state === "connected") {
-        finish();
+        close();
         if (typeof refreshProjects === "function") refreshProjects().catch(() => {});
       } else {
         btn.disabled = false;

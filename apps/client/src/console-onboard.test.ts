@@ -65,15 +65,16 @@ describe("console (jsdom) — openOnboard() first-run dialog", () => {
     expect(card!.textContent).not.toMatch(BANNED);
   });
 
-  it("cloud submit with a name POSTs /api/onboard {companyName} and, on connected, tears down + refreshes", async () => {
+  it("cloud submit with a name POSTs /api/onboard {companyName} and, on connected, tears down + refreshes - WITHOUT marking onboarding complete", async () => {
     const { doc, w, c } = loadConsole();
     let posted: unknown = null;
+    let completePosted = false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (w as any).fetch = (url: string, opts: any) => {
       const u = String(url);
       // /api/onboarding/complete's URL also contains the substring "/api/onboard" - check it FIRST
       // so it doesn't shadow the actual POST /api/onboard route below.
-      if (u.includes("/api/onboarding/complete")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+      if (u.includes("/api/onboarding/complete")) { completePosted = true; return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) }); }
       if (u.includes("/api/onboard") && opts && opts.method === "POST") {
         posted = JSON.parse(opts.body);
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ state: "connected" }) });
@@ -96,6 +97,9 @@ describe("console (jsdom) — openOnboard() first-run dialog", () => {
     expect(posted).toEqual({ companyName: "Acme Co." });
     expect(doc.querySelector(".onboard-modal")).toBeNull(); // torn down
     expect(doc.querySelector("#convos .project")).not.toBeNull(); // refreshProjects() repainted the rail
+    // openOnboard() must NOT mark onboarding complete - that's the wizard's (checkOnboarding's) job,
+    // and it runs AFTER this dialog closes, so it still needs to see firstRun:true.
+    expect(completePosted).toBe(false);
   });
 
   it("empty company name shows an inline message and never POSTs", async () => {
@@ -122,13 +126,15 @@ describe("console (jsdom) — openOnboard() first-run dialog", () => {
     expect(doc.querySelector(".onboard-modal")).not.toBeNull(); // dialog stays up
   });
 
-  it("submitting local proceeds without posting to /api/onboard", async () => {
+  it("submitting local proceeds without posting to /api/onboard or /api/onboarding/complete", async () => {
     const { doc, w, c } = loadConsole();
     let onboardPosted = false;
+    let completePosted = false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (w as any).fetch = (url: string, opts: any) => {
       const u = String(url);
-      if (u.includes("/api/onboard") && !u.includes("complete") && opts && opts.method === "POST") onboardPosted = true;
+      if (u.includes("/api/onboarding/complete")) completePosted = true;
+      else if (u.includes("/api/onboard") && opts && opts.method === "POST") onboardPosted = true;
       if (u.includes("/api/sync")) {
         return Promise.resolve({
           ok: true,
@@ -143,6 +149,9 @@ describe("console (jsdom) — openOnboard() first-run dialog", () => {
     (doc.querySelector("#wz-onboard-continue") as unknown as { click(): void }).click();
     await new Promise((r) => setTimeout(r, 0));
     expect(onboardPosted).toBe(false);
+    // openOnboard() must NOT mark onboarding complete on the local path either - the wizard
+    // (checkOnboarding) still needs to run its full step sequence afterward.
+    expect(completePosted).toBe(false);
     expect(doc.querySelector(".onboard-modal")).toBeNull(); // torn down
   });
 

@@ -93,9 +93,11 @@ async function boot() {
   // load the active project's context (its tabs), or show the start screen if it's empty
   if (S.activeProject) switchToProject(S.activeProject);
   // First run: ask for the company name (and, when available, whether to back up to the cloud)
-  // BEFORE the rest of the wizard. openOnboard() marks the same ".onboarded" completion marker
-  // checkOnboarding() gates on (POST /api/onboarding/complete), so once it's been through, the
-  // wizard below sees firstRun:false and skips straight to the auto-tour - no double-nagging.
+  // BEFORE the rest of the wizard. openOnboard() does NOT mark onboarding complete - it only tears
+  // itself down - so /api/onboarding still reports firstRun:true afterward and checkOnboarding()
+  // (called unconditionally below) runs its full step sequence, including the essential "Connect
+  // your agent (Claude Code)" step. checkOnboarding() itself POSTs /api/onboarding/complete when
+  // it finishes, so the marker is set exactly once, by the wizard.
   let firstRun = false;
   try {
     const o = await getJSON("/api/onboarding");
