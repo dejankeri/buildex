@@ -104,4 +104,40 @@ describe("makeJwksCache", () => {
     expect(c).toEqual(KEY_1);
     expect(callCount()).toBe(1);
   });
+
+  it("surfaces a failed fetch as JwtError without poisoning the cache, then succeeds on retry", async () => {
+    let calls = 0;
+    const fetchFn = (async () => {
+      calls++;
+      if (calls === 1) throw new Error("network down");
+      return { json: async () => ({ keys: [KEY_1] }) } as Response;
+    }) as typeof fetch;
+    const cache = makeJwksCache({ url: "https://example.test/jwks", fetch: fetchFn, now: () => 0 });
+
+    await expect(cache.resolve("k1")).rejects.toThrow(JwtError);
+    expect(calls).toBe(1);
+
+    // The earlier failure must not wedge `inFlight` or leave the cache poisoned: the next resolve
+    // issues exactly one more fetch and succeeds.
+    const jwk = await cache.resolve("k1");
+    expect(jwk).toEqual(KEY_1);
+    expect(calls).toBe(2);
+  });
+
+  it("throws JwtError for a malformed JWKS response (no keys array) without poisoning the cache", async () => {
+    let calls = 0;
+    const fetchFn = (async () => {
+      calls++;
+      if (calls === 1) return { json: async () => ({}) } as Response;
+      return { json: async () => ({ keys: [KEY_1] }) } as Response;
+    }) as typeof fetch;
+    const cache = makeJwksCache({ url: "https://example.test/jwks", fetch: fetchFn, now: () => 0 });
+
+    await expect(cache.resolve("k1")).rejects.toThrow(JwtError);
+    expect(calls).toBe(1);
+
+    const jwk = await cache.resolve("k1");
+    expect(jwk).toEqual(KEY_1);
+    expect(calls).toBe(2);
+  });
 });
