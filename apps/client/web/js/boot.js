@@ -92,5 +92,15 @@ async function boot() {
   setInterval(() => refreshUsage(), 15 * 60000);
   // load the active project's context (its tabs), or show the start screen if it's empty
   if (S.activeProject) switchToProject(S.activeProject);
+  // First run: ask for the company name (and, when available, whether to back up to the cloud)
+  // BEFORE the rest of the wizard. openOnboard() marks the same ".onboarded" completion marker
+  // checkOnboarding() gates on (POST /api/onboarding/complete), so once it's been through, the
+  // wizard below sees firstRun:false and skips straight to the auto-tour - no double-nagging.
+  let firstRun = false;
+  try {
+    const o = await getJSON("/api/onboarding");
+    firstRun = !!(o && o.firstRun);
+  } catch (e) {}
+  if (firstRun && typeof openOnboard === "function") await openOnboard();
   checkOnboarding(); // fire-and-forget - shows the first-run wizard once on a fresh install
 }

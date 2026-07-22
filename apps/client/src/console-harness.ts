@@ -82,7 +82,7 @@ const EXPOSE = [
   "loadTree", "navGo", "navRecord", "navUpdate", "newConversation", "newProject", "offerConnect",
   "onAddShortcut", "openAddAppForm", "openAddMenu", "openAppTab", "openAutomationEditor", "openConnectAccount",
   "openBrainTab", "openBrowserTab", "openChatTab", "openConnectorEditor", "openDocTab", "openFilesSettings",
-  "openMapTab", "openMarkdownEditor", "openMcpEditor", "openProjectItem", "openSaveMenu", "openSaveDialog", "locationLabel",
+  "openMapTab", "openMarkdownEditor", "openMcpEditor", "openOnboard", "openProjectItem", "openSaveMenu", "openSaveDialog", "locationLabel",
   "openSkillEditor", "openSkillTab", "openStoreTab", "parseSkill", "postJSON", "projectMenu",
   "refreshOrgs", "renderOrgSwitcher", "toggleOrgMenu", "switchOrg", "createOrg",
   "projectRename", "projectStatus", "rAuto", "rFiles", "rGateway", "rPending", "rSkills", "rSyncLog", "refreshApps",
