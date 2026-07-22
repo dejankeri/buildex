@@ -110,6 +110,11 @@ export interface ClientConfig {
    *  rebinding the fixed gateway port on the next org (see orgs/router.ts). The promise rejects if the
    *  host fails to bind; the caller catches. Only fires when `connectorsMcp` is set. */
   onGatewayHost?: (host: Promise<{ close: () => Promise<void> }>) => void;
+  /** Lifecycle hook for the approval broker: called (once, synchronously) with the broker the moment
+   *  it's built. The demo runner uses it to seed one real outward-action card in-process - exactly the
+   *  path the connector gateway takes for a gated send - so the flagship human gate (invariant 5) is
+   *  visible the instant the demo opens. Omit everywhere else; nothing in production seeds cards. */
+  onBroker?: (broker: ApprovalBroker) => void;
   /** Per-connector OAuth client credentials for the FILE connectors, runtime-injected from env
    *  (e.g. BUILDEX_GMAIL_CLIENT_ID) and NEVER committed. Absent → that connector stays fixture/apikey. */
   connectorsOAuth?: Record<string, { clientId: string; clientSecret?: string }>;
@@ -160,6 +165,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
     setTimer: (fn, ms) => realClock.setTimer(fn, ms),
     clearTimer: (h) => realClock.clearTimer(h as TimerHandle),
   });
+  config.onBroker?.(broker);
   const gate = new Gate(new PolicyEngine(composePreset(config.preset, config.roots)), broker);
   // Allowlist the model aliases the composer can request (the --model security boundary), and pin
   // Sonnet 5 as BuildEx's default so an unspecified model never falls through to the `claude` CLI's
