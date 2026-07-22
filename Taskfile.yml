@@ -30,11 +30,12 @@ tasks:
       - npm run test --workspaces --if-present
 
   invariants:
-    desc: "Run ONLY the six release-gate invariant suites + the registry meta-check"
+    desc: "Run ONLY the seven release-gate invariant suites + the registry meta-check"
     cmds:
       # `-t release-gate:` selects exactly the tagged suites across the three apps that own them:
       # client (secrets, sync-safety, determinism, no-token-on-disk, + registry), connectors (gates),
-      # sync (permission-matrix). The registry meta-test fails if the tagged set ever drifts from the six.
+      # sync (permission-matrix, signin-jwt). The registry meta-test fails if the tagged set ever
+      # drifts from the seven.
       - npm run test --workspace @buildex/client -- -t "release-gate:"
       - npm run test --workspace @buildex/connectors -- -t "release-gate:"
       - npm run test --workspace @buildex/sync -- -t "release-gate:"
