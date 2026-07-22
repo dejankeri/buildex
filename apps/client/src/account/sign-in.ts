@@ -55,7 +55,7 @@ export async function signIn(deps: SignInDeps, cfg: { port?: number; timeoutMs?:
 
     const startedAt = deps.now();
     const cb = await waitForCallback();
-    if (deps.now() - startedAt > timeoutMs) {
+    if (deps.now() - startedAt >= timeoutMs) {
       throw new Error("sign-in timed out waiting for the browser redirect");
     }
 

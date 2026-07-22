@@ -113,6 +113,24 @@ describe("signIn", () => {
     expect(loopback.closed).toBe(true);
   });
 
+  it("timeout: a callback arriving past the TTL is rejected and never exchanged", async () => {
+    let callCount = 0;
+    const now = () => {
+      callCount++;
+      if (callCount === 1) return 0; // start time at first call
+      return 300001; // 300001ms later at second call (exceeds 300000ms timeout)
+    };
+
+    const loopback = fakeLoopback(async () => new URL("http://127.0.0.1:54121/auth/callback?code=abc123&state=the-state"));
+    const supabase = fakeSupabase("xjwt_result");
+    const deps = baseDeps({ loopback, supabase, now });
+
+    await expect(signIn(deps, { timeoutMs: 300000 })).rejects.toThrow(/timed out/i);
+
+    expect(supabase.exchangeCalls).toEqual([]);
+    expect(loopback.closed).toBe(true);
+  });
+
   it("EADDRINUSE on the fixed port retries once with port 0 (OS-assigned) and succeeds", async () => {
     const loopback = fakeLoopback(
       async () => new URL("http://127.0.0.1:61234/auth/callback?code=abc123&state=the-state"),
