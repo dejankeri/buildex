@@ -23,6 +23,7 @@ function snapshot() {
     },
     pend: [{ tool: { name: "SendEmail", input: { to: "board@acme.co" } } }],
     skills: [{ name: "triage", description: "sort the inbox" }],
+    rules: [{ name: "Operating rules", description: "how we run", root: "team", path: "team/CLAUDE.md" }],
     changes: [{ subject: "init brain", author: "ada", at: Date.now() - 1000, sha: "abcdef1234567", files: ["x.md"] }],
     cfg: { company: { name: "Acme" } },
   };
@@ -35,7 +36,9 @@ describe("console renderers (jsdom) — Brain view", () => {
     expect(nodes.map((n: { key: string }) => n.key)).toEqual(["sensor", "policy", "tools", "gate", "learning"]);
     expect(nodes[0].count).toBe(2); // 1 connected connector + 1 connected gateway source
     expect(nodes[2].count).toBe(2); // 3 tools minus the 1 hidden one
-    expect(nodes[1].sub).toBe("1 verb");
+    expect(nodes[1].label).toBe("Rules & Skills");
+    expect(nodes[1].count).toBe(2); // 1 rule + 1 skill
+    expect(nodes[1].sub).toBe("1 rule · 1 skill");
     expect(nodes[3].sub).toBe("1 pending");
   });
 
@@ -60,25 +63,48 @@ describe("console renderers (jsdom) — Brain view", () => {
     expect(doc.querySelector("#rpanel .brefresh")).not.toBeNull();
   });
 
-  it("shows an empty affordance when the gate is clear and when no verbs exist", () => {
+  it("Rules & Skills shows both groups — rules open their CLAUDE.md, skills open their tab", () => {
     const { doc, c } = loadConsole();
     const host = doc.querySelector("#rpanel")!;
-    const empty = { ...snapshot(), pend: [], skills: [] };
+    c.renderBrainRail({ brain: snapshot(), focusKey: "policy" }, host, c.brainNodes(snapshot()));
+    // the eyebrow shows the operator-facing label, never the internal "policy" key
+    expect(doc.querySelector("#rpanel .beyebrow")!.textContent).toBe("Rules & Skills");
+    const subs = Array.from(doc.querySelectorAll("#rpanel .bsub") as any, (n: any) => n.textContent);
+    expect(subs).toEqual(["Always-on rules", "Skills"]);
+    const names = Array.from(doc.querySelectorAll("#rpanel .bcard .bcn") as any, (n: any) => n.textContent);
+    expect(names).toEqual(["§ Operating rules", "✦ triage"]); // rules first (§), then skills (✦)
+  });
+
+  it("shows an empty affordance when the gate is clear and when no rules/skills exist", () => {
+    const { doc, c } = loadConsole();
+    const host = doc.querySelector("#rpanel")!;
+    const empty = { ...snapshot(), pend: [], skills: [], rules: [] };
 
     c.renderBrainRail({ brain: empty, focusKey: "gate" }, host, c.brainNodes(empty));
     expect(doc.querySelector("#rpanel .bempty")!.textContent).toContain("All caught up");
 
     c.renderBrainRail({ brain: empty, focusKey: "policy" }, host, c.brainNodes(empty));
-    expect(doc.querySelector("#rpanel .bempty")!.textContent).toContain("No verbs");
+    const empties = Array.from(doc.querySelectorAll("#rpanel .bempty") as any, (n: any) => n.textContent);
+    expect(empties.some((t: string) => /No rules/.test(t))).toBe(true);
+    expect(empties.some((t: string) => /No skills/.test(t))).toBe(true);
   });
 
-  it("ESCAPES a hostile skill name in the Policy rail — inert text, never a live element", () => {
+  it("ESCAPES a hostile skill name in the Rules & Skills rail — inert text, never a live element", () => {
     const { doc, c } = loadConsole();
     const host = doc.querySelector("#rpanel")!;
-    const d = { ...snapshot(), skills: [{ name: XSS, description: "x" }] };
+    const d = { ...snapshot(), rules: [], skills: [{ name: XSS, description: "x" }] };
     c.renderBrainRail({ brain: d, focusKey: "policy" }, host, c.brainNodes(d));
     expect(doc.querySelector("#rpanel img")).toBeNull(); // payload did NOT become a real element
     expect(doc.querySelector("#rpanel .bcn")!.textContent).toContain("<img"); // survives as visible text
+  });
+
+  it("ESCAPES a hostile rule name in the Rules & Skills rail", () => {
+    const { doc, c } = loadConsole();
+    const host = doc.querySelector("#rpanel")!;
+    const d = { ...snapshot(), rules: [{ name: XSS, description: "x", root: "team", path: "team/CLAUDE.md" }], skills: [] };
+    c.renderBrainRail({ brain: d, focusKey: "policy" }, host, c.brainNodes(d));
+    expect(doc.querySelector("#rpanel img")).toBeNull();
+    expect(doc.querySelector("#rpanel .bcn")!.textContent).toContain("<img");
   });
 
   it("ESCAPES a hostile pending tool name in the Gate rail", () => {

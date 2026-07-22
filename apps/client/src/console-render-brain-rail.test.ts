@@ -22,6 +22,10 @@ function snap() {
       { name: "triage", description: "sort the inbox", root: "team-acme" },
       { name: "my-journal", description: "private notes", root: "private-you" },
     ],
+    rules: [
+      { name: "Operating rules", description: "how we run", root: "team-acme", path: "team-acme/CLAUDE.md" },
+      { name: "My rules", description: "just for me", root: "private-you", path: "private-you/CLAUDE.md" },
+    ],
     changes: [{ subject: "init brain", author: "ada", at: Date.now() - 1000, sha: "abcdef1234567", files: ["x.md"] }],
     cfg: { company: { name: "Acme" } },
   };
@@ -36,7 +40,7 @@ describe("console renderers (jsdom) — Brain rail (right panel)", () => {
     expect(doc.querySelectorAll("#rpanel .bscope .bseg")).toHaveLength(3); // All · Company · Private
     expect(doc.querySelectorAll("#rpanel .bsecs .bsec")).toHaveLength(5); // the five loop stages
     const labels = Array.from(doc.querySelectorAll("#rpanel .bsec-t") as any, (n: any) => n.textContent);
-    expect(labels).toEqual(["Sensors", "Policy · Verbs", "Tools", "Gate", "Learning"]);
+    expect(labels).toEqual(["Sensors", "Rules & Skills", "Tools", "Gate", "Learning"]);
   });
 
   it("the Gate auto-opens while something is waiting; the other stages start closed", () => {
@@ -46,7 +50,7 @@ describe("console renderers (jsdom) — Brain rail (right panel)", () => {
     const secs = Array.from(doc.querySelectorAll("#rpanel .bsec") as any, (n: any) => n);
     expect(secs[3].className).toContain("gate");
     expect(secs[3].className).not.toContain("closed"); // Gate open — it has a pending card
-    expect(secs[1].className).toContain("closed"); // Policy closed by default
+    expect(secs[1].className).toContain("closed"); // Rules & Skills closed by default
   });
 
   it("a section header toggles its stage open/closed and remembers it", () => {
@@ -60,14 +64,17 @@ describe("console renderers (jsdom) — Brain rail (right panel)", () => {
     expect(c.S.brainOpen["policy"]).toBe(true);
   });
 
-  it("Policy·Verbs lists the verbs and offers a Teach affordance", () => {
+  it("Rules & Skills lists rules then skills under group headers, and offers a Teach affordance", () => {
     const { doc, c } = loadConsole();
     c.S.brain = snap();
     c.renderBrainPanel();
     const bodies = Array.from(doc.querySelectorAll("#rpanel .bsec-b") as any, (n: any) => n);
     const policyBody = bodies[1];
+    expect(Array.from(policyBody.querySelectorAll(".bsub") as any, (n: any) => n.textContent))
+      .toEqual(["Always-on rules", "Skills"]);
+    // rules render first (§), then skills (✦) — one flat rcard list under the two group labels
     expect(Array.from(policyBody.querySelectorAll(".rcard .cn") as any, (n: any) => n.textContent))
-      .toEqual(["✦ triage", "✦ my-journal"]);
+      .toEqual(["§ Operating rules", "§ My rules", "✦ triage", "✦ my-journal"]);
     expect(policyBody.querySelector(".bsec-add")!.textContent).toContain("Teach");
   });
 
@@ -81,38 +88,53 @@ describe("console renderers (jsdom) — Brain rail (right panel)", () => {
     expect(gateBody.querySelector(".bpend .dny")).not.toBeNull();
   });
 
-  it("the Company/Private lens filters verbs by ownership — and never hides the company-wide stages", () => {
+  it("the Company/Private lens filters BOTH rules and skills by ownership — never hides company-wide stages", () => {
     const { doc, c } = loadConsole();
     c.S.brain = snap();
 
     c.setBrainScope("team"); // Company
     let bodies = Array.from(doc.querySelectorAll("#rpanel .bsec-b") as any, (n: any) => n);
-    expect(Array.from(bodies[1].querySelectorAll(".rcard .cn") as any, (n: any) => n.textContent)).toEqual(["✦ triage"]);
+    expect(Array.from(bodies[1].querySelectorAll(".rcard .cn") as any, (n: any) => n.textContent)).toEqual(["§ Operating rules", "✦ triage"]);
     // company-wide stages (sensor/tools/gate/learning) are marked "shared", not emptied
     expect(doc.querySelectorAll("#rpanel .bsec-tag")).toHaveLength(4);
     expect(doc.querySelector("#rpanel .bsec .bsec-tag")!.textContent).toContain("shared");
 
     c.setBrainScope("private"); // mine
     bodies = Array.from(doc.querySelectorAll("#rpanel .bsec-b") as any, (n: any) => n);
-    expect(Array.from(bodies[1].querySelectorAll(".rcard .cn") as any, (n: any) => n.textContent)).toEqual(["✦ my-journal"]);
+    expect(Array.from(bodies[1].querySelectorAll(".rcard .cn") as any, (n: any) => n.textContent)).toEqual(["§ My rules", "✦ my-journal"]);
 
     c.setBrainScope("all");
     bodies = Array.from(doc.querySelectorAll("#rpanel .bsec-b") as any, (n: any) => n);
-    expect(bodies[1].querySelectorAll(".rcard").length).toBe(2);
+    expect(bodies[1].querySelectorAll(".rcard").length).toBe(4); // 2 rules + 2 skills
     expect(doc.querySelectorAll("#rpanel .bsec-tag")).toHaveLength(0); // no "shared" tags under All
   });
 
-  it("an empty Private view names the gap instead of reading as broken", () => {
+  it("an empty Private view names the gap in both groups instead of reading as broken", () => {
     const { doc, c } = loadConsole();
-    c.S.brain = { ...snap(), skills: [{ name: "triage", description: "x", root: "team-acme" }] };
+    // only company-owned rules/skills ⇒ the Private lens has nothing of its own to show
+    c.S.brain = {
+      ...snap(),
+      skills: [{ name: "triage", description: "x", root: "team-acme" }],
+      rules: [{ name: "Operating rules", description: "x", root: "team-acme", path: "team-acme/CLAUDE.md" }],
+    };
     c.setBrainScope("private");
     const policyBody = Array.from(doc.querySelectorAll("#rpanel .bsec-b") as any, (n: any) => n)[1];
-    expect(policyBody.querySelector(".bempty")!.textContent).toContain("No private verbs");
+    const empties = Array.from(policyBody.querySelectorAll(".bempty") as any, (n: any) => n.textContent);
+    expect(empties.some((t: string) => /No private rules/.test(t))).toBe(true);
+    expect(empties.some((t: string) => /No private skills/.test(t))).toBe(true);
   });
 
-  it("ESCAPES a hostile verb name in Policy·Verbs — inert text, never a live element", () => {
+  it("ESCAPES a hostile skill name in Rules & Skills — inert text, never a live element", () => {
     const { doc, c } = loadConsole();
-    c.S.brain = { ...snap(), skills: [{ name: XSS, description: "x", root: "team-acme" }] };
+    c.S.brain = { ...snap(), rules: [], skills: [{ name: XSS, description: "x", root: "team-acme" }] };
+    c.renderBrainPanel();
+    expect(doc.querySelector("#rpanel img")).toBeNull();
+    expect(doc.querySelector("#rpanel .rcard .cn")!.textContent).toContain("<img");
+  });
+
+  it("ESCAPES a hostile rule name in Rules & Skills", () => {
+    const { doc, c } = loadConsole();
+    c.S.brain = { ...snap(), rules: [{ name: XSS, description: "x", root: "team-acme", path: "team-acme/CLAUDE.md" }], skills: [] };
     c.renderBrainPanel();
     expect(doc.querySelector("#rpanel img")).toBeNull();
     expect(doc.querySelector("#rpanel .rcard .cn")!.textContent).toContain("<img");
