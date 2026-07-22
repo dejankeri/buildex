@@ -57,7 +57,7 @@ function renderAgentContext(tab) {
     sk = (v.summary && v.summary.skills) || { total: 0, authored: 0, byRoot: {} },
     mcp = (v.summary && v.summary.mcp) || { total: 0, servers: [] };
   const verdict = disc.length
-    ? '<div class="actx-verdict warn">⚠ ' + disc.length + ' thing' + (disc.length === 1 ? "" : "s") + ' need attention before the agent has the whole brain</div>'
+    ? '<div class="actx-verdict warn">⚠ ' + disc.length + (disc.length === 1 ? " thing needs" : " things need") + ' attention before the agent has the whole brain</div>'
     : '<div class="actx-verdict ok">✓ Everything the agent needs is wired</div>';
 
   tab.pane.innerHTML =
@@ -89,7 +89,9 @@ function renderAgentContext(tab) {
     actxRow(g2, tab, { ok: true, label: s.name, sub: s.note || "", path: (md && md.path) || (s.path + "/SKILL.md") });
   });
   disc.filter((x) => x.kind === "skill-unlinked").forEach((x) => {
-    actxRow(g2, tab, { warn: true, label: String(x.path || "").split("/").pop().replace(/\/SKILL\.md$/, "") || "unlinked verb", sub: "authored but not linked — the agent won’t see it", path: x.path });
+    // path is "<root>/skills/<verb>/SKILL.md" - label with the VERB name (its parent dir), not the file.
+    const verb = String(x.path || "").replace(/\/SKILL\.md$/i, "").split("/").pop() || "unlinked verb";
+    actxRow(g2, tab, { warn: true, label: verb, sub: "authored but not linked — the agent won’t see it", path: x.path });
   });
 
   // 3) Tools & connections — the .mcp.json config + the live gateway tools.

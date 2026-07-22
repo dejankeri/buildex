@@ -63,6 +63,7 @@ describe("console renderers (jsdom) — Agent Context viewer", () => {
     // the orphan verb is flagged and points at its unlinked SKILL.md
     const orphan = Array.from(doc.querySelectorAll("#rpanel .actx-row.warn") as any, (n: any) => n).find((r: any) => r.dataset.path === "team-acme/skills/orphan/SKILL.md");
     expect(orphan).not.toBeUndefined();
+    expect(orphan.querySelector(".actx-l").textContent).toBe("orphan"); // labelled with the VERB, not "SKILL.md"
     expect(orphan.textContent).toContain("won’t see it");
   });
 
