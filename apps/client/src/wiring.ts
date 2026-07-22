@@ -47,6 +47,11 @@ import { unsavedAcross, isStale } from "./sync/unsaved.js";
 import { generateAgentConfig } from "./brain/agent-config.js";
 import { AppBus } from "./miniapp/app-bus.js";
 import { fetchUsage, nodeTokenReader, anthropicUsageCall, type UsageReport } from "./brain/usage.js";
+import { AccountStore } from "./account/account-store.js";
+import { makeTokenProvider } from "./account/token-provider.js";
+import { gitAuthEnv } from "./account/credentials.js";
+import { provision } from "./account/provision-client.js";
+import { attachOrg } from "./account/attach.js";
 
 export interface ClientConfig {
   workspace: string;
@@ -108,6 +113,18 @@ export interface ClientConfig {
   keychainMode?: "auto" | "system" | "memory";
   /** Daemon base URL for the file-connector OAuth loopback redirect. Default http://127.0.0.1:4317. */
   connectorsRedirectBase?: string;
+  /** The active org's id. Present together with `orgDir` only once an org exists to hold an account
+   *  (see orgs/router.ts) - both absent means a local-only boot (most tests, the demo), which builds
+   *  the sync engine with no `auth` at all, exactly as before this seam existed. */
+  orgId?: string;
+  /** The active org's own directory (holds `account.json`; see account/account-store.ts). */
+  orgDir?: string;
+  /** Injected fetch for the account seam's provision/refresh calls - defaults to global `fetch` so
+   *  tests can hand in a fake and stay hermetic (no real network in unit lanes). */
+  fetch?: typeof fetch;
+  /** Whether the active org is the local-only demo sandbox - it can never attach an account
+   *  (see account/attach.ts). Populated from `org.sandbox` in orgs/router.ts. */
+  sandbox?: boolean;
 }
 
 export function buildClientHandler(config: ClientConfig): Handler {
@@ -147,7 +164,6 @@ export function buildClientHandler(config: ClientConfig): Handler {
   let provisionedEnv: () => NodeJS.ProcessEnv = () => ({});
   const driver = new ClaudeCodeDriver({ spawn: nodeSpawnAgent, bin: config.claudeBin, allowedModels: ["opus", "sonnet", "haiku", "fable"], defaultModel: "sonnet", extraEnv: () => provisionedEnv(), ...(config.agentConfigDir ? { configDir: config.agentConfigDir } : {}) });
   const appBus = new AppBus({ idFactory: randomUUID });
-  const sync = new SyncEngine({ now: Date.now, actor });
   // The writable (non-core) repo dirs - the only roots the sync loop may commit to (core is read-only).
   const writableDirs = (): string[] => config.roots.filter((r) => slotOf(r.name) !== "core").map((r) => r.dir);
   // The background sync loop. Assigned below once regenConfig exists; saveDoc/skillEditor/connectors
@@ -221,6 +237,50 @@ export function buildClientHandler(config: ClientConfig): Handler {
   // is opt-in via config so tests/embedders never touch the real OS keychain; the demo sets
   // keychainMode:"auto" so a real authorization survives a daemon restart.
   const keychain = createKeychain({ mode: config.keychainMode ?? "memory", workspace: config.workspace });
+
+  // The account seam: an AccountStore only exists once the active org has both an id and a dir (see
+  // orgs/router.ts) - most boots (unit tests, the demo, an org that hasn't opened an account yet)
+  // supply neither, so `account`/`tokenProvider`/`engineAuth` stay undefined and the engine below is
+  // built LOCAL-ONLY, exactly as it was before this seam existed. `fetchImpl` isolates the injected
+  // fetch (tests hand in a fake) from the global one (production).
+  const fetchImpl = config.fetch ?? fetch;
+  const account =
+    config.orgId && config.orgDir ? new AccountStore({ orgId: config.orgId, orgDir: config.orgDir, keychain }) : undefined;
+  const tokenProvider = account ? makeTokenProvider({ store: account, fetch: fetchImpl }) : undefined;
+  const engineAuth = tokenProvider
+    ? {
+        headerEnv: () => {
+          const t = tokenProvider.current();
+          return t ? gitAuthEnv(t) : undefined;
+        },
+        onAuthError: () => tokenProvider.rotate(),
+      }
+    : undefined;
+  // Moved here (was constructed right after appBus, before the keychain existed) so the engine can
+  // carry `auth` from day one instead of being retrofitted after the fact - nothing between the old
+  // and new construction points reads `sync` before this line.
+  const sync = new SyncEngine({ now: Date.now, actor, ...(engineAuth ? { auth: engineAuth } : {}) });
+
+  // Daemon deps for the account seam - assembled here (needs `account`/`sync`/`fetchImpl`, all just
+  // built above) so Task 8's daemon routes have a ready provision→attach flow and state reader to
+  // plug in. NOT yet passed to createDaemon below: DaemonDeps gains `openAccount`/`accountState` in
+  // Task 8 alongside the /api/account routes that consume them - adding the keys here without the
+  // matching DaemonDeps fields would fail the strict object-literal excess-property check against
+  // daemon.ts's current (pre-Task-8) shape. Harmless either way: unused until Task 8 wires them in.
+  const openAccount = account
+    ? async ({ baseUrl, setupToken }: { baseUrl: string; setupToken: string }): Promise<{ state: "connected" | "needs-help" }> => {
+        const result = await provision({ fetch: fetchImpl, baseUrl }, { setupToken, machineName: hostname() });
+        account.save(baseUrl, result);
+        const res = await attachOrg({ engine: sync, roots: config.roots, repos: result.repos, sandbox: config.sandbox ?? false });
+        return { state: res.status === "needs-help" ? "needs-help" : "connected" };
+      }
+    : undefined;
+  const accountState = (): { state: "local" | "connected"; operatorId?: string; companySlug?: string; remotes?: { core: string; team: string; private: string } } => {
+    const a = account?.load();
+    return a ? { state: "connected", operatorId: a.operatorId, companySlug: a.companySlug, remotes: a.repos } : { state: "local" };
+  };
+  void openAccount; // wired into createDaemon by Task 8, once DaemonDeps carries the field
+  void accountState; // wired into createDaemon by Task 8, once DaemonDeps carries the field
 
   // Regenerate the native agent config, threading the (optional) gate-hook command. Used after a
   // skill is authored and by the sync route, so the workspace's .claude stays consistent.

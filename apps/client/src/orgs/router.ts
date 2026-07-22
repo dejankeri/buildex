@@ -16,7 +16,11 @@ import type { SyncScheduler } from "../sync/scheduler.js";
 
 /** Everything the daemon handler needs EXCEPT what varies per org (workspace/roots/company) and the
  *  lifecycle hooks the router owns (scheduler + gateway host). `connectorsMcp` IS allowed - it's shared
- *  by every org, and the router manages the per-org gateway lifecycle around it. */
+ *  by every org, and the router manages the per-org gateway lifecycle around it. `orgId`/`orgDir`/
+ *  `sandbox`/`fetch` are ALSO allowed through (not excluded): `activate()` below always sets
+ *  orgId/orgDir/sandbox from the org being activated, overriding anything a caller put in baseConfig,
+ *  so leaving them in the type is harmless - and `fetch` is a shared injected test seam, same as
+ *  connectorsMcp. */
 export type OrgBaseConfig = Omit<ClientConfig, "workspace" | "roots" | "company" | "onScheduler" | "onGatewayHost">;
 
 export interface OrgRouterDeps {
@@ -74,6 +78,11 @@ export function createOrgRouter(deps: OrgRouterDeps): OrgRouter {
       workspace: org.workspace,
       roots: org.roots,
       company: { name: org.name },
+      // The account seam: `org.dir` (not `org.workspace`) is the org's own top-level directory - see
+      // OrgManager.orgDir/resolve - where account.json lives, sibling to (not inside) the workspace.
+      orgId: org.id,
+      orgDir: org.dir,
+      sandbox: org.sandbox,
       onScheduler: (s) => {
         scheduler = s;
         s.start();
