@@ -121,18 +121,20 @@ describe("console renderers (jsdom) — the save card", () => {
     c.renderPending([], sync({ files: 3, connected: true }));
     expect(doc.querySelector("#save-now")).not.toBeNull();
 
-    // No account yet: the card states the truth and offers no button - there is no
-    // account-creation surface in the console, so a button here would promise what we cannot do.
+    // No account yet: there's nowhere to save TO automatically, but Phase 3 added a real sign-in
+    // surface (js/signin.js), so the card offers a "Sign in" CTA instead of just stating the fact
+    // and stopping - "no button" is no longer true now that sign-in is itself an account surface.
     c.renderPending([], sync({ files: 3, connected: false }));
     expect(doc.querySelector("#save-now")).toBeNull();
+    expect(doc.querySelector("#signin-now")).not.toBeNull();
     const text = card(doc)!.textContent!;
-    expect(text).toContain("this machine only");
+    expect(text).toContain("saved here and nowhere else");
     expect(text).not.toContain("Connect an account");
     // ...and it agrees with itself grammatically: singular subject, singular pronoun.
     c.renderPending([], sync({ files: 1, connected: false }));
-    expect(card(doc)!.textContent).toContain("you lose it.");
+    expect(card(doc)!.textContent).toContain("1 change is saved here and nowhere else. Sign in free to back it up.");
     c.renderPending([], sync({ files: 2, connected: false }));
-    expect(card(doc)!.textContent).toContain("you lose them.");
+    expect(card(doc)!.textContent).toContain("2 changes are saved here and nowhere else. Sign in free to back them up.");
   });
 
   it("escalates to the stakes, not a number, once work has gone stale", () => {
