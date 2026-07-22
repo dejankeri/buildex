@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { InMemoryKeychain } from "../keychain/keychain.js";
 import { AccountStore } from "./account-store.js";
 import { SyncEngine } from "../sync/engine.js";
-import { openAccount } from "./open-account.js";
+import { openAccount, persistAndAttach } from "./open-account.js";
 
 const ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } as NodeJS.ProcessEnv;
 const git = (a: string[], cwd: string) => execFileSync("git", a, { cwd, env: ENV, encoding: "utf8" });
@@ -91,6 +91,33 @@ describe("openAccount", () => {
     const teamRefs = git(["ls-remote", repos.team.replace("file://", "")], root);
     expect(teamRefs).toContain("refs/heads/main");
     // core (read-only) was never pushed.
+    const coreRefs = git(["ls-remote", repos.core.replace("file://", "")], root);
+    expect(coreRefs.includes("refs/heads/main")).toBe(false);
+  });
+});
+
+describe("persistAndAttach", () => {
+  it("saves account.json and first-publishes the team ref on a real file:// bare set - proving the extraction preserved openAccount's guarantees", async () => {
+    const repos = bares();
+    const roots = localRoots();
+    const provisioned = {
+      machineToken: "xmachine_" + "c".repeat(48),
+      refreshToken: "xrefresh_" + "d".repeat(48),
+      repos,
+    };
+    const keychain = new InMemoryKeychain();
+    const account = new AccountStore({ orgId: "acme2", orgDir: join(root, "org"), keychain });
+
+    const res = await persistAndAttach(
+      { account, engine: engine(), roots, sandbox: false },
+      "https://sync.test",
+      provisioned,
+    );
+
+    expect(res.state).toBe("connected");
+    expect(existsSync(join(root, "org", "account.json"))).toBe(true);
+    const teamRefs = git(["ls-remote", repos.team.replace("file://", "")], root);
+    expect(teamRefs).toContain("refs/heads/main");
     const coreRefs = git(["ls-remote", repos.core.replace("file://", "")], root);
     expect(coreRefs.includes("refs/heads/main")).toBe(false);
   });

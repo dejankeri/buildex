@@ -33,7 +33,10 @@ function isResult(v: unknown): v is ProvisionResult {
   );
 }
 
-async function post(deps: Deps, path: string, body: unknown): Promise<ProvisionResult> {
+// Exported so session-client.ts (POST /session) can reuse this exact discipline - URL join,
+// network-error mapping, non-2xx handling, and the body-validation guard - through ONE code path
+// instead of a second copy that could drift.
+export async function post(deps: Deps, path: string, body: unknown): Promise<ProvisionResult> {
   const url = deps.baseUrl.replace(/\/+$/, "") + path; // one join, no doubled slash
   let res: Response;
   try {
