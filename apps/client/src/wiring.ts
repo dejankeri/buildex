@@ -279,9 +279,6 @@ export function buildClientHandler(config: ClientConfig): Handler {
     const a = account?.load();
     return a ? { state: "connected", operatorId: a.operatorId, companySlug: a.companySlug, remotes: a.repos } : { state: "local" };
   };
-  void openAccount; // wired into createDaemon by Task 8, once DaemonDeps carries the field
-  void accountState; // wired into createDaemon by Task 8, once DaemonDeps carries the field
-
   // Regenerate the native agent config, threading the (optional) gate-hook command. Used after a
   // skill is authored and by the sync route, so the workspace's .claude stays consistent.
   const regenConfig = () => {
@@ -778,6 +775,8 @@ export function buildClientHandler(config: ClientConfig): Handler {
     appServe: (urlPath) => serveApp(config.roots, urlPath),
     appData: (r) => brokerData(config.roots, r),
     usageFn,
+    openAccount,
+    accountState,
     vault,
     saveDoc,
     catalog,

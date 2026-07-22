@@ -201,6 +201,10 @@ export interface DaemonDeps {
   /** Live Claude subscription usage for the bottom status strip. `force` bypasses the cache
    *  (the manual-refresh affordance). */
   usageFn?: (force?: boolean) => Promise<UsageReport> | UsageReport;
+  /** Open an account: provision with the pasted token, attach remotes, publish once. */
+  openAccount?: (input: { baseUrl: string; setupToken: string }) => Promise<{ state: "connected" | "needs-help" }>;
+  /** Current account state for the console. */
+  accountState?: () => { state: "local" | "connected"; operatorId?: string; companySlug?: string; remotes?: { core: string; team: string; private: string } };
 }
 
 export interface TreeNode {
@@ -640,6 +644,21 @@ export function createDaemon(deps: DaemonDeps): Handler {
     }
     if (method === "GET" && path === "/api/sync") {
       return json({ status: deps.syncStatus?.() ?? "ok", unsaved: await unsavedCached() });
+    }
+    if (method === "POST" && deps.openAccount && path === "/api/account") {
+      const b = await body<{ baseUrl: string; setupToken: string }>(req, { baseUrl: "string!", setupToken: "string!" });
+      try {
+        return json(await deps.openAccount({ baseUrl: b.baseUrl, setupToken: b.setupToken }));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "could not open account";
+        // A sandbox refusal is a 409 (conflict with the org's local-only nature); everything else the
+        // operator can act on - a bad token, an unreachable server - is a terse 400. Never a raw 500.
+        const status = /sandbox/i.test(msg) ? 409 : 400;
+        return json({ error: msg }, status);
+      }
+    }
+    if (method === "GET" && deps.accountState && path === "/api/account") {
+      return json(deps.accountState());
     }
 
     // Mini-app bridge: the agent's app-driver MCP posts commands here; the mini-app window
