@@ -133,18 +133,17 @@ section { padding: 92px 0; position: relative; }
 .divide { border-top: 1px solid var(--line); }
 
 /* Full-frame product shot between the hero and "just ask": the whole console in one image - apps &
-   sessions, the agent working the brain, and the human gate. Sits in a slightly wider column than the
-   text wrap so it reads as a showcase, with a soft brand glow behind it and a depth shadow. */
+   sessions, the agent working the brain, and the human gate. Aligned to the same content column as
+   every other section (the shared .wrap), with a soft brand glow behind it and a depth shadow. */
 .shot-band { padding: 44px 0 12px; }
-.shot-band .wrap { max-width: 1240px; }
 .shot { margin: 0; position: relative; }
 .shot::before {
   content: ""; position: absolute; inset: -10% -6% 10%; z-index: -1; pointer-events: none;
   background: radial-gradient(58% 60% at 50% 0%, var(--brand-glow), transparent 70%); filter: blur(22px);
 }
 .shot img {
-  display: block; width: 100%; height: auto; border-radius: 14px;
-  border: 1px solid var(--line-2); box-shadow: 0 40px 90px -40px rgba(0,0,0,.75);
+  display: block; width: 100%; height: auto; object-fit: contain; aspect-ratio: 1440 / 900;
+  border-radius: 14px; border: 1px solid var(--line-2); box-shadow: 0 40px 90px -40px rgba(0,0,0,.75);
 }
 .shot figcaption {
   margin: 16px auto 0; max-width: 720px; text-align: center;
