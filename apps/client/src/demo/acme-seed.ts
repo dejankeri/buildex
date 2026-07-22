@@ -584,7 +584,7 @@ const seedSessions: SeedSession[] = [
       { kind: "tool_result", id: "r1", name: "Read", ok: true, output: "MRR $34,200 (+16% MoM) · 4 design partners · NRR 112% · runway ~15 months" },
       { kind: "tool", id: "w1", name: "Write", input: { path: "private-you/investors/2026-q3-update.md" }, path: "private-you/investors/2026-q3-update.md" },
       { kind: "tool_result", id: "w1", name: "Write", ok: true, output: "wrote investors/2026-q3-update.md (1.4 KB)" },
-      { kind: "text", text: "Draft ready at **investors/2026-q3-update.md**. Headline: $34.2k MRR (+16% MoM), Globex converted to annual, 15 months runway. Open risks flagged: Initech usage and the backend hire. Want me to tighten the ask paragraph?" },
+      { kind: "text", text: "Draft ready at **investors/2026-q3-update.md**. Here's the headline, straight from the brain:\n\n| Metric | Q3 so far | Q3 target |\n|---|---|---|\n| MRR | $34,200 | $40,000 |\n| Paying design partners | 4 | 5 |\n| Net revenue retention | 112% | — |\n| Runway | ~15 months | — |\n\nGlobex converted to annual. Two risks flagged in the draft: Initech usage is soft, and the backend hire trims runway by ~2 months. Want me to tighten the ask paragraph?" },
       { kind: "done" },
     ],
   },
@@ -653,9 +653,18 @@ const seedSessions: SeedSession[] = [
   {
     folder: "Clients",
     title: "Reply to Dana's kickoff email",
-    status: "idle",
+    status: "needs-attention",
     at: "2026-07-14T10:02:00Z",
-    preview: "Drafted a reply on SSO (interim service account) + attached the data-access checklist.",
+    preview: "Drafted a reply on SSO (interim service account) + attached the data-access checklist — waiting for your approval to send.",
+    events: [
+      { kind: "text", text: "Reply to Dana's kickoff email — she asked about SSO and how data access works." },
+      { kind: "text", text: "Let me pull the thread and the security notes, then draft a reply in your voice." },
+      { kind: "tool", id: "s1", name: "gmail-search", input: { query: "from:dana@globex.com finance team expansion" } },
+      { kind: "tool_result", id: "s1", name: "gmail-search", ok: true, output: "1 thread — \"Finance team expansion - next steps\" (2 messages)" },
+      { kind: "tool", id: "r1", name: "Read", input: { path: "team-acme/clients/globex/profile.md" }, path: "team-acme/clients/globex/profile.md" },
+      { kind: "tool_result", id: "r1", name: "Read", ok: true, output: "SSO not in v1 · interim: shared service account (≤60 days) · data-access checklist in sources/" },
+      { kind: "text", text: "Drafted the reply: SSO isn't in v1 yet, so the interim is a shared service account (fine for ~60 days), with the data-access checklist attached. **Sending an email is an outward action — the draft is waiting for your approval in the Pending tray. Nothing goes out until you tap Approve.**" },
+    ],
   },
 ];
 

@@ -78,6 +78,32 @@ const daemon = await startDaemon({
   ...config,
   gateCommand,
   catalogSource,
+  // Seed one realistic PENDING approval card the moment the broker is built, so the flagship human
+  // gate (invariant 5) is visible the instant the demo opens - not only if the operator happens to
+  // trigger an outward action first. This raises a REAL card in-process through the same
+  // ApprovalBroker the connector gateway uses for a gated send (not the policy path: outward connector
+  // sends are gated at the gateway by intent, so /api/gate would rightly wave one straight through).
+  // Fire-and-forget: the card resolves when the operator taps, or auto-denies at its 10-minute TTL.
+  // Opt out with BUILDEX_NO_SEED_CARD=1 (e.g. a capture flow that wants an empty tray first).
+  onBroker: (broker) => {
+    if (process.env["BUILDEX_NO_SEED_CARD"] === "1") return;
+    broker.request({
+      name: "gmail.send",
+      input: {
+        connector: "gmail",
+        tool: "send",
+        args: {
+          to: "dana@globex.com",
+          subject: "Re: Finance team expansion - next steps",
+          body:
+            "Hi Dana - on SSO: it isn't in v1 yet, so the interim is a shared service account (fine for ~60 days). " +
+            "I've attached the data-access checklist. Excited to get the finance team on. - You",
+        },
+        summary:
+          "Send email to dana@globex.com - reply on SSO (interim: a shared service account) with the data-access checklist attached.",
+      },
+    }); // returns { card, decision }; we intentionally don't await the operator's verdict here
+  },
   usageOAuth: config.usageOAuth ?? true,
   // Host the OAuth+MCP connector gateway. Providers come from demo config; empty by default
   // (real provider OAuth apps are founder config), so the console shows the gateway live with none
@@ -92,37 +118,6 @@ const daemon = await startDaemon({
   keychainMode: (process.env["BUILDEX_KEYCHAIN"] as "auto" | "system" | "memory") || "auto",
   port,
 });
-
-// Seed one realistic PENDING approval card so the flagship human gate (invariant 5) is visible the
-// moment the demo opens - not only if the operator happens to trigger an outward action in the first
-// five minutes. This is a REAL card through the real gate, not a mock: POST /api/gate with an ask-tier
-// connector action opens an approval card via the daemon's ApprovalBroker and blocks server-side on
-// the operator's approve/deny - exactly what the agent's own `gmail.send` does. Fire-and-forget: the
-// demo script never awaits it (the card resolves when the operator taps, or auto-denies at its TTL).
-// Opt out with BUILDEX_NO_SEED_CARD=1 (e.g. a capture flow that wants an empty tray first).
-if (process.env["BUILDEX_NO_SEED_CARD"] !== "1") {
-  const seededCard = {
-    name: "mcp:gmail.send",
-    input: {
-      connector: "gmail",
-      tool: "send",
-      args: {
-        to: "dana@globex.com",
-        subject: "Re: Finance team expansion - next steps",
-        body:
-          "Hi Dana - on SSO: it isn't in v1 yet, so the interim is a shared service account (fine for ~60 days). " +
-          "I've attached the data-access checklist. Excited to get the finance team on. - You",
-      },
-      summary:
-        "Send email to dana@globex.com - reply on SSO (interim: a shared service account) with the data-access checklist attached.",
-    },
-  };
-  fetch(`${daemon.url}/api/gate`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(seededCard),
-  }).catch(() => {}); // blocks server-side until the operator taps; never awaited here
-}
 
 console.log(`
 🟢  BuildEx demo is running.

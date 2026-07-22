@@ -1,6 +1,6 @@
 {
   "name": "@buildex/sync",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "@buildex/sync - the thin cloud service - identity, git hosting, seats",
   "license": "MIT",

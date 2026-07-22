@@ -66,16 +66,22 @@ BUILDEX_DEMO_DIR="$DEMO" npx tsx "$REPO/scripts/demo-setup.ts" --reset >/dev/nul
 
 echo "▶ 2/5  Booting the daemon on :$PORT ..."
 lsof -ti "tcp:$PORT" 2>/dev/null | xargs kill -9 2>/dev/null || true
-# BUILDEX_NO_SEED_CARD=1: the demo normally seeds a live approval card at boot, but here we want the
-# content shots to have an empty ("All caught up") tray and inject the gate card ourselves below.
+# Seed the real flagship approval card at boot (the demo's default): demo.ts raises it in-process
+# through the same ApprovalBroker the connector gateway uses for a gated send, so the Pending tray
+# shows a genuine outward-email approval - the exact human gate we want in the gate/hero shots.
 BUILDEX_DEMO_DIR="$DEMO" BUILDEX_DEMO_PORT="$PORT" BUILDEX_DEMO_GATEWAY_PORT="$GWPORT" BUILDEX_KEYCHAIN=memory \
-  BUILDEX_NO_SEED_CARD=1 npx tsx "$REPO/scripts/demo.ts" >/tmp/buildex-shots-daemon.log 2>&1 &
+  npx tsx "$REPO/scripts/demo.ts" >/tmp/buildex-shots-daemon.log 2>&1 &
 DAEMON_PID=$!
 for _ in $(seq 1 30); do curl -sf "$BASE/api/sessions" >/dev/null 2>&1 && break; sleep 1; done
 curl -sf "$BASE/api/sessions" >/dev/null 2>&1 || { echo "✗ daemon never came up (see /tmp/buildex-shots-daemon.log)"; exit 1; }
 
-echo "▶ 3/5  Dismissing first-run onboarding ..."
+echo "▶ 3/5  Dismissing first-run onboarding + settling the workspace ..."
 curl -s -X POST "$BASE/api/onboarding/complete" -d '{}' >/dev/null 2>&1 || true
+# The daemon writes a fresh automations.yaml at boot, which the console counts as one unsaved change
+# (the "Save your work" card). Hit the product's own "Save now" (POST /api/sync) to commit + push it,
+# so the tray shows only the real approval card - no save prompt - in every shot.
+curl -s -X POST "$BASE/api/sync" >/dev/null 2>&1 || true
+sleep 1
 
 echo "▶ 4/5  Capturing screenshots ..."
 mkdir -p "$STAGE"
@@ -89,25 +95,34 @@ click_by() {
 }
 shot() { "$B" screenshot "$STAGE/$1" >/dev/null 2>&1 && echo "   ✓ $1"; }
 
-# Clean shots first (no pending badge yet), so only the gate shot shows a Pending card.
+# The first-run coach-mark tour is gated on the localStorage flag buildex.tour.v1, which a fresh
+# browser profile lacks - so it auto-starts and dims every shot. Load once, mark the tour as seen,
+# then reload so the populated console renders clean (no overlay), with the real approval card in the
+# tray and the workspace already settled (no "Save your work" card).
 "$B" goto "$BASE" >/dev/null 2>&1; sleep 1
-click_by "metrics-q3.md";                          shot console-overview.png
-click_by "Draft the Q3 investor update";           shot session-transcript.png
-click_by "Reconcile Globex invoices for July";     shot needs-attention.png
-click_by "Store";                                  shot app-store.png
-click_by "Skills";                                 shot skills.png
-click_by "Map";                                    shot workspace-map.png
-click_by "Files"; click_by '"log.md"';             shot decision-log.png
+"$B" storage set buildex.tour.v1 1 >/dev/null 2>&1 || true
+"$B" goto "$BASE" >/dev/null 2>&1; sleep 1
 
-# Approval gate: inject a real ask-tier card WITHOUT running the agent (background POST blocks on it).
-# Use the same outward Gmail-send shape the live demo seeds, so the flagship shot shows a readable
-# human approval ("Send email to dana@globex.com …") rather than a raw tool/JSON blob.
-curl -s -X POST "$BASE/api/gate" -H 'content-type: application/json' \
-  -d '{"name":"mcp:gmail.send","input":{"connector":"gmail","tool":"send","args":{"to":"dana@globex.com","subject":"Re: Finance team expansion - next steps","body":"Hi Dana - on SSO: it isn'"'"'t in v1 yet, so the interim is a shared service account (fine for ~60 days). I'"'"'ve attached the data-access checklist. - You"},"summary":"Send email to dana@globex.com - reply on SSO (interim: a shared service account) with the data-access checklist attached."}}' >/dev/null 2>&1 &
-GATE_PID=$!
-sleep 1
-"$B" goto "$BASE" >/dev/null 2>&1; sleep 1
-click_by "Pending";                                shot approval-gate.png
+# --- Files-panel shots: the brain's real file tree on the right (docs live there now, not in the
+#     session rail). Folders render collapsed, so expand one before opening a file inside it. ---
+click_by "Files"                                                      # right panel → the brain file tree
+click_by "finance"; click_by "metrics-q3.md";      shot console-overview.png   # a brain doc + the file tree
+click_by "BuildEx";                                shot workspace-map.png       # the brand opens the living brain map (middle), tree still on the right
+click_by "decisions"; click_by "log.md";           shot decision-log.png        # expand decisions/, open the log
+click_by "Draft the Q3 investor update";           shot session-transcript.png  # the chat: its answer renders a real table
+
+# --- Skills + Store ---
+click_by "Skills";                                 shot skills.png    # right panel → the agent's verbs
+click_by "Store";                                  shot app-store.png # the App Store (a middle tab)
+
+# --- Pending-tray shots: the real seeded outward-email approval card (see step 2). ---
+click_by "Pending"                                                    # right panel → the approval tray
+click_by "Reconcile Globex invoices for July";     shot needs-attention.png  # a session flagged for you
+# Hero composite for the website: the whole product in one frame - apps rail (left), an open chat
+# whose answer renders a real table (middle), and the Pending approval card (right).
+click_by "Draft the Q3 investor update";           shot console-hero.png
+# The flagship gate on its own: the Pending card, front and center.
+click_by "Reply to Dana's kickoff email";          shot approval-gate.png
 
 echo "▶ 5/5  Copying into docs/images/ ..."
 mkdir -p "$DEST"
