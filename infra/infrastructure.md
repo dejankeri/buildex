@@ -4,7 +4,8 @@
 > in the same session it happens. **This repo is public: structure and placeholders only.**
 > No real hosts, IDs, or costs.
 
-**Snapshot date:** 2026-07-21 (sync service deployable; Fly target authored).
+**Snapshot date:** 2026-07-22 (sync service DEPLOYED live on Fly + Tigris; end-to-end verified over
+real HTTPS: provision → clone/push `team` succeeds → push `core` rejected 403 → Litestream replicating).
 
 ## Deploy stack
 
@@ -16,8 +17,11 @@
   network filesystems. That rules out Fargate + EFS, the only way Fargate gets persistence. Anyone
   revisiting hosting must not move this onto network storage.
 - **Image:** `apps/sync/Dockerfile`, multi-stage, build context = repository root. The runtime stage
-  carries no `node_modules` (apps/sync has zero dependencies) plus `git` (spawned for smart-HTTP)
-  and `litestream`.
+  carries no `node_modules` (apps/sync has zero dependencies) plus `git`, `git-daemon`, and
+  `litestream`. **`git-daemon` is load-bearing:** on Alpine the `git-http-backend` CGI the smart-HTTP
+  service spawns ships ONLY in the `git-daemon` subpackage, not `git`. Installing `git` alone passes
+  every hermetic test (none spawn http-backend) and then 500s every real clone/push - it cost a live
+  deploy to find. Do not "simplify" the Dockerfile back to `apk add git`.
 - **Litestream** runs as the container entrypoint (`apps/sync/entrypoint.sh`), gated on
   `LITESTREAM_ENDPOINT` being configured - a Fly machine runs one container, so it cannot be a
   sidecar. When an endpoint is set, `litestream restore -if-db-not-exists -if-replica-exists` runs
@@ -25,16 +29,20 @@
   `litestream replicate -exec "node ..."` (`litestream replicate -exec` alone never restores
   anything; the separate restore step is what gives restore-before-serve ordering on a cold start).
   When no endpoint is configured, entrypoint.sh skips litestream entirely and runs node directly.
-  Production always sets an endpoint, so production is always replicated. Target: Cloudflare R2
-  (S3-compatible, zero egress).
+  Production always sets an endpoint, so production is always replicated. Backend in use: **Fly Tigris**
+  (S3-compatible object storage, zero egress) - `fly storage create` provisions the bucket and sets
+  the `AWS_*` credentials as app secrets; litestream.yml reads bucket/endpoint from `LITESTREAM_BUCKET`
+  / `LITESTREAM_ENDPOINT` (set to mirror those) and picks up the keys from the `AWS_*` env. Cloudflare
+  R2 remains a drop-in alternative (same four LITESTREAM_* / AWS_* env), if zero-egress-at-scale wins.
 - **Local development:** `infra/compose.yml`, one service, no proxy, no sidecar, unreplicated by
   default - `LITESTREAM_ENDPOINT`/`LITESTREAM_BUCKET`/credentials have no default value, so a
   developer must opt in via `infra/.env` to exercise replication locally.
 - **Deploy:** `task deploy:plan` (build only) → `task deploy` (prompted).
 - **Onboarding:** `task mint-setup-token -- --base-url https://<host> --onboard ...`.
-- **Backups:** Litestream (control.db + schedules.db, continuous) → R2. **Repo snapshots are still
-  outstanding** -
-  `/srv/buildex/repos` has no automated backup yet; Fly volume snapshots are the interim answer.
+- **Backups:** Litestream (control.db + schedules.db, continuous) → Tigris. The `buildex_data` volume
+  has **scheduled daily snapshots enabled (retention 5)**, which cover `/srv/buildex/repos` as the
+  interim answer; a repo-level continuous backup (not just point-in-time volume snapshots) remains a
+  future refinement.
 - **Cost ledger (placeholders - public repo):** one shared-cpu machine + one small volume + object
   storage at the free tier. Order of magnitude: single-digit USD per month.
 
@@ -67,7 +75,7 @@ client (Electron, per operator machine)
 | Component | Provider | Sizing | Monthly (placeholder) | Notes |
 |---|---|---|---|---|
 | sync machine | Fly.io | one shared-cpu machine (1 cpu, 2GB, `infra/fly.toml` `[[vm]]`) + one volume | `$-` | region set at deploy time; sized for in-memory packfile buffering, see `[[vm]]` comment |
-| object storage (backups) | Cloudflare R2 | Litestream target (control.db) | `$-` | zero egress |
+| object storage (backups) | Fly Tigris | Litestream target (control.db + schedules.db) | `$-` | S3-compatible, zero egress |
 | DNS | Cloudflare | buildexponential.org | `$-` | registrar + DNS |
 | site hosting | Cloudflare Pages | static Eleventy build + `/apply` Pages Function | `$-` | free tier at launch |
 | waitlist store | Cloudflare KV | `WAITLIST` namespace | `$-` | launch-phase `/apply` capture |

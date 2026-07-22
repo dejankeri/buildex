@@ -80,9 +80,11 @@ tasks:
     cmds:
       - npx tsx scripts/mint-setup-token.ts {{.CLI_ARGS}}
 
-  # infra/fly.toml carries no app identity (public repo) - FLY_APP (required) and FLY_REGION
-  # (optional; Fly picks a default region on first deploy if omitted) come from the untracked
-  # infra/.env instead. Copy infra/.env.example to infra/.env and fill these in before deploying.
+  # infra/fly.toml carries no app identity (public repo) - FLY_APP (required) comes from the
+  # untracked infra/.env. Copy infra/.env.example to infra/.env and set FLY_APP before deploying.
+  # Region is NOT passed to `fly deploy` - flyctl has no --region flag for it; a first deploy places
+  # the machine in the region of its mounted volume, so choose the region when you create that volume
+  # (`fly volumes create buildex_data --region <r>`). FLY_REGION in infra/.env is informational only.
   deploy:plan:
     desc: "Dry-run: build the sync image and show what would deploy (no side effects)"
     cmds:
@@ -91,10 +93,10 @@ tasks:
         set -eu
         [ -f infra/.env ] && set -a && . infra/.env && set +a
         if [ -z "${FLY_APP:-}" ]; then
-          echo "FLY_APP is not set. Copy infra/.env.example to infra/.env and set FLY_APP (and optionally FLY_REGION) before deploying." >&2
+          echo "FLY_APP is not set. Copy infra/.env.example to infra/.env and set FLY_APP before deploying." >&2
           exit 1
         fi
-        fly deploy --config infra/fly.toml --dockerfile apps/sync/Dockerfile --app "$FLY_APP" ${FLY_REGION:+--region "$FLY_REGION"} --build-only
+        fly deploy --config infra/fly.toml --dockerfile apps/sync/Dockerfile --app "$FLY_APP" --build-only
       - echo "- dry-run only. Run 'task deploy' to apply (gated)."
 
   deploy:
@@ -106,10 +108,10 @@ tasks:
         set -eu
         [ -f infra/.env ] && set -a && . infra/.env && set +a
         if [ -z "${FLY_APP:-}" ]; then
-          echo "FLY_APP is not set. Copy infra/.env.example to infra/.env and set FLY_APP (and optionally FLY_REGION) before deploying." >&2
+          echo "FLY_APP is not set. Copy infra/.env.example to infra/.env and set FLY_APP before deploying." >&2
           exit 1
         fi
-        fly deploy --config infra/fly.toml --dockerfile apps/sync/Dockerfile --app "$FLY_APP" ${FLY_REGION:+--region "$FLY_REGION"}
+        fly deploy --config infra/fly.toml --dockerfile apps/sync/Dockerfile --app "$FLY_APP"
 
   restore-drill:
     desc: "Rehearse recovery: restore control.db + repos onto a clean target and verify"

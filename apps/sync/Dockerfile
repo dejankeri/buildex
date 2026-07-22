@@ -38,8 +38,13 @@ RUN mkdir -p node_modules \
 FROM --platform=linux/amd64 node:22-alpine AS runtime
 
 # git: required at runtime - the service spawns `git http-backend` and `git init --bare`.
+# git-daemon: on Alpine the `git` package does NOT ship the `git-http-backend` CGI - it lives in the
+#   separate `git-daemon` subpackage. Without it, `git init --bare` works but every smart-HTTP request
+#   (clone/fetch/push) spawns a missing binary and the service 500s ("internal error"). `git` alone
+#   passes every hermetic test (they never spawn http-backend) and fails only on a real deploy - so
+#   this line is load-bearing and must not be "simplified" back to just `git`.
 # ca-certificates: litestream needs TLS to reach object storage.
-RUN apk add --no-cache git ca-certificates
+RUN apk add --no-cache git git-daemon ca-certificates
 
 # Litestream wraps the node process (see ENTRYPOINT / entrypoint.sh): on a Fly machine there is one
 # container, so it cannot be a compose sidecar. `litestream replicate -exec` itself never restores -
