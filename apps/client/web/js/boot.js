@@ -57,12 +57,12 @@ async function boot() {
   $("#tabAdd").onclick = (e) => openAddMenu(e.currentTarget);
   document.addEventListener("keydown", onAddShortcut); // ⌘/Ctrl shortcuts for the ＋ add-menu
   $$("#rtabs button[data-r]").forEach((b) => b.onclick = () => switchRight(b.dataset.r));
-  // The dot leads to whatever the operator most likely wants: no account yet means the action is to
-  // connect one; unsaved work means the action lives in the pending tray; otherwise the change log
-  // answers "what happened?".
+  // The dot leads to whatever the operator most likely wants: no account yet - or an account that
+  // needs reconnecting - means the action is to (re)connect; unsaved work lives in the pending tray;
+  // otherwise the change log answers "what happened?".
   $("#sync").onclick = () => {
     const dot = $("#sync");
-    if (dot.classList.contains("local")) { openConnectAccount(); return; } // no account yet → connect
+    if (dot.classList.contains("local") || dot.classList.contains("reconnect")) { openConnectAccount(); return; }
     switchRight(dot.classList.contains("unsaved") ? "pending" : "synclog");
   };
   $("#usageRefresh").onclick = () => refreshUsage(true);

@@ -19,23 +19,23 @@ const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 30_000;
 const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 
-export type SyncResult = "ok" | "needs-help" | "queued" | "no-change" | "local";
+export type SyncResult = "ok" | "needs-help" | "reconnect" | "queued" | "no-change" | "local";
 /** Recording work locally. No network, so no offline case exists. */
 export type CheckpointResult = "committed" | "no-change";
 /** Taking other people's work in. Never sends anything. */
-export type ReceiveResult = "ok" | "needs-help" | "offline" | "local";
+export type ReceiveResult = "ok" | "needs-help" | "reconnect" | "offline" | "local";
 
 /** Outcome of an auth-rotation attempt, returned by EngineAuth.onAuthError():
  *  - "rotated": a fresh token is stored - retry the git op once.
  *  - "revoked": the refresh token itself was rejected (401/403) - the account is dead, not a
- *    transient blip, so the engine throws AuthRevokedError and receive/publish surface needs-help.
+ *    transient blip, so the engine throws AuthRevokedError and receive/publish surface reconnect.
  *  - "offline": rotation could not reach the server - transient; the original error propagates and
  *    the caller treats it as offline/queued and retries on the next tick. */
 export type AuthRotation = "rotated" | "revoked" | "offline";
 
 /** A push/fetch failed auth AND the refresh token was rejected - the account must be reconnected.
- *  Distinct from a transient network failure so the scheduler surfaces `needs-help` (reconnect)
- *  rather than `offline`/`queued` (will retry on its own). Carries NO conflict semantics: it never
+ *  Distinct from a transient network failure so the scheduler surfaces `reconnect` rather than
+ *  `offline`/`queued` (will retry on its own). Carries NO conflict semantics: it never
  *  triggers a backup or hard-reset - the operator's work simply stays local until they reconnect. */
 export class AuthRevokedError extends Error {
   constructor(message: string) {
@@ -101,7 +101,7 @@ export class SyncEngine {
     try {
       await this.git(["fetch", "origin"], dir);
     } catch (e) {
-      if (e instanceof AuthRevokedError) return "needs-help"; // revoked - reconnect, don't spin
+      if (e instanceof AuthRevokedError) return "reconnect"; // revoked - operator must reconnect
       return "offline";
     }
     // A freshly-provisioned remote has no main branch yet, so there is nothing to rebase onto.
@@ -125,6 +125,7 @@ export class SyncEngine {
 
     const received = await this.receive(dir);
     if (received === "needs-help") return "needs-help";
+    if (received === "reconnect") return "reconnect"; // revoked during the pre-push fetch
     // Offline: any checkpoints are retained locally and go out on the next attempt.
     if (received === "offline") return (await this.isAhead(dir)) ? "queued" : "no-change";
 
@@ -132,7 +133,7 @@ export class SyncEngine {
     try {
       await this.git(["push", "origin", "HEAD:main"], dir);
     } catch (e) {
-      if (e instanceof AuthRevokedError) return "needs-help"; // revoked - reconnect, don't spin
+      if (e instanceof AuthRevokedError) return "reconnect"; // revoked - operator must reconnect
       return "queued";
     }
     return "ok";

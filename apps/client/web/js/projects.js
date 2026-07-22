@@ -15,10 +15,11 @@
  * local-only demo sandbox) has no account and "unsaved"/"Synced" would both be lies about where the
  * work is; only once connected do we distinguish unsaved work from fully saved.
  * @param {{status?: string, unsaved?: {connected?: boolean, files?: number}}} s - the `/api/sync` response.
- * @returns {"help"|"queued"|"local"|"unsaved"|"ok"}
+ * @returns {"reconnect"|"help"|"queued"|"local"|"unsaved"|"ok"}
  */
 function syncDotState(s) {
   return (
+    s.status === "reconnect" ? "reconnect" :
     s.status === "needs-help" ? "help" :
     s.status === "queued" ? "queued" :
     s.status === "local" ? "local" :

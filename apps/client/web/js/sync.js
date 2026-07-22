@@ -12,12 +12,12 @@ let syncBusy = 0;
 
 /**
  * Paint the sync dot for a given state and set its tooltip.
- * @param {"ok"|"busy"|"off"|"queued"|"help"|"local"|"unsaved"} state - dot state (unknown values fall back to "Synced" text).
+ * @param {"ok"|"busy"|"off"|"queued"|"help"|"local"|"unsaved"|"reconnect"} state - dot state (unknown values fall back to "Synced" text).
  */
 function setSync(state) {
   const dot = $("#sync");
   if (!dot) return;
-  dot.classList.remove("ok", "busy", "off", "queued", "help", "local", "unsaved");
+  dot.classList.remove("ok", "busy", "off", "queued", "help", "local", "unsaved", "reconnect");
   dot.classList.add(state);
   const label =
     {
@@ -35,11 +35,12 @@ function setSync(state) {
       // the standalone connect modal (see account.js / boot.js), so the copy invites that click.
       local: "Local workspace - stays on this machine · click to connect an account",
       unsaved: "You have unsaved work · click to save",
+      reconnect: "Your account can’t sync right now - click to reconnect",
     }[state] || "Synced";
   // "unsaved" already tells the operator what the click does (save) and "local" what it does (connect);
-  // every other state's click opens the change log, so only those get the generic suffix - otherwise
+  // "reconnect" likewise invites the click, so none of the three get the generic suffix - otherwise
   // the tooltip would say both.
-  dot.title = state === "unsaved" || state === "local" ? label : label + " · click for recent changes";
+  dot.title = state === "unsaved" || state === "local" || state === "reconnect" ? label : label + " · click for recent changes";
   // a11y: #sync is a role="status" live region, so a state change is announced (the dot itself
   // carries no text). Keep the accessible name in step with the state.
   dot.setAttribute("aria-label", "Sync status: " + label);

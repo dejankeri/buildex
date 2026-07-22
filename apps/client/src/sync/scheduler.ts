@@ -12,7 +12,7 @@
 // debounce flushes.
 import type { SyncResult, CheckpointResult, ReceiveResult } from "./engine.js";
 
-export type SyncStatus = "ok" | "busy" | "queued" | "needs-help" | "local";
+export type SyncStatus = "ok" | "busy" | "queued" | "needs-help" | "reconnect" | "local";
 
 /** Opaque timer id. Numeric for the fake test clock; the real clock casts its setTimeout handle. */
 export type TimerHandle = number;
@@ -119,7 +119,7 @@ export class SyncScheduler {
           await this.deps.engine.checkpoint(dir);
           return this.deps.engine.receive(dir);
         });
-        if (r === "needs-help") this.setStatus("needs-help");
+        if (r === "needs-help" || r === "reconnect") this.setStatus(r);
       } catch {
         /* nothing arrived; the operator's own work is untouched */
       }
@@ -272,6 +272,7 @@ export class SyncScheduler {
  *  workspace shows the neutral not-synced state rather than a misleading green "Synced". */
 function worstStatus(results: SyncResult[]): SyncStatus {
   if (results.includes("needs-help")) return "needs-help";
+  if (results.includes("reconnect")) return "reconnect";
   if (results.includes("queued")) return "queued";
   if (results.includes("local")) return "local";
   return "ok";

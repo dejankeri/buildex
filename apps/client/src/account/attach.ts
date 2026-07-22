@@ -41,7 +41,8 @@ export async function attachOrg(deps: {
       }
     } else {
       const r = await deps.engine.receive(root.dir); // fetch + rebase onto origin/main
-      if (r === "needs-help") needsHelp = true;
+      // a revoke mid-attach (rare - the token was just minted) still means the operator must act
+      if (r === "needs-help" || r === "reconnect") needsHelp = true;
       writable.push(root.dir);
     }
   }
@@ -49,7 +50,7 @@ export async function attachOrg(deps: {
   // The first publish - the operator's consent to send everything they already have.
   for (const dir of writable) {
     const r = await deps.engine.publish(dir);
-    if (r === "needs-help") needsHelp = true;
+    if (r === "needs-help" || r === "reconnect") needsHelp = true;
   }
 
   return { status: needsHelp ? "needs-help" : "connected" };

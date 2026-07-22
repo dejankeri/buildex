@@ -405,17 +405,17 @@ function engineWithAuth(outcome: AuthRotation): SyncEngine {
 }
 
 describe("engine auth: revoked vs transient", () => {
-  it("receive() reports needs-help (reconnect) when the account is revoked, not offline", async () => {
+  it("receive() reports reconnect when the account is revoked, not offline", async () => {
     const dir = repoWithUnreachableRemote(root, "revk");
-    expect(await engineWithAuth("revoked").receive(dir)).toBe("needs-help");
+    expect(await engineWithAuth("revoked").receive(dir)).toBe("reconnect");
   });
   it("receive() stays offline (retryable) when the failure is transient", async () => {
     const dir = repoWithUnreachableRemote(root, "trans");
     expect(await engineWithAuth("offline").receive(dir)).toBe("offline");
   });
-  it("publish() reports needs-help for a revoked account instead of queued", async () => {
+  it("publish() reports reconnect for a revoked account instead of queued", async () => {
     const dir = repoWithUnreachableRemote(root, "pubrevk");
-    expect(await engineWithAuth("revoked").publish(dir)).toBe("needs-help");
+    expect(await engineWithAuth("revoked").publish(dir)).toBe("reconnect");
   });
   it("publish() stays queued (work safe locally, retryable) when the failure is transient", async () => {
     const dir = repoWithUnreachableRemote(root, "pubtrans");

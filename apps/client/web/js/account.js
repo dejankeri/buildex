@@ -14,7 +14,8 @@
  * @returns {void}
  */
 function openConnectAccount() {
-  const back = elt("div", "wz-backdrop"), card = elt("div", "wz-card");
+  if (document.querySelector(".connect-modal")) return; // already open - don't stack a second
+  const back = elt("div", "wz-backdrop connect-modal"), card = elt("div", "wz-card");
   back.appendChild(card);
   document.body.appendChild(back);
   let error = "";
@@ -48,7 +49,11 @@ function openConnectAccount() {
         if (typeof refreshProjects === "function") refreshProjects().catch(() => {});
       } else {
         btn.disabled = false; btn.textContent = "Connect";
-        error = (res && res.error) || "Could not connect - check the URL and setup code.";
+        if (res && res.state === "needs-help") {
+          error = "Connected, but your account needs attention - please contact your company.";
+        } else {
+          error = (res && res.error) || "Could not connect - check the URL and setup code.";
+        }
         draw();
       }
     };

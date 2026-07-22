@@ -60,4 +60,21 @@ describe("console (jsdom) — connect an account after first-run", () => {
     expect(doc.querySelector("#wz-connect")).not.toBeNull(); // form still up
     expect(doc.querySelector(".wz-card")!.textContent).toMatch(/not recognized/i);
   });
+
+  it("a revoked account's status maps to the reconnect dot, which opens the connect modal", () => {
+    const { doc, c } = loadConsole();
+    // syncDotState routes the engine's reconnect status to its own dot class (not the conflict 'help').
+    expect(c.syncDotState({ status: "reconnect" })).toBe("reconnect");
+    // setSync paints that class and the tooltip invites the click (no "recent changes" suffix).
+    c.setSync("reconnect");
+    const dot = doc.querySelector("#sync");
+    expect(dot!.className).toContain("reconnect");
+    expect(dot!.getAttribute("title")).toMatch(/reconnect/i);
+    expect(dot!.getAttribute("title")).not.toMatch(/recent changes/i);
+    // and the dot's click handler opens the connect modal for a reconnect dot (same as local).
+    // loadConsole() evaluates the bundle but never calls boot(), so #sync.onclick is never wired here -
+    // asserting the guard means calling openConnectAccount() directly, the action the handler invokes.
+    c.openConnectAccount();
+    expect(doc.querySelector("#wz-connect")).not.toBeNull();
+  });
 });
