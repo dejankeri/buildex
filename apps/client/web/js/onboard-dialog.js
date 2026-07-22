@@ -7,48 +7,63 @@
 // `firstRun` - the same gate checkOnboarding() in onboarding.js uses - then awaits openOnboard()
 // and always runs checkOnboarding() after it; this dialog never marks onboarding complete, so the
 // wizard still sees firstRun:true and runs its full step sequence, including "Connect your agent").
-// Reads GET /api/sync for `signInAvailable` to decide whether to offer a cloud option at all: when
-// sign-in is dormant (today's default - no Supabase config), the dialog never advertises a cloud
-// backup that would only dead-end at /api/onboard's 501. Complements startSignIn() (signin.js),
-// which is reached later, mid-session, by an operator who already has local work to back up; this
-// dialog is the very first screen, before any work exists, and asks for the company name up front
-// so /api/onboard can mint an anonymous account with no browser round-trip at all.
+// Reads GET /api/sync for `signInAvailable` AND `unsaved.connected` to decide whether to show
+// ANYTHING at all: when sign-in is dormant (today's default - no Supabase config), the dialog
+// never advertises a cloud backup that would only dead-end at /api/onboard's 501; when an account
+// is already connected (e.g. an interrupted first-run resumed), it skips too, so it never mints a
+// second anonymous company and repoints the workspace. Either skip is a true no-op - no dialog, no
+// teardown, promise resolves immediately - and first-run falls straight through to the wizard.
+// Complements startSignIn() (signin.js), which is reached later, mid-session, by an operator who
+// already has local work to back up; this dialog is the very first screen, before any work
+// exists, and asks for the company name up front so /api/onboard can mint an anonymous account
+// with no browser round-trip at all.
 // Operator copy only: "Company name", "Back up to the cloud", "your company", "link Google later" -
 // never push/commit/branch/merge/diff/token/JWT.
 
 /**
- * Open the first-run "name your company" dialog. Reads GET /api/sync for `signInAvailable`:
- * - true: shows a Company name field plus a choice between "Back up to the cloud" (default,
- *   selected) and "Keep everything on this device", with honest copy about what each means.
- *   Submitting cloud with a non-empty name POSTs /api/onboard {companyName}; on
- *   {state:"connected"} the dialog tears down and refreshProjects() repaints the console. An
- *   empty name shows an inline message and never POSTs. Submitting local tears down without
- *   posting anything.
- * - false (today's default): no cloud option renders - a bare Company name + Continue proceeds
- *   local-only, never posting.
- * Neither path marks onboarding complete - this dialog PRECEDES the first-run wizard
- * (checkOnboarding() in onboarding.js), which owns the ".onboarded" completion marker (POST
- * /api/onboarding/complete) as it already does today. Either path just tears down the modal (the
+ * Open the first-run "name your company" dialog. Reads GET /api/sync for `signInAvailable` AND
+ * `unsaved.connected`, and NO-OPS (no dialog, nothing torn down, promise resolves immediately)
+ * unless BOTH:
+ * - `signInAvailable` is true (cloud is actually configured - otherwise dormant, and today's
+ *   wizard-only first-run is unchanged), AND
+ * - `unsaved.connected` is false (no cloud account exists yet - if one is already connected,
+ *   re-showing this dialog would let an interrupted first-run mint a DUPLICATE anonymous company
+ *   that repoints the workspace).
+ * Only when both hold does it draw a Company name field plus a choice between "Back up to the
+ * cloud" (default, selected) and "Keep everything on this device", with honest copy about what
+ * each means. Submitting cloud with a non-empty name POSTs /api/onboard {companyName}; on
+ * {state:"connected"} the dialog tears down and refreshProjects() repaints the console. An empty
+ * name shows an inline message and never POSTs. Submitting local tears down without posting
+ * anything.
+ * Never marks onboarding complete - this dialog PRECEDES the first-run wizard (checkOnboarding()
+ * in onboarding.js), which owns the ".onboarded" completion marker (POST
+ * /api/onboarding/complete) as it already does today. Every path just tears down the modal (the
  * cloud-connected path also calls refreshProjects() to repaint the console).
- * The returned promise resolves only once the dialog tears down (any dismissal path) - callers
- * that `await openOnboard()` before running the first-run wizard (see boot.js) rely on this so the
- * wizard never stacks a second modal on top of a still-open onboard dialog.
+ * The returned promise resolves only once the dialog tears down (or immediately, on the no-op
+ * paths above) - callers that `await openOnboard()` before running the first-run wizard (see
+ * boot.js) rely on this so the wizard never stacks a second modal on top of a still-open onboard
+ * dialog.
  * @returns {Promise<void>}
  */
 async function openOnboard() {
   if (document.querySelector(".onboard-modal")) return Promise.resolve(); // already open - don't stack a second
   let signInAvailable = false;
+  let connected = false;
   try {
     const s = await getJSON("/api/sync");
     signInAvailable = !!(s && s.signInAvailable);
+    connected = !!(s && s.unsaved && s.unsaved.connected);
   } catch (e) {
     /* best-effort - treat as dormant, the safe default */
   }
+  // Nothing to offer (cloud dormant) or already connected (avoid minting a duplicate anonymous
+  // company) - skip the dialog entirely and let the caller proceed straight to the wizard.
+  if (!signInAvailable || connected) return Promise.resolve();
   return new Promise((resolve) => {
   const back = elt("div", "wz-backdrop onboard-modal"), card = elt("div", "wz-card");
   back.appendChild(card);
   document.body.appendChild(back);
-  let mode = "cloud"; // default selection when the cloud option is offered
+  let mode = "cloud"; // default selection - cloud is always offered here (dialog only shows when signInAvailable && !connected)
   let error = "";
   const close = () => {
     back.remove();
@@ -61,34 +76,30 @@ async function openOnboard() {
       '<h2 class="wz-t">Name your company</h2>' +
       '<div class="wz-body">' +
       '<label class="wz-field">Company name<input id="wz-company-name" type="text" autocomplete="off" placeholder="Acme Co." value="' + escAttr(nameVal) + '"></label>' +
-      (signInAvailable
-        ? '<div class="wz-onboard-opts">' +
-          '<label class="wz-onboard-opt' + (mode === "cloud" ? " on" : "") + '">' +
-          '<input type="radio" name="wz-onboard-mode" value="cloud"' + (mode === "cloud" ? " checked" : "") + '>' +
-          '<div><b>Back up to the cloud</b><p>Your work is saved to the cloud from the first second. You can link Google later so you never lose access and can invite your team.</p></div>' +
-          "</label>" +
-          '<label class="wz-onboard-opt' + (mode === "local" ? " on" : "") + '">' +
-          '<input type="radio" name="wz-onboard-mode" value="local"' + (mode === "local" ? " checked" : "") + '>' +
-          '<div><b>Keep everything on this device</b><p>Nothing leaves this machine - if you lose this device, you risk losing it.</p></div>' +
-          "</label>" +
-          "</div>"
-        : "") +
+      '<div class="wz-onboard-opts">' +
+      '<label class="wz-onboard-opt' + (mode === "cloud" ? " on" : "") + '">' +
+      '<input type="radio" name="wz-onboard-mode" value="cloud"' + (mode === "cloud" ? " checked" : "") + '>' +
+      '<div><b>Back up to the cloud</b><p>Your work is saved to the cloud from the first second. You can link Google later so you never lose access and can invite your team.</p></div>' +
+      "</label>" +
+      '<label class="wz-onboard-opt' + (mode === "local" ? " on" : "") + '">' +
+      '<input type="radio" name="wz-onboard-mode" value="local"' + (mode === "local" ? " checked" : "") + '>' +
+      '<div><b>Keep everything on this device</b><p>Nothing leaves this machine - if you lose this device, you risk losing it.</p></div>' +
+      "</label>" +
+      "</div>" +
       (error ? '<div class="wz-err">' + esc(error) + "</div>" : "") +
       "</div>" +
       '<div class="wz-actions"><div class="wz-right">' +
       '<button class="wz-primary" id="wz-onboard-continue" type="button">Continue</button>' +
       "</div></div>";
-    if (signInAvailable) {
-      card.querySelectorAll('input[name="wz-onboard-mode"]').forEach((r) => {
-        r.onchange = () => {
-          mode = r.value;
-          draw();
-        };
-      });
-    }
+    card.querySelectorAll('input[name="wz-onboard-mode"]').forEach((r) => {
+      r.onchange = () => {
+        mode = r.value;
+        draw();
+      };
+    });
     card.querySelector("#wz-onboard-continue").onclick = async () => {
       // Local-only: never posts anything - just tears down and proceeds to the wizard.
-      if (!signInAvailable || mode === "local") {
+      if (mode === "local") {
         close();
         return;
       }
@@ -124,7 +135,9 @@ async function openOnboard() {
           // that raw internal string; fall back to the local-only path the operator can still use.
           error = "Cloud backup isn't available yet - continuing keeps your work on this device.";
         } else {
-          error = (res && res.error) || "Could not set up your company - please try again.";
+          // Never echo the raw server error string verbatim - it can carry internal vocabulary
+          // (e.g. "anonymous sign-in returned no access token") that must never reach the operator.
+          error = "Couldn't set up your company - please try again.";
         }
         draw();
       }

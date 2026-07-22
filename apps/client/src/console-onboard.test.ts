@@ -46,7 +46,7 @@ describe("console (jsdom) — openOnboard() first-run dialog", () => {
     expect(text).not.toMatch(BANNED);
   });
 
-  it("with signInAvailable:false shows NO cloud option - local-only", async () => {
+  it("with signInAvailable:false shows NO dialog at all - cloud is dormant, promise resolves immediately", async () => {
     const { doc, w, c } = loadConsole();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (w as any).fetch = (url: string) => {
@@ -60,15 +60,34 @@ describe("console (jsdom) — openOnboard() first-run dialog", () => {
       }
       return Promise.reject(new Error("no route: " + u));
     };
-    // Fire-and-forget - see the note in the previous test: this dialog is never dismissed here.
-    c.openOnboard();
+    let resolved = false;
+    c.openOnboard().then(() => { resolved = true; });
     await new Promise((r) => setTimeout(r, 0));
-    const card = doc.querySelector(".wz-card");
-    expect(card).not.toBeNull();
-    expect(doc.querySelector("#wz-company-name")).not.toBeNull();
-    expect(doc.querySelector('input[name="wz-onboard-mode"]')).toBeNull();
-    expect(card!.textContent).not.toContain("Back up to the cloud");
-    expect(card!.textContent).not.toMatch(BANNED);
+    expect(doc.querySelector(".onboard-modal")).toBeNull();
+    expect(doc.querySelector(".wz-card")).toBeNull();
+    expect(resolved).toBe(true); // no-op path still resolves - boot.js's await must not hang
+  });
+
+  it("with signInAvailable:true but unsaved.connected:true shows NO dialog - already has a cloud account, so it must not mint a duplicate one", async () => {
+    const { doc, w, c } = loadConsole();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (w as any).fetch = (url: string) => {
+      const u = String(url);
+      if (u.includes("/api/sync")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: true }, signInAvailable: true }),
+        });
+      }
+      return Promise.reject(new Error("no route: " + u));
+    };
+    let resolved = false;
+    c.openOnboard().then(() => { resolved = true; });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(doc.querySelector(".onboard-modal")).toBeNull();
+    expect(doc.querySelector(".wz-card")).toBeNull();
+    expect(resolved).toBe(true);
   });
 
   it("cloud submit with a name POSTs /api/onboard {companyName} and, on connected, tears down + refreshes - WITHOUT marking onboarding complete; the returned promise stays pending until then", async () => {
@@ -86,10 +105,13 @@ describe("console (jsdom) — openOnboard() first-run dialog", () => {
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ state: "connected" }) });
       }
       if (u.includes("/api/sync")) {
+        // NOT yet connected - that's the whole premise of this test (it's about to become connected
+        // via the POST below). Under the new openOnboard() gating, connected:true here would skip
+        // the dialog entirely before it ever gets drawn.
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: true }, signInAvailable: true }),
+          json: () => Promise.resolve({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false }, signInAvailable: true }),
         });
       }
       if (u.includes("/api/projects")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ projects: [{ id: "p1", name: "Workspace", items: [] }] }) });
@@ -140,6 +162,36 @@ describe("console (jsdom) — openOnboard() first-run dialog", () => {
     expect(doc.querySelector(".onboard-modal")).not.toBeNull(); // dialog stays up
   });
 
+  it("cloud submit generic failure never echoes the raw server error - shows a fixed friendly string instead", async () => {
+    const { doc, w, c } = loadConsole();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (w as any).fetch = (url: string, opts: any) => {
+      const u = String(url);
+      if (u.includes("/api/onboard") && opts && opts.method === "POST") {
+        // A real internal failure string - must never reach the operator verbatim.
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ error: "anonymous sign-in returned no access token" }) });
+      }
+      if (u.includes("/api/sync")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false }, signInAvailable: true }),
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+    };
+    c.openOnboard();
+    await new Promise((r) => setTimeout(r, 0));
+    (doc.querySelector("#wz-company-name") as unknown as { value: string }).value = "Acme Co.";
+    (doc.querySelector("#wz-onboard-continue") as unknown as { click(): void }).click();
+    await new Promise((r) => setTimeout(r, 0));
+    const text = doc.querySelector(".wz-card")!.textContent!;
+    expect(text).toMatch(/couldn.?t set up your company/i); // fixed friendly string
+    expect(text).not.toMatch(/access token/i); // the raw error text must not leak
+    expect(text).not.toMatch(BANNED);
+    expect(doc.querySelector(".onboard-modal")).not.toBeNull(); // dialog stays up for retry
+  });
+
   it("submitting local proceeds without posting to /api/onboard or /api/onboarding/complete", async () => {
     const { doc, w, c } = loadConsole();
     let onboardPosted = false;
@@ -181,7 +233,7 @@ describe("console (jsdom) — openOnboard() first-run dialog", () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () => Promise.resolve({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false }, signInAvailable: false }),
+          json: () => Promise.resolve({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false }, signInAvailable: true }),
         });
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
@@ -191,6 +243,7 @@ describe("console (jsdom) — openOnboard() first-run dialog", () => {
     await new Promise((r) => setTimeout(r, 0)); // let the initial GET /api/sync + draw() settle
     expect(doc.querySelector(".wz-card")).not.toBeNull(); // drawn...
     expect(resolved).toBe(false); // ...but NOT resolved yet - it must wait for dismissal, not just drawing
+    (doc.querySelector('input[name="wz-onboard-mode"][value="local"]') as unknown as { checked: boolean; click(): void }).click();
     (doc.querySelector("#wz-onboard-continue") as unknown as { click(): void }).click(); // "Continue" tears down (local-only)
     await new Promise((r) => setTimeout(r, 0));
     expect(doc.querySelector(".onboard-modal")).toBeNull(); // torn down
@@ -200,12 +253,12 @@ describe("console (jsdom) — openOnboard() first-run dialog", () => {
   it("does not stack a second modal on a repeat call", async () => {
     const { doc, w, c } = loadConsole();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (w as any).fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ signInAvailable: false }) });
+    (w as any).fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ signInAvailable: true, unsaved: { connected: false } }) });
     // Fire-and-forget the first call - it's never dismissed, so its promise never resolves here.
     c.openOnboard();
     await new Promise((r) => setTimeout(r, 0));
-    // The repeat call hits the re-entry guard and resolves immediately (it never opens a second
-    // dialog to dismiss), so awaiting it is safe.
+    // The repeat call hits the re-entry guard (an .onboard-modal already exists) and resolves
+    // immediately (it never opens a second dialog to dismiss), so awaiting it is safe.
     await c.openOnboard();
     expect(doc.querySelectorAll(".onboard-modal")).toHaveLength(1);
   });
