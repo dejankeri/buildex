@@ -117,8 +117,10 @@ Because secrets live in the OS vault (not in any BuildEx file), two edges exist 
 Windows**, and neither platform handles them today:
 
 1. **Orphaned on uninstall.** Deleting the app / workspace does not remove its vault entries; neither
-   platform has an uninstall hook. The Windows NSIS installer exists (it ships in this branch) but
-   wires no vault cleanup, so uninstalling leaves every stored credential behind.
+   platform has an uninstall hook. The Windows NSIS installer wires no vault cleanup, so uninstalling
+   leaves every stored credential behind - see
+   [Uninstall](guides/package-windows.md#uninstall) for what a Windows removal does and does not
+   reclaim. macOS is worse here: removal is dragging the `.app` to the Trash, so no code runs at all.
 2. **Path-reuse bleed.** The service id is `sha256(workspace path)`; a *new* company created at a
    deleted company's path inherits the old credentials — an invariant-6 edge.
 

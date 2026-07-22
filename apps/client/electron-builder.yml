@@ -35,9 +35,24 @@ extraResources:
   # asar, so it must be a real file on disk. daemon-entry points the gate command at <resources>/gate-hook.mjs.
   - from: scripts/gate-hook.mjs
     to: gate-hook.mjs
+# nsis is already electron-builder's default for --win; pinning it keeps the artifact set from drifting.
+# The icon is the same 512x512 source the mac build uses. `mac.icon` does not cover Windows: without an
+# explicit win.icon the build logs "default Electron icon is used" and ships the stock Electron logo.
+win:
+  target:
+    - nsis
+  icon: electron/assets/icon.png   # 512×512 → electron-builder generates the .ico
+
 # Windows installer: do NOT auto-launch after install - the operator opens it when ready. Auto-launch
 # left a post-install instance that could race a manual launch (two daemons on the same workspace);
 # combined with the single-instance lock in main.cjs, the app now runs exactly once at a time.
+#
+# The install FOLDER is deliberately not set here, because it cannot be: for a one-click per-user
+# installer electron-builder ignores productName and derives the folder from the npm package name
+# (app-builder-lib getWindowsInstallationDirName), so a scoped name lands the operator in
+# "%LOCALAPPDATA%\Programs\@buildexclient". No nsis option overrides it. `package:win` therefore
+# renames the packaged metadata on the CLI - scoped to the Windows build, so the mac release path
+# this file also drives stays byte-identical. See docs/guides/package-windows.md.
 nsis:
   runAfterFinish: false
 mac:
