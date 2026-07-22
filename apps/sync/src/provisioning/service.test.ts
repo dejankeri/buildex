@@ -124,6 +124,12 @@ describe("provisionBySession", () => {
       operatorId: link!.operatorId,
       name: "laptop",
     });
+
+    // Verify parity with provision(): same repo + permission-matrix structure
+    expect(store.getAccess(link!.operatorId, "core")).toBe("read");
+    expect(store.getAccess(link!.operatorId, "team-a")).toBe("write");
+    expect(store.getAccess(link!.operatorId, `private-${link!.operatorId}`)).toBe("write");
+    expect(git.ensured.sort()).toEqual(["core", `private-${link!.operatorId}`, "team-a"]);
   });
 
   it("is idempotent: the same sub resolves to the same company/operator, minting a fresh machine token each time", async () => {
