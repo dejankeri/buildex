@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { SyncEngine } from "./engine.js";
+import type { AuthRotation } from "./engine.js";
 
 const ENV = {
   ...process.env,
@@ -378,5 +379,46 @@ describe("SYNC-SAFETY INVARIANT [release-gate:sync-safety]: recording work never
 
     const engine = new SyncEngine({ now: () => 1, actor: "op" });
     expect(await engine.checkpoint(dir)).toBe("committed");
+  });
+});
+
+// A repo with a remote that git can NEVER reach, so every fetch/push fails - lets us drive the
+// engine's auth-classification branch without a network. classifyAuthError:()=>true treats that
+// failure as an auth rejection, so onAuthError() is consulted and its outcome decides the result.
+function repoWithUnreachableRemote(root: string, name: string): string {
+  const dir = join(root, name);
+  mkdirSync(dir, { recursive: true });
+  execFileSync("git", ["init", "--initial-branch=main", "."], { cwd: dir, env: ENV });
+  writeFileSync(join(dir, "doc.md"), "x\n");
+  execFileSync("git", ["add", "-A"], { cwd: dir, env: ENV });
+  execFileSync("git", ["commit", "-m", "seed"], { cwd: dir, env: ENV });
+  execFileSync("git", ["remote", "add", "origin", "file://" + join(root, "does-not-exist.git")], { cwd: dir, env: ENV });
+  return dir;
+}
+function engineWithAuth(outcome: AuthRotation): SyncEngine {
+  return new SyncEngine({
+    now: Date.now,
+    actor: "t",
+    classifyAuthError: () => true,
+    auth: { headerEnv: () => undefined, onAuthError: async () => outcome },
+  });
+}
+
+describe("engine auth: revoked vs transient", () => {
+  it("receive() reports needs-help (reconnect) when the account is revoked, not offline", async () => {
+    const dir = repoWithUnreachableRemote(root, "revk");
+    expect(await engineWithAuth("revoked").receive(dir)).toBe("needs-help");
+  });
+  it("receive() stays offline (retryable) when the failure is transient", async () => {
+    const dir = repoWithUnreachableRemote(root, "trans");
+    expect(await engineWithAuth("offline").receive(dir)).toBe("offline");
+  });
+  it("publish() reports needs-help for a revoked account instead of queued", async () => {
+    const dir = repoWithUnreachableRemote(root, "pubrevk");
+    expect(await engineWithAuth("revoked").publish(dir)).toBe("needs-help");
+  });
+  it("publish() stays queued (work safe locally, retryable) when the failure is transient", async () => {
+    const dir = repoWithUnreachableRemote(root, "pubtrans");
+    expect(await engineWithAuth("offline").publish(dir)).toBe("queued");
   });
 });

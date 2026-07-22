@@ -58,7 +58,7 @@ describe("INVARIANT [release-gate:no-token-on-disk]: an opened account keeps its
 
     const engine = new SyncEngine({
       now: Date.now, actor: "t",
-      auth: { headerEnv: () => gitAuthEnv(store.tokens()!.machineToken), onAuthError: async () => false },
+      auth: { headerEnv: () => gitAuthEnv(store.tokens()!.machineToken), onAuthError: async () => "offline" },
     });
     const res = await attachOrg({ engine, roots, repos, sandbox: false });
     expect(res.status).toBe("connected");

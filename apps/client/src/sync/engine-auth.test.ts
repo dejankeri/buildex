@@ -44,7 +44,7 @@ describe("SyncEngine auth", () => {
     // GIT_CONFIG_KEY_0/VALUE_0 in process.env for credential prompting, which the merge would inherit.)
     const auth: EngineAuth = {
       headerEnv: () => (firstTry ? { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "not-a-valid-key" } : gitAuthEnv("xmachine_ok")),
-      onAuthError: async () => { rotations++; firstTry = false; return true; },
+      onAuthError: async () => { rotations++; firstTry = false; return "rotated"; },
     };
     const engine = new SyncEngine({ now: Date.now, actor: "t", auth, classifyAuthError: () => firstTry });
     const r = await engine.publish(dir);
@@ -55,7 +55,7 @@ describe("SyncEngine auth", () => {
   it("does not rotate when the failure is not an auth failure", async () => {
     const dir = clonedWithRemote();
     let rotations = 0;
-    const auth: EngineAuth = { headerEnv: () => undefined, onAuthError: async () => { rotations++; return true; } };
+    const auth: EngineAuth = { headerEnv: () => undefined, onAuthError: async () => { rotations++; return "rotated"; } };
     // A clean publish (no failure) must never call onAuthError.
     writeFileSync(join(dir, "c.md"), "z\n");
     const engine = new SyncEngine({ now: Date.now, actor: "t", auth });

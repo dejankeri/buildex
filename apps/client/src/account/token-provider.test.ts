@@ -39,21 +39,36 @@ describe("token-provider", () => {
   it("rotate() refreshes, persists the new pair, and current() reflects it", async () => {
     const s = store();
     const tp = makeTokenProvider({ store: s, fetch: fetchWith(200, ROTATED) });
-    expect(await tp.rotate()).toBe(true);
+    expect(await tp.rotate()).toBe("rotated");
     expect(tp.current()).toBe("xmachine_new");
     expect(s.tokens()!.refreshToken).toBe("xrefresh_new");
   });
 
-  it("rotate() returns false and leaves the old token when the server rejects the refresh", async () => {
+  it("rotate() reports revoked and leaves the old token when the server rejects the refresh", async () => {
     const s = store();
     const tp = makeTokenProvider({ store: s, fetch: fetchWith(401, { error: "revoked" }) });
-    expect(await tp.rotate()).toBe(false);
+    expect(await tp.rotate()).toBe("revoked");
     expect(tp.current()).toBe("xmachine_old"); // unchanged - the account is not silently wiped
   });
 
-  it("rotate() returns false with no account rather than throwing", async () => {
+  it("rotate() reports offline with no account rather than throwing", async () => {
     const s = new AccountStore({ orgId: "o", orgDir: dir, keychain: new InMemoryKeychain() });
     const tp = makeTokenProvider({ store: s, fetch: fetchWith(200, ROTATED) });
-    expect(await tp.rotate()).toBe(false);
+    expect(await tp.rotate()).toBe("offline");
+  });
+
+  it("rotate() reports offline (transient) when the refresh cannot reach the server", async () => {
+    const s = store();
+    const throwing = (async () => { throw new Error("ECONNREFUSED"); }) as unknown as typeof fetch;
+    const tp = makeTokenProvider({ store: s, fetch: throwing });
+    expect(await tp.rotate()).toBe("offline"); // network failure is NOT a revocation
+    expect(tp.current()).toBe("xmachine_old"); // pair left in place
+  });
+
+  it("rotate() reports offline (transient), not revoked, on a 5xx", async () => {
+    const s = store();
+    const tp = makeTokenProvider({ store: s, fetch: fetchWith(503, { error: "down" }) });
+    expect(await tp.rotate()).toBe("offline");
+    expect(tp.current()).toBe("xmachine_old");
   });
 });

@@ -25,11 +25,30 @@ export type CheckpointResult = "committed" | "no-change";
 /** Taking other people's work in. Never sends anything. */
 export type ReceiveResult = "ok" | "needs-help" | "offline" | "local";
 
+/** Outcome of an auth-rotation attempt, returned by EngineAuth.onAuthError():
+ *  - "rotated": a fresh token is stored - retry the git op once.
+ *  - "revoked": the refresh token itself was rejected (401/403) - the account is dead, not a
+ *    transient blip, so the engine throws AuthRevokedError and receive/publish surface needs-help.
+ *  - "offline": rotation could not reach the server - transient; the original error propagates and
+ *    the caller treats it as offline/queued and retries on the next tick. */
+export type AuthRotation = "rotated" | "revoked" | "offline";
+
+/** A push/fetch failed auth AND the refresh token was rejected - the account must be reconnected.
+ *  Distinct from a transient network failure so the scheduler surfaces `needs-help` (reconnect)
+ *  rather than `offline`/`queued` (will retry on its own). Carries NO conflict semantics: it never
+ *  triggers a backup or hard-reset - the operator's work simply stays local until they reconnect. */
+export class AuthRevokedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthRevokedError";
+  }
+}
+
 export interface EngineAuth {
   /** gitAuthEnv(currentToken), or undefined when there is no account yet (local-only). */
   headerEnv(): Record<string, string> | undefined;
-  /** Rotate the token after an auth-classified failure; resolve true if a retry should be made. */
-  onAuthError(): Promise<boolean>;
+  /** Rotate after an auth-classified failure. See AuthRotation for what each outcome means. */
+  onAuthError(): Promise<AuthRotation>;
 }
 
 export interface SyncDeps {
@@ -81,7 +100,8 @@ export class SyncEngine {
     if (!(await this.hasRemote(dir))) return "local";
     try {
       await this.git(["fetch", "origin"], dir);
-    } catch {
+    } catch (e) {
+      if (e instanceof AuthRevokedError) return "needs-help"; // revoked - reconnect, don't spin
       return "offline";
     }
     // A freshly-provisioned remote has no main branch yet, so there is nothing to rebase onto.
@@ -111,7 +131,8 @@ export class SyncEngine {
     if (!(await this.isAhead(dir))) return "no-change";
     try {
       await this.git(["push", "origin", "HEAD:main"], dir);
-    } catch {
+    } catch (e) {
+      if (e instanceof AuthRevokedError) return "needs-help"; // revoked - reconnect, don't spin
       return "queued";
     }
     return "ok";
@@ -246,8 +267,12 @@ export class SyncEngine {
       // the scheduler already turns a thrown publish into `needs-help` and never loses local work.
       const stderr = (e as { stderr?: string })?.stderr ?? (e instanceof Error ? e.message : "");
       const classify = this.deps.classifyAuthError ?? ((s: string) => DEFAULT_AUTH_RE.test(s));
-      if (this.deps.auth && classify(String(stderr)) && (await this.deps.auth.onAuthError())) {
-        return (await run()).stdout; // retry once with the rotated header (headerEnv re-read above)
+      if (this.deps.auth && classify(String(stderr))) {
+        const outcome = await this.deps.auth.onAuthError();
+        if (outcome === "rotated") return (await run()).stdout; // retry once with the rotated header
+        if (outcome === "revoked") throw new AuthRevokedError(String(stderr)); // account dead → needs-help
+        // "offline": rotation couldn't reach the server - fall through and propagate the original
+        // error so the caller treats it as a transient offline/queued failure and retries later.
       }
       throw e;
     }
