@@ -21,6 +21,13 @@ export interface Unsaved {
   oldestAt: number | null;
 }
 
+export interface UnsavedAggregate extends Unsaved {
+  /** True when at least one root's count threw and was skipped (e.g. a transient git `index.lock`
+   *  race). The tally is then a FLOOR, not the truth: a caller must not read a possibly-lower number
+   *  as "nothing changed" and blank the card - that would breach invariant 8 for a moment. */
+  incomplete: boolean;
+}
+
 const NOTHING: Unsaved = { files: 0, oldestAt: null };
 
 /** How long work may sit unsaved before the card stops reporting a number and starts stating the
@@ -182,19 +189,22 @@ async function oldestUnsavedAt(
 }
 
 /** What is waiting across every writable root, collapsed into the one number the tray shows. A root
- *  that is not a repository is skipped rather than failing the whole count - a broken root must not
- *  hide real unsaved work in the others. */
-export async function unsavedAcross(dirs: string[]): Promise<Unsaved> {
+ *  whose count throws is skipped rather than failing the whole count - a broken root must not hide
+ *  real unsaved work in the others - but its failure is reported via `incomplete`, so a caller can
+ *  refuse to blank a real count on a number it knows to be only a floor. */
+export async function unsavedAcross(dirs: string[]): Promise<UnsavedAggregate> {
+  let incomplete = false;
   const each = await Promise.all(
     dirs.map(async (dir) => {
       try {
         return await unsavedIn(dir);
       } catch {
+        incomplete = true; // this root's number is unknown, not zero
         return NOTHING;
       }
     }),
   );
   const files = each.reduce((n, u) => n + u.files, 0);
   const dates = each.map((u) => u.oldestAt).filter((d): d is number => d !== null);
-  return { files, oldestAt: dates.length > 0 ? Math.min(...dates) : null };
+  return { files, oldestAt: dates.length > 0 ? Math.min(...dates) : null, incomplete };
 }

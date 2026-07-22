@@ -515,6 +515,51 @@ describe("manual save", () => {
     expect(statuses[statuses.length - 1]).toBe("queued"); // the operator can save again by hand
   });
 
+  it("signals busy the instant the operator saves, even while a background tick holds the lease", async () => {
+    // A save shares the per-root lease with the background receive tick. If the tick is mid network
+    // op, publishAll's flush queues behind it and can stall for seconds. The operator must see their
+    // click register immediately - the dot must go busy now, not only once the tick's receive returns.
+    const clock = new FakeClock();
+    const releaseReceive: (() => void)[] = [];
+    const engine = {
+      async checkpoint(): Promise<CheckpointResult> {
+        return "committed";
+      },
+      receive: (): Promise<ReceiveResult> =>
+        new Promise<ReceiveResult>((r) => releaseReceive.push(() => r("ok"))), // holds the lease open
+      async publish(): Promise<SyncResult> {
+        return "ok";
+      },
+      async syncReadonly(): Promise<void> {},
+    };
+    const statuses: string[] = [];
+    const scheduler = new SyncScheduler({
+      engine,
+      writableRoots: () => ["/team"],
+      readonlyRoots: () => [],
+      clock,
+      onStatus: (s) => statuses.push(s),
+    });
+    scheduler.start();
+    clock.advance(45_000); // the tick fires and receive is now holding /team's lease, unresolved
+    await tick();
+    // Dirty work created AFTER the tick took the lease - so the save's flush must queue for that lease
+    // (touching earlier would let the 2s debounce checkpoint and clear it before the tick, and flush
+    // would then early-return without ever taking the lease, hiding the very stall this guards).
+    scheduler.touch("/team");
+    expect(statuses).toEqual([]); // the tick emitted nothing; the dot is idle
+
+    const publishP = scheduler.publishAll(); // operator clicks Save while the tick is mid-flight
+    await tick();
+    expect(statuses).toContain("busy"); // busy NOW - not blocked behind the receive still in flight
+
+    for (let i = 0; i < 20 && releaseReceive.length; i++) {
+      releaseReceive.shift()!();
+      await tick();
+    }
+    await publishP;
+  });
+
   it("cancels a pending offline backoff retry on shutdown - quitting must never publish", async () => {
     const { scheduler, engine, clock } = makeScheduler();
     engine.publishResult = "queued";

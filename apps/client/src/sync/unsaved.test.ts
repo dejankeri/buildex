@@ -232,7 +232,7 @@ describe("unsavedAcross", () => {
   });
 
   it("reports nothing across clean roots", async () => {
-    expect(await unsavedAcross([clone("a"), clone("b")])).toEqual({ files: 0, oldestAt: null });
+    expect(await unsavedAcross([clone("a"), clone("b")])).toEqual({ files: 0, oldestAt: null, incomplete: false });
   });
 
   it("ignores a root that is not a repository rather than failing the whole count", async () => {
@@ -241,5 +241,24 @@ describe("unsavedAcross", () => {
     const notARepo = join(root, "plain");
     mkdirSync(notARepo, { recursive: true });
     expect((await unsavedAcross([a, notARepo])).files).toBe(1);
+  });
+
+  it("flags the tally incomplete when a root's count throws, but still counts the healthy roots", async () => {
+    // A transient failure on one root (here a directory git cannot even open) must not be laundered
+    // into 0 for that root: the caller needs to know the number is a floor so it does not blank a
+    // real count to "nothing waiting".
+    const a = clone("a");
+    commitFile(a, "one.md", "1\n");
+    const broken = join(root, "does-not-exist"); // no such dir - unsavedIn throws for it
+    const u = await unsavedAcross([a, broken]);
+    expect(u.files).toBe(1); // the healthy root still counts
+    expect(u.incomplete).toBe(true); // but the tally is known to be only a floor
+  });
+
+  it("reports a complete tally when every root counts cleanly", async () => {
+    const a = clone("a");
+    commitFile(a, "one.md", "1\n");
+    const u = await unsavedAcross([a, clone("b")]);
+    expect(u.incomplete).toBe(false);
   });
 });

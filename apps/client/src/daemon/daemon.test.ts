@@ -280,6 +280,51 @@ describe("/api/sync", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: false } });
   });
+
+  it("keeps the last good count when a later count is incomplete, instead of blanking the card", async () => {
+    // A transient index-lock race makes unsavedAcross return incomplete. The daemon must not replace
+    // a real "7 waiting" with a floor of 0 - that would tell the operator their work is saved when it
+    // is not (invariant 8). It keeps the last good value and re-attempts on the next poll.
+    let clock = 0;
+    let call = 0;
+    const { app } = makeDaemon({
+      now: () => clock,
+      unsavedFn: async () => {
+        call++;
+        return call === 1
+          ? { files: 7, oldestAt: 111, stale: false, connected: true }
+          : { files: 0, oldestAt: null, stale: false, connected: true, incomplete: true };
+      },
+    });
+    const first = (await (await app(new Request("http://127.0.0.1/api/sync"))).json()) as { unsaved: unknown };
+    expect(first.unsaved).toEqual({ files: 7, oldestAt: 111, stale: false, connected: true });
+    clock = 10_000; // past the TTL, so the next poll actually re-counts (and hits the incomplete case)
+    const second = (await (await app(new Request("http://127.0.0.1/api/sync"))).json()) as { unsaved: unknown };
+    expect(second.unsaved).toEqual({ files: 7, oldestAt: 111, stale: false, connected: true }); // not blanked to 0
+    // The incomplete flag is a cache decision input only - it never reaches the console.
+    expect(second.unsaved).not.toHaveProperty("incomplete");
+  });
+
+  it("recomputes only after the TTL expires, driven by the injected clock", async () => {
+    let clock = 0;
+    let counted = 0;
+    const { app } = makeDaemon({
+      now: () => clock,
+      unsavedFn: async () => {
+        counted++;
+        return { files: counted, oldestAt: null, stale: false, connected: true };
+      },
+    });
+    await (await app(new Request("http://127.0.0.1/api/sync"))).json(); // first poll counts (counted → 1)
+    clock = 1999; // still inside the 2s window
+    const within = (await (await app(new Request("http://127.0.0.1/api/sync"))).json()) as { unsaved: { files: number } };
+    expect(counted).toBe(1); // served from cache, not recounted
+    expect(within.unsaved.files).toBe(1);
+    clock = 2000; // TTL elapsed (the boundary is exclusive)
+    const after = (await (await app(new Request("http://127.0.0.1/api/sync"))).json()) as { unsaved: { files: number } };
+    expect(counted).toBe(2); // recomputed
+    expect(after.unsaved.files).toBe(2);
+  });
 });
 
 describe("body validation - malformed input 400s, never a raw 500", () => {

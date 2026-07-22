@@ -137,7 +137,11 @@ export interface DaemonDeps {
    *  anywhere to save TO yet (any writable root with a remote): with no account, work waiting is not
    *  a nudge to act, it is a fact to state. Optional, and a throwing implementation degrades to
    *  "nothing waiting" - counting must never be the reason the status poll fails. */
-  unsavedFn?: () => Promise<{ files: number; oldestAt: number | null; stale: boolean; connected: boolean }>;
+  unsavedFn?: () => Promise<{ files: number; oldestAt: number | null; stale: boolean; connected: boolean; incomplete?: boolean }>;
+  /** Clock for the unsaved-count cache TTL. Injected ONLY so the cache's expiry is deterministically
+   *  testable; production leaves it unset and it falls back to Date.now. Nothing else in the daemon
+   *  needs an injected clock, so this stays scoped to the one place a test must control time. */
+  now?: () => number;
   /** Directory of the built operator console (index.html + assets). Served at `/` when set. */
   webRoot?: string;
   /** The read-only vault surface (documents + per-file history). */
@@ -229,22 +233,30 @@ const NOTHING_UNSAVED = { files: 0, oldestAt: null, stale: false, connected: fal
 
 export function createDaemon(deps: DaemonDeps): Handler {
   const appSubs = new Map<string, () => void>(); // token → unsubscribe (mini-app host registration)
-  type UnsavedView = Awaited<ReturnType<NonNullable<DaemonDeps["unsavedFn"]>>>;
+  const now = deps.now ?? Date.now;
+  // The wire shape the poll returns: the freshly-counted `incomplete` flag is a decision input for the
+  // cache, never part of what the console sees.
+  type UnsavedWire = Omit<Awaited<ReturnType<NonNullable<DaemonDeps["unsavedFn"]>>>, "incomplete">;
   let unsavedAt = -Infinity;
-  let unsavedValue: UnsavedView = { ...NOTHING_UNSAVED };
-  let unsavedInFlight: Promise<UnsavedView> | null = null;
+  let unsavedValue: UnsavedWire = { ...NOTHING_UNSAVED };
+  let unsavedInFlight: Promise<UnsavedWire> | null = null;
   /** The cached count. Concurrent pollers collapse onto one in-flight count; a throw degrades to
    *  "nothing waiting" (the dep's documented contract) rather than 500-ing the status poll. */
-  const unsavedCached = async (): Promise<UnsavedView> => {
+  const unsavedCached = async (): Promise<UnsavedWire> => {
     if (!deps.unsavedFn) return { ...NOTHING_UNSAVED };
-    if (Date.now() - unsavedAt < UNSAVED_TTL_MS) return unsavedValue;
+    if (now() - unsavedAt < UNSAVED_TTL_MS) return unsavedValue;
     if (unsavedInFlight) return unsavedInFlight;
     unsavedInFlight = deps
       .unsavedFn()
-      .then((v) => {
-        unsavedValue = v;
-        unsavedAt = Date.now();
-        return v;
+      .then(({ incomplete, ...wire }) => {
+        // A count that could not be fully taken (a transient git index.lock race on one root) must
+        // never blank a real number into "nothing waiting" (invariant 8). Keep the last good count
+        // and leave the TTL expired, so the very next poll re-attempts a clean count. The one
+        // exception is the first-ever count, where there is no prior value to keep.
+        if (incomplete && unsavedAt !== -Infinity) return unsavedValue;
+        unsavedValue = wire;
+        unsavedAt = now();
+        return wire;
       })
       .catch(() => ({ ...NOTHING_UNSAVED }))
       .finally(() => {

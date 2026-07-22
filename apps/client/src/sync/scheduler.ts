@@ -156,6 +156,7 @@ export class SyncScheduler {
   }
 
   private setStatus(s: SyncStatus): void {
+    if (s === this.lastStatus) return; // the dot is already here - don't repaint it for no change
     this.lastStatus = s;
     this.deps.onStatus?.(s);
   }
@@ -200,6 +201,12 @@ export class SyncScheduler {
   /** Send everything the operator has. The one path that pushes, and only they trigger it
    *  (POST /api/sync). */
   async publishAll(): Promise<SyncStatus> {
+    // Signal busy the INSTANT the operator clicks, before anything can block. The flush below, and
+    // the publish after it, both take the per-root lease - so a background receive tick that is mid
+    // network op can hold it and stall this call for seconds. Without this the dot would sit on its
+    // old state through that whole wait and the click would look ignored. setStatus dedupes, so the
+    // busy that publishRoots sets next is not a second repaint.
+    this.setStatus("busy");
     await this.flush(); // record anything still in the debounce window first
     return this.publishRoots(this.deps.writableRoots(), 0);
   }
