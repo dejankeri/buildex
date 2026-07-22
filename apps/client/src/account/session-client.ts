@@ -8,7 +8,10 @@ import type { ProvisionResult } from "./provision-client.js";
 
 export function postSession(
   deps: { fetch: typeof fetch; baseUrl: string },
-  args: { jwt: string; machineName: string },
+  args: { jwt: string; companyName?: string; machineName: string },
 ): Promise<ProvisionResult> {
-  return post(deps, "/session", { jwt: args.jwt, machineName: args.machineName });
+  // companyName is optional (the setup-code sign-in path never has one); JSON.stringify drops an
+  // undefined value entirely, so omitting it here keeps the existing /session body unchanged for
+  // every caller that doesn't pass one.
+  return post(deps, "/session", { jwt: args.jwt, companyName: args.companyName, machineName: args.machineName });
 }
