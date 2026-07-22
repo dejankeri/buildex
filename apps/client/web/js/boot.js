@@ -54,6 +54,8 @@ async function boot() {
   $("#newProject").onclick = () => newProject();
   $("#newSessionTop").onclick = () => newProject();
   $("#storeTop").onclick = () => openStoreTab();
+  $("#appsEdit").onclick = () => toggleAppsEdit(); // drag-to-reorder the Apps & Tools rail
+  try { S.appsExpanded = localStorage.getItem("buildex.appsExpanded") === "1"; } catch (e) {}
   $("#tabAdd").onclick = (e) => openAddMenu(e.currentTarget);
   document.addEventListener("keydown", onAddShortcut); // ⌘/Ctrl shortcuts for the ＋ add-menu
   $$("#rtabs button[data-r]").forEach((b) => b.onclick = () => switchRight(b.dataset.r));

@@ -51,6 +51,83 @@ const ago = (ts) => {
 };
 
 /**
+ * Ask before something destructive, on the console's own overlay. Never window.confirm: a native
+ * dialog blocks the Electron bridge's event loop (the same reason every other prompt here is an
+ * .ovbackdrop). Cancel is the default - Esc, the backdrop, and Cancel all leave the work undone.
+ * @param {{title:string, body:string, confirm?:string, onConfirm:Function}} o - copy + the action.
+ */
+function confirmAction(o) {
+  const bd = elt("div", "ovbackdrop");
+  bd.innerHTML = '<div class="ovcard"><h3 class="ovh">' + esc(o.title) + '</h3><p class="ovp">' + esc(o.body) + "</p>"
+    + '<div class="ovrow"><button class="mini ghost ovno">Cancel</button><button class="mini ovdanger ovyes">' + esc(o.confirm || "Delete") + "</button></div></div>";
+  document.body.appendChild(bd);
+  const close = () => {
+    bd.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape") close();
+  };
+  document.addEventListener("keydown", onKey);
+  bd.onclick = (e) => {
+    if (e.target === bd) close();
+  };
+  $(".ovno", bd).onclick = close;
+  $(".ovyes", bd).onclick = () => {
+    close();
+    o.onConfirm();
+  };
+}
+
+/**
+ * Ask for one short string (a file or folder name) on the console's own overlay - never
+ * window.prompt, for the same event-loop reason as confirmAction. Enter commits, Esc cancels, and an
+ * empty value can never be submitted, so the caller only ever receives a non-empty trimmed string.
+ * @param {{title:string, label:string, value?:string, placeholder?:string, confirm?:string,
+ *          onConfirm:(value:string)=>void}} o - copy + the action.
+ */
+function promptAction(o) {
+  const bd = elt("div", "ovbackdrop");
+  bd.innerHTML = '<div class="ovcard"><h3 class="ovh">' + esc(o.title) + "</h3>"
+    + '<label class="ovlabel">' + esc(o.label) + '<input class="ovinput" value="' + escAttr(o.value || "") + '" placeholder="' + escAttr(o.placeholder || "") + '"></label>'
+    + '<div class="ovrow"><button class="mini ghost ovno">Cancel</button><button class="mini ovyes">' + esc(o.confirm || "Create") + "</button></div></div>";
+  document.body.appendChild(bd);
+  const inp = $(".ovinput", bd);
+  const close = () => bd.remove();
+  const go = () => {
+    const v = inp.value.trim();
+    if (!v) return inp.focus(); // nothing to name - stay put rather than create "Untitled"
+    close();
+    o.onConfirm(v);
+  };
+  bd.onclick = (e) => {
+    if (e.target === bd) close();
+  };
+  inp.onkeydown = (e) => {
+    if (e.key === "Enter") go();
+    if (e.key === "Escape") close();
+  };
+  $(".ovno", bd).onclick = close;
+  $(".ovyes", bd).onclick = go;
+  inp.focus();
+  inp.select();
+}
+
+/**
+ * Flash a short message at the bottom of the window. Used for the outcome of a background action the
+ * operator can't otherwise see - above all a REFUSAL from the daemon, whose message is written for
+ * them ("the shared BuildEx library is read-only"), so it must not be swallowed.
+ * @param {string} msg - the message (plain text).
+ * @param {boolean} [bad] - true to style it as a failure.
+ */
+function toast(msg, bad) {
+  const t = elt("div", "toast" + (bad ? " bad" : ""));
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+/**
  * GET a URL and parse its JSON, throwing on any non-2xx response.
  * @param {string} p - request path.
  * @returns {Promise<any>} the parsed JSON body.

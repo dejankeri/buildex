@@ -61,6 +61,11 @@ async function refreshProjects() {
     await ensureDefaultProject();
     return;
   }
+  // Newest session first. The store appends on create, so insertion order IS creation order and a
+  // reverse is exact - no reliance on createdAt, which older project files may not carry. The rail
+  // is a "what am I working on now" list; a session made a minute ago must not land below a year of
+  // history. S.projects itself is reordered (not just the DOM) so ⌘[/⌘] cycle in the same order.
+  projects = projects.slice().reverse();
   S.projects = projects;
   if (!S.activeProject || !projects.find((p) => p.id === S.activeProject)) S.activeProject = projects[0].id;
   const host = $("#convos");
@@ -72,14 +77,20 @@ async function refreshProjects() {
     const f = elt("div", "project" + (p.id === S.activeProject ? " active" : ""));
     f.dataset.p = p.id;
     if (openState[p.id] === false) f.classList.add("closed");
-    const hdr = elt("div", "phdr", '<span class="caret">▼</span><span class="pname">' + esc(p.name) + '</span><span class="pcount">' + p.items.length + '</span><span class="padd" title="New chat in this session">＋</span><span class="pmore" title="Rename / delete">⋯</span>');
+    // The rail lists a session's CHATS and nothing else - a chat is work you come back to, while a
+    // doc or a browser is a view you opened and can close without losing anything. Those live in
+    // the middle column's tab bar only. Indexes are carried alongside because the item index (into
+    // the unfiltered p.items) is what switchToProject/removeProjectItem address.
+    const chats = (p.items || []).map((it, idx) => ({ it, idx })).filter((x) => x.it.type === "chat");
+    const st = projectStatus(p, sMap);
+    const hdr = elt("div", "phdr", '<span class="caret">▼</span><span class="pdot pd-' + st.k + '" title="' + escAttr(st.why) + '"></span><span class="pname">' + esc(p.name) + '</span><span class="pcount">' + chats.length + '</span><span class="padd" title="Start something in this session">＋</span><span class="pmore" title="Rename / delete">⋯</span>');
     $(".caret", hdr).onclick = (e) => {
       e.stopPropagation();
       f.classList.toggle("closed");
     };
     $(".padd", hdr).onclick = (e) => {
       e.stopPropagation();
-      newConversation(p.id);
+      openAddMenu(e.currentTarget, p.id); // same menu as the tab bar's ＋, scoped to this session
     };
     $(".pmore", hdr).onclick = (e) => {
       e.stopPropagation();
@@ -88,36 +99,59 @@ async function refreshProjects() {
     hdr.onclick = () => switchToProject(p.id);
     f.appendChild(hdr);
     const list = elt("div", "pitems");
-    p.items.forEach((it, idx) => {
+    chats.forEach(({ it, idx }) => {
       const row = elt("div", "pitem");
-      if (it.type === "chat") {
-        // Chat rows prefer the live session title/status (from sMap) over the stored item fields.
-        const s = sMap[it.sessionId];
-        const label = (s && s.title) || it.title || "Chat";
-        const active = S.active && S.tabs.find((t) => t.id === S.active && t.sessionId === it.sessionId);
-        row.className = "pitem" + (active ? " active" : "");
-        row.innerHTML = '<span class="st ' + ((s && s.status) || "idle") + '"></span><span class="pilabel">' + esc(label) + "</span>";
-        row.onclick = () => switchToProject(p.id, idx);
-      } else {
-        const icon = { browser: "◉", doc: "▤", map: "◇" }[it.type] || "◈";
-        // Doc → basename; browser → host (scheme stripped, capped); map → literal "Map".
-        const label = it.type === "doc" ? String(it.path).split("/").pop() : it.type === "browser" ? (String(it.url).replace(/^https?:\/\//, "").slice(0, 22) || "Browser") : "Map";
-        row.innerHTML = '<span class="pic">' + icon + '</span><span class="pilabel">' + esc(label) + "</span>";
-        row.onclick = () => switchToProject(p.id, idx);
-      }
+      // Chat rows prefer the live session title/status (from sMap) over the stored item fields.
+      const s = sMap[it.sessionId];
+      const label = (s && s.title) || it.title || "Chat";
+      const active = S.active && S.tabs.find((t) => t.id === S.active && t.sessionId === it.sessionId);
+      row.className = "pitem" + (active ? " active" : "");
+      // A chat started from an app is badged with that app's mark, so "the Stripe chat" is findable
+      // at a glance among a session's chats. Plain chats carry no badge.
+      const app = it.app ? (S.apps || []).find((a) => a.name === it.app) : null;
+      const badge = it.app ? '<span class="pia" title="' + escAttr(((app && app.title) || it.app) + " chat") + '">' + (app ? appGlyph(app) : "◈") + "</span>" : "";
+      row.innerHTML = '<span class="st ' + ((s && s.status) || "idle") + '"></span>' + badge + '<span class="pilabel">' + esc(label) + "</span>";
+      if (it.app) mountAppLogo($(".pia", row), it.app, "pilogo");
+      row.onclick = () => switchToProject(p.id, idx);
       const rm = elt("span", "pix", "×");
-      rm.title = "Remove from session";
+      rm.title = "Delete this chat";
       rm.onclick = (e) => {
         e.stopPropagation();
-        removeProjectItem(p.id, idx, it);
+        // Same act as closing the chat's tab, same confirmation - deleting work is never one stray click.
+        confirmAction({
+          title: "Delete this chat?",
+          body: "“" + label + "” and its history are removed from this session.",
+          confirm: "Delete chat",
+          onConfirm: () => removeProjectItem(p.id, idx, it),
+        });
       };
       row.appendChild(rm);
       list.appendChild(row);
     });
-    if (!p.items.length) list.innerHTML = '<div class="pempty">Empty - add a chat, doc, or browser with ＋ in the header.</div>';
+    if (!chats.length) list.innerHTML = '<div class="pempty">No chats yet - start one with ＋ in the header.</div>';
     f.appendChild(list);
     host.appendChild(f);
   });
+}
+
+/**
+ * Roll a session's chats up into ONE traffic light for its collapsed row - the operator has to read
+ * a session's state without opening it. Worst state wins, in the order that matters to a human:
+ * something broke > something wants me > something is working > everything's done.
+ * @param {object} p - the project.
+ * @param {Record<string, object>} sMap - live sessions by id (the authority on status).
+ * @returns {{k: string, why: string}} dot class + its tooltip.
+ */
+function projectStatus(p, sMap) {
+  const states = (p.items || [])
+    .filter((it) => it.type === "chat")
+    .map((it) => (sMap[it.sessionId] && sMap[it.sessionId].status) || "idle");
+  if (!states.length) return { k: "none", why: "Nothing running in this session yet" };
+  const n = (k) => states.filter((s) => s === k).length;
+  if (n("error")) return { k: "error", why: n("error") + " of " + states.length + " chats hit an error" };
+  if (n("needs-attention")) return { k: "needs-attention", why: n("needs-attention") + " of " + states.length + " chats are waiting on you" };
+  if (n("running")) return { k: "running", why: n("running") + " of " + states.length + " chats are working" };
+  return { k: "idle", why: "All " + states.length + " chats are done" };
 }
 
 /**
@@ -132,14 +166,17 @@ async function ensureDefaultProject() {
 }
 
 /**
- * Create a new empty project, select it, re-render, then drop into inline-rename on its header.
+ * Create a new empty project, switch the console into it, then drop into inline-rename on its header.
+ * Switching (not just marking it active) is the point: it unloads the previous session's tabs and
+ * puts the start screen in the middle column, so a fresh session opens on its own choices - start a
+ * chat, open a doc, work with an app - instead of leaving the old session's tabs on screen.
  * @returns {Promise<void>}
  */
 async function newProject() {
   const { project } = await postJSON("/api/projects", { name: "New session" });
-  S.activeProject = project.id;
-  await refreshProjects();
-  // inline-rename the fresh session
+  await refreshProjects(); // so switchToProject can find the new project in S.projects
+  await switchToProject(project.id);
+  // inline-rename the fresh session - after the switch, whose own re-render would replace the input
   const hdr = $('.project[data-p="' + project.id + '"] .phdr');
   if (hdr) projectRename(project, hdr);
 }
@@ -156,6 +193,41 @@ function addToActiveProject(item) {
 }
 
 /**
+ * Find the saved item a tab was opened from, by matching on what identifies it - the same fields
+ * openProjectItem reads back. Chats are excluded on purpose: a chat is the session's content, so it
+ * leaves through the delete-with-confirmation path, never by being closed.
+ * @param {Array} items - the project's saved items.
+ * @param {object} t - an open tab.
+ * @returns {number} index of the matching item, or -1.
+ */
+function projectItemIndexForTab(items, t) {
+  return (items || []).findIndex((it) =>
+    (it.type === "doc" && t.type === "doc" && it.path === t.path)
+    || (it.type === "browser" && t.type === "browser" && it.url === t.url)
+    || (it.type === "map" && t.type === "map")
+    || (it.type === "app" && t.type === "app" && !!t.app && it.repo === t.app.repo && it.name === t.app.name));
+}
+
+/**
+ * Drop the session's memory of a closed tab. A session is the list of what the operator has open;
+ * closing a document, browser or app is not destructive (the file, the page and the app all outlive
+ * it), but it IS a statement that the thing is no longer part of this session - so it must not come
+ * back on the next visit. Nothing is deleted: only the session's pointer to it goes.
+ * @param {object} t - the tab being closed.
+ */
+function forgetTabFromSession(t) {
+  if (!t || t.type === "chat" || !S.activeProject) return;
+  const p = (S.projects || []).find((x) => x.id === S.activeProject);
+  if (!p) return;
+  const idx = projectItemIndexForTab(p.items, t);
+  if (idx < 0) return; // a tab that was never saved (Store, editors, MCP) - nothing to forget
+  p.items.splice(idx, 1); // locally first, so the rail cannot repaint the row we just closed
+  postJSON("/api/projects/" + p.id + "/remove-item", { index: idx })
+    .then(() => refreshProjects())
+    .catch(() => {});
+}
+
+/**
  * Remove item `idx` from project `pid`; if it maps to an open tab, close that too, then re-render.
  * @param {string} pid - project id.
  * @param {number} idx - item index within the project.
@@ -169,9 +241,26 @@ async function removeProjectItem(pid, idx, it) {
   // if the removed item is open as a tab (chat/doc are uniquely identifiable), close it too
   if (it) {
     const t = S.tabs.find((t) => (it.type === "chat" && t.type === "chat" && t.sessionId === it.sessionId) || (it.type === "doc" && t.type === "doc" && t.path === it.path));
-    if (t) closeTab(t.id);
+    // The item is already gone; flag the tab so closeTab does not "forget" it a second time and
+    // remove whatever index slid into its place.
+    if (t) { t.itemRemoved = true; closeTab(t.id); }
   }
   await refreshProjects();
+}
+
+/**
+ * Delete the chat behind `tab` from whichever session holds it (and close its tab). Called after the
+ * confirmation in requestCloseTab - a chat is the session's content, so closing IS deleting.
+ * @param {object} tab - the chat tab being closed ({id, sessionId}).
+ * @returns {Promise<void>}
+ */
+async function deleteChatFromSession(tab) {
+  // Search every session, not just the active one: a tab can outlive a session switch.
+  for (const p of S.projects || []) {
+    const idx = (p.items || []).findIndex((it) => it.type === "chat" && it.sessionId === tab.sessionId);
+    if (idx >= 0) return removeProjectItem(p.id, idx, p.items[idx]); // closes the tab too
+  }
+  closeTab(tab.id); // not tracked in any session - nothing to delete, just close it
 }
 
 /**

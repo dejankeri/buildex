@@ -39,6 +39,83 @@ function buildChatPane(tab) {
     if (tab.reattachTimer) clearTimeout(tab.reattachTimer);
   };
   if (tab.systemAppend) renderCtxChip(tab);
+  if (appGateActive(tab)) renderAppGate(tab);
+}
+
+/**
+ * Is this chat waiting on an app connection? True for an app-scoped chat whose gateway tools aren't
+ * authorized yet, unless the operator explicitly chose to chat without them.
+ * @param {object} tab - the chat tab.
+ */
+function appGateActive(tab) {
+  return !!(tab && tab.app && tab.appConn && tab.appConn.needsAuth && !tab.connSkipped);
+}
+
+/**
+ * The connect gate: an app chat that can't reach its app says so in the CENTRE of the pane, not in a
+ * chip someone can miss, and the composer is locked while it's up. A chat with dead tools is the one
+ * failure a non-technical operator can't diagnose - they'd ask the agent to do something, watch it
+ * answer from thin air, and never learn why. Two ways out: Connect (the real fix), or Skip, which
+ * drops the app context entirely so the chat is honestly a plain chat.
+ * @param {object} tab - the chat tab; `tab.app` and `tab.appConn` describe the unconnected app.
+ */
+function renderAppGate(tab) {
+  const app = tab.app;
+  const title = app.title || app.name;
+  const glyph = app.icon && app.icon.length <= 3 ? app.icon : "🔌";
+  tab.thread.innerHTML = "";
+  const gate = el(
+    "div",
+    { class: "conngate" },
+    el("div", { class: "cg-ic", text: glyph }),
+    el("h3", { class: "cg-h", text: title + " isn’t connected" }),
+    el("p", { class: "cg-p", text: "The AI can’t read or act in " + title + " until you authorize it. This takes one sign-in." }),
+    el("button", {
+      class: "cg-go",
+      text: "Connect " + title,
+      onClick: () => (typeof openConnectDialog === "function" ? openConnectDialog(app) : connectApp(app, tab.appConn)),
+    }),
+    el("button", {
+      class: "cg-skip",
+      text: "Skip — chat without " + title,
+      onClick: () => {
+        tab.connSkipped = true;
+        tab.systemAppend = null; // no app context at all, rather than context the agent can't act on
+        const chip = $(".ctxchip", tab.pane);
+        if (chip) chip.remove();
+        clearAppGate(tab);
+      },
+    }),
+  );
+  tab.thread.appendChild(gate);
+  if (tab.composer && tab.composer.setLocked) tab.composer.setLocked(true, "Connect " + title + " to start");
+}
+
+/** Take the gate down and hand the chat back: unlock the composer and restore the empty state. */
+function clearAppGate(tab) {
+  const gate = $(".conngate", tab.pane);
+  if (gate) gate.remove();
+  if (tab.composer && tab.composer.setLocked) tab.composer.setLocked(false);
+  if (tab.thread && !tab.thread.children.length) {
+    tab.thread.appendChild(el("div", { class: "empty" }, el("div", { class: "big", text: "◈" }), 'Ask about your brain - try "Summarize our Q3 metrics and charter."'));
+  }
+}
+
+/**
+ * Re-read a tab's app connection from the latest gateway poll and react if it flipped. Called for
+ * every tab on each refreshApps tick, so an OAuth finished in the browser clears the gate here
+ * without a reload - the operator comes back to a chat that just works.
+ * @param {object} tab - any tab; non-app-chat tabs are ignored.
+ */
+function syncAppConn(tab) {
+  if (!tab || tab.type !== "chat" || !tab.app || typeof appConn !== "function") return;
+  const was = appGateActive(tab);
+  tab.appConn = appConn(tab.app.name);
+  const now = appGateActive(tab);
+  if (was === now) return;
+  if (now) renderAppGate(tab);
+  else clearAppGate(tab);
+  if (tab.systemAppend) renderCtxChip(tab); // chip flips between "not connected" and "tools loaded"
 }
 
 /**
@@ -99,7 +176,8 @@ async function loadSession(tab) {
   try {
     const s = await getJSON("/api/sessions/" + tab.sessionId);
     if (!s.events || !s.events.length) {
-      tab.thread.appendChild(el("div", { class: "empty" }, el("div", { class: "big", text: "◈" }), 'Ask about your brain - try "Summarize our Q3 metrics and charter."'));
+      // An unconnected app chat already owns the empty thread (renderAppGate) — don't paint over it.
+      if (!appGateActive(tab)) tab.thread.appendChild(el("div", { class: "empty" }, el("div", { class: "big", text: "◈" }), 'Ask about your brain - try "Summarize our Q3 metrics and charter."'));
     } else {
       renderHistory(tab, s.events);
       tab.replayed = s.events.length;

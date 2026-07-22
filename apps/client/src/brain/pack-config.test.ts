@@ -110,7 +110,7 @@ it("reconciledPackMcpEntries nulls stale + gateway-migrated pack keys, keeps std
   corePack("notion", { id: "notion", name: "Notion", app: { url: "https://x.co" }, mcp: { kind: "http", url: "https://mcp.notion.com/mcp" } }); // now gateway-routed
   corePack("localtool", { id: "localtool", name: "Local", mcp: { kind: "stdio", command: "npx" } });
   installApp("team", "notion");
-  frag("team", "localtool", {});
+  frag("private", "localtool", {}); // the per-operator install marker for an app-less pack
   const ws = join(dir, "team"); // stand-in workspace holding .mcp.json
   writeFileSync(join(ws, ".mcp.json"), JSON.stringify({
     mcpServers: {
@@ -124,4 +124,19 @@ it("reconciledPackMcpEntries nulls stale + gateway-migrated pack keys, keeps std
   expect(entries["buildex-pack:removed"]).toBeNull();                                // uninstalled
   expect(entries["buildex-pack:localtool"]).toEqual({ type: "stdio", command: "npx" }); // stdio stays direct-pinned
   expect("buildex-connectors" in entries).toBe(false);                               // untouched - not a pack key
+});
+
+it("does NOT pin a pack that only has TEAM rules — a teammate's install is not mine", () => {
+  // What syncing down a colleague's install leaves on this machine: the company rules for the tool,
+  // and no private install marker. Those rules are meant to sit inert. If they counted as an install
+  // the pack's MCP server would be pinned into every teammate's agent, connecting tools nobody here
+  // asked for (and, for a stdio pack, launching a process).
+  corePack("linear", { id: "linear", name: "Linear", mcp: { kind: "stdio", command: "linear-mcp" } });
+  frag("team", "linear", { ask: ["mcp__linear__create_issue"] });
+  const ws = join(dir, "team");
+  writeFileSync(join(ws, ".mcp.json"), JSON.stringify({ mcpServers: {} }));
+  expect(reconciledPackMcpEntries(source, ws, roots)["buildex-pack:linear"]).toBeUndefined();
+  // …but the rule still composes into the effective policy, which is the whole point of it being there.
+  const eff = composePreset({ allow: [], ask: [], deny: [], default: "ask" }, roots);
+  expect(eff.ask).toContain("mcp__linear__create_issue");
 });

@@ -86,3 +86,17 @@ pre.cb-open::after{content:"";display:inline-block;width:7px;height:1em;margin-l
 .cmi .cmi-h{flex:1;font-size:11px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .cmi.on,.cmi:hover{background:var(--panel-2);}
 .cmi.on .cmi-l{color:var(--brand);}
+
+/* The app-connect gate: shown INSTEAD of the empty thread when an app chat's tools aren't authorized.
+   Deliberately centre-stage and composer-locking — a chat with dead tools is the one failure a
+   non-technical operator can't diagnose on their own. */
+.conngate{margin:auto;display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;padding:40px 24px;max-width:360px;}
+.conngate .cg-ic{font-size:34px;line-height:1;margin-bottom:8px;}
+.conngate .cg-h{margin:0;font-size:16px;font-weight:650;color:var(--ink);}
+.conngate .cg-p{margin:2px 0 16px;font-size:13px;line-height:1.55;color:var(--muted);}
+.conngate .cg-go{background:var(--brand);color:#04211d;border:0;border-radius:8px;padding:9px 20px;font:inherit;font-size:13px;font-weight:650;cursor:pointer;}
+.conngate .cg-go:hover{filter:brightness(1.07);}
+.conngate .cg-skip{margin-top:10px;background:none;border:0;color:var(--faint);font:inherit;font-size:12px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;}
+.conngate .cg-skip:hover{color:var(--muted);}
+.composer.locked .box{opacity:.55;}
+.composer.locked textarea{cursor:not-allowed;}

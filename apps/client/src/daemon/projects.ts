@@ -17,6 +17,9 @@ export interface ProjectItem {
   title?: string;
   repo?: string;
   name?: string;
+  /** chat only: the app/pack id this chat was started from, so the rail can badge it with the app's
+   *  mark and re-opening the chat restores its app context. Absent on a plain chat. */
+  app?: string;
 }
 
 export interface Project {

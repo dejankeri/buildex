@@ -14,12 +14,14 @@
  *  - active          : id of the focused tab, or null.
  *  - rightTab        : which right-panel view is showing ("files", "pending", "synclog", …).
  *  - tree/treeFilter : the file tree and its current filter string.
+ *  - treeOpen        : which folders are expanded, by path, so a repaint keeps the operator's place.
  *  - projects        : left-rail projects (task containers).
  *  - activeProject   : id of the selected project, or null.
  *  - apps            : installed apps/skills catalogue.
  *  - hist/hp         : title-bar back/forward focus-history stack and its cursor.
  *  - navLock         : true while replaying history, to suppress re-recording the focus.
- *  - showAgentFiles  : persisted toggle for showing agent-managed files (read from localStorage).
+ *  - showAllFiles    : persisted toggle for the Files panel's "show everything" mode - the shared
+ *                      `core` library plus the agent's derived `.claude` surface (localStorage).
  *  - agentView       : the currently opened agent detail view, or null.
  *  - gwStatus        : gateway/connector status map.
  */
@@ -30,16 +32,17 @@ const S = {
   rightTab: "files",
   tree: [],
   treeFilter: "",
+  treeOpen: {},
   projects: [],
   activeProject: null,
   apps: [],
   hist: [],
   hp: -1,
   navLock: false,
-  // Restore the persisted "show agent files" preference; default off if storage is unavailable.
-  showAgentFiles: (() => {
+  // Restore the persisted "show everything" preference; default off if storage is unavailable.
+  showAllFiles: (() => {
     try {
-      return localStorage.getItem("buildex.showAgentFiles") === "1";
+      return localStorage.getItem("buildex.showAllFiles") === "1";
     } catch (_) {
       return false;
     }

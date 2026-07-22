@@ -22,8 +22,16 @@ function routeFetch(w: any, routes: Array<[string, unknown]>): void {
 
 const XSS = "<img src=x onerror=alert(1)>";
 
+/** A rail render with `n` apps named app0..app(n-1), none of them gateway-routed. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function railWith(n: number, c: any, w: any): Promise<void> {
+  const apps = Array.from({ length: n }, (_, i) => ({ repo: "team", name: "app" + i, title: "App " + i, kind: "local" }));
+  routeFetch(w, [["/api/apps", { apps }], ["/api/connectors/gateway", { status: [] }]]);
+  await c.refreshApps();
+}
+
 describe("console renderers (jsdom) — apps left rail (refreshApps)", () => {
-  it("paints one row per app (Store lives in the header now) with an AI button + open-interface button", async () => {
+  it("paints one row per app (Store lives in the header now); the ROW opens the AI chat", async () => {
     const { doc, w, c } = loadConsole();
     routeFetch(w, [
       ["/api/apps", { apps: [
@@ -39,28 +47,34 @@ describe("console renderers (jsdom) — apps left rail (refreshApps)", () => {
     // Two app rows, NO Store row (Store moved into the section header).
     expect(doc.querySelectorAll("#applist .aitem")).toHaveLength(2);
     expect(doc.querySelector("#applist .astore")).toBeNull();
-    // Each row has an AI button and a 🌐 open-interface button (the row itself isn't clickable).
-    expect(doc.querySelectorAll("#applist .aiapp")).toHaveLength(2);
+    // The row itself is the AI-chat action now (no per-row AI button), plus a 🌐 interface button.
+    expect(doc.querySelectorAll("#applist .aiapp")).toHaveLength(0);
     expect(doc.querySelectorAll("#applist .aweb")).toHaveLength(2);
-    // needsAuth app → AI button in the "off" (not-connected) state; connected app → a plain AI button.
-    const off = doc.querySelector("#applist .aiapp.off");
-    expect(off).not.toBeNull();
-    expect(off!.textContent).toContain("not connected");
-    expect(doc.querySelectorAll("#applist .aiapp:not(.off)")).toHaveLength(1); // notion (connected)
+    expect(typeof (doc.querySelector("#applist .aitem") as any).onclick).toBe("function");
+    // needsAuth app → a "not connected" badge; the connected app carries a green dot instead. One
+    // mark or the other, never both: the badge is an errand, the dot is only reassurance.
+    const badges = doc.querySelectorAll("#applist .aconn");
+    expect(badges).toHaveLength(1);
+    expect(badges[0]!.textContent).toContain("not connected");
     expect(doc.querySelectorAll("#applist .albl")[0]!.textContent).toBe("Protocol");
+    const dots = doc.querySelectorAll("#applist .acdot");
+    expect(dots).toHaveLength(1);
+    expect((dots[0]!.parentElement as any).querySelector(".albl").textContent).toBe("Notion");
+    expect((dots[0]! as any).getAttribute("aria-label")).toBe("connected");
   });
 
-  it("an app whose tools need no gateway auth shows a ready AI button, not 'not connected'", async () => {
+  it("an app whose tools need no gateway auth carries no 'not connected' badge", async () => {
     const { doc, w, c } = loadConsole();
     routeFetch(w, [
       ["/api/apps", { apps: [{ repo: "team", name: "gmail", title: "Gmail", kind: "local" }] }],
       ["/api/connectors/gateway", { status: [] }], // no gateway entry - direct MCP is pinned, ready
     ]);
     await c.refreshApps();
-    const ai = doc.querySelector("#applist .aiapp");
-    expect(ai).not.toBeNull();
-    expect(ai!.className).not.toContain("off"); // ready - no sign-in needed
-    expect(ai!.textContent).toContain("AI chat");
+    expect(doc.querySelector("#applist .aitem")).not.toBeNull();
+    expect(doc.querySelector("#applist .aconn")).toBeNull(); // ready - no sign-in needed
+    // …and no green dot either: there is no gateway connection to report on, so the row stays bare
+    // rather than claiming a link it does not have.
+    expect(doc.querySelector("#applist .acdot")).toBeNull();
   });
 
   it("shows the empty affordance (pointing at the Store) when no apps are installed", async () => {
@@ -81,19 +95,74 @@ describe("console renderers (jsdom) — apps left rail (refreshApps)", () => {
   });
 });
 
-describe("console renderers (jsdom) — apps helpers + pane (appConn, rApps, buildAppPane)", () => {
+describe("console renderers (jsdom) — apps rail: the visible cap and its expand toggle", () => {
+  it("shows only the first 5 apps, with a 'Show 3 more' toggle that reveals the rest", async () => {
+    const { doc, w, c } = loadConsole();
+    await railWith(8, c, w);
+    expect(doc.querySelectorAll("#applist .aitem")).toHaveLength(5);
+    const more = doc.querySelector("#applist .appmore") as any;
+    expect(more.textContent).toContain("Show 3 more");
+    more.click();
+    expect(doc.querySelectorAll("#applist .aitem")).toHaveLength(8);
+    expect(doc.querySelector("#applist .appmore")!.textContent).toContain("Show less");
+    // …and collapses again.
+    (doc.querySelector("#applist .appmore") as any).click();
+    expect(doc.querySelectorAll("#applist .aitem")).toHaveLength(5);
+  });
+
+  it("offers no toggle at all when everything already fits", async () => {
+    const { doc, w, c } = loadConsole();
+    await railWith(3, c, w);
+    expect(doc.querySelectorAll("#applist .aitem")).toHaveLength(3);
+    expect(doc.querySelector("#applist .appmore")).toBeNull();
+  });
+});
+
+describe("console renderers (jsdom) — apps rail: manual order (orderApps + edit mode)", () => {
+  it("orderApps puts saved names first in their saved order and appends anything new", () => {
+    const { c, w } = loadConsole();
+    const apps = [{ name: "a" }, { name: "b" }, { name: "c" }, { name: "fresh" }];
+    (w.localStorage as any).setItem(c.appOrderKey(), JSON.stringify(["c", "a", "b"]));
+    // Newly installed apps are NOT silently buried mid-list — they land at the end, where they show.
+    expect(c.orderApps(apps).map((a: { name: string }) => a.name)).toEqual(["c", "a", "b", "fresh"]);
+  });
+
+  it("orderApps is a no-op (server's alphabetical order survives) when nothing was reordered", () => {
+    const { c } = loadConsole();
+    const apps = [{ name: "a" }, { name: "b" }];
+    expect(c.orderApps(apps).map((a: { name: string }) => a.name)).toEqual(["a", "b"]);
+  });
+
+  it("edit mode shows EVERY app with a drag handle and no actions, and Done restores the cap", async () => {
+    const { doc, w, c } = loadConsole();
+    await railWith(8, c, w);
+    c.toggleAppsEdit();
+    // All 8 — you cannot drag a row into a hidden part of the list.
+    expect(doc.querySelectorAll("#applist .aitem")).toHaveLength(8);
+    expect(doc.querySelectorAll("#applist .adrag")).toHaveLength(8);
+    expect(doc.querySelector("#applist .aweb")).toBeNull();          // no actions while reordering
+    expect((doc.querySelector("#applist .aitem") as any).draggable).toBe(true);
+    expect(doc.querySelector("#appsEdit")!.textContent).toBe("Done");
+    c.toggleAppsEdit();
+    expect(doc.querySelectorAll("#applist .aitem")).toHaveLength(5);
+    expect(doc.querySelector("#appsEdit")!.textContent).toBe("Edit");
+  });
+
+  it("hides Edit entirely when there is nothing to reorder", async () => {
+    const { doc, w, c } = loadConsole();
+    await railWith(1, c, w);
+    expect((doc.querySelector("#appsEdit") as any).hidden).toBe(true);
+    await railWith(2, c, w);
+    expect((doc.querySelector("#appsEdit") as any).hidden).toBe(false);
+  });
+});
+
+describe("console renderers (jsdom) — apps helpers + pane (appConn, buildAppPane)", () => {
   it("appConn resolves gateway status by app name, undefined when unrouted", () => {
     const { c } = loadConsole();
     c.S.gwStatus = { notion: { connected: true } };
     expect(c.appConn("notion").connected).toBe(true);
     expect(c.appConn("missing")).toBeUndefined();
-  });
-
-  it("rApps paints the legacy placeholder pointing at the Store", () => {
-    const { doc, c } = loadConsole();
-    c.rApps();
-    expect(doc.querySelector("#rpanel h4")!.textContent).toBe("Apps");
-    expect(doc.querySelector("#rpanel .rmini")!.textContent).toContain("Store");
   });
 
   it("buildAppPane renders an external app as an iframe, with a connect banner only when it needs auth", () => {
@@ -239,5 +308,166 @@ describe("console renderers (jsdom) — MCP gateway editor (renderMcpEditor)", (
     await c.renderMcpEditor({ id: "t", pane }, "srv");
     expect(pane.querySelector("img")).toBeNull();
     expect(pane.querySelector(".f-url").getAttribute("value")).toContain("<img"); // inert, as text
+  });
+});
+
+describe("console renderers (jsdom) — per-app settings dialog (appSettingsBody)", () => {
+  const APP = { repo: "private", name: "slack", title: "Slack", kind: "external", url: "https://slack.com", icon: "💬" };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function body(c: any, over: Record<string, unknown> = {}) {
+    const host = c.elt("div");
+    host.append(...c.appSettingsBody({ id: "slack", title: "Slack", app: APP, pack: null, close: () => {}, repaint: () => {}, ...over }));
+    return host;
+  }
+
+  it("says the tools are connected, and how many the agent can see", () => {
+    const { c } = loadConsole();
+    c.S.gwStatus = { slack: { name: "slack", connected: true, tools: 7 } };
+    const h = body(c);
+    expect(h.querySelector(".as-on")).not.toBeNull();
+    expect(h.querySelector(".as-tx")!.textContent).toContain("Connected");
+    expect(h.querySelector(".as-note")!.textContent).toContain("7 tools");
+    expect(h.querySelector(".as-connect")).toBeNull(); // nothing to do
+  });
+
+  it("names the consequence, not the state, when the app isn't connected — and offers Connect", () => {
+    const { c } = loadConsole();
+    c.S.gwStatus = { slack: { name: "slack", needsAuth: true, authUrl: "https://auth.example.com" } };
+    const h = body(c);
+    expect(h.querySelector(".as-off")).not.toBeNull();
+    expect(h.querySelector(".as-tx")!.textContent).toContain("can’t read or act in Slack");
+    expect(h.querySelector(".as-connect")).not.toBeNull();
+  });
+
+  it("does NOT read as broken for an app that simply has no tools", () => {
+    const { c } = loadConsole();
+    c.S.gwStatus = {};
+    const h = body(c, { pack: { id: "slack", name: "Slack", installed: true, faces: { app: true, mcp: false, apiKey: false, skills: 0 } } });
+    expect(h.querySelector(".as-off")).toBeNull();
+    expect(h.querySelector(".as-tx")!.textContent).toContain("no tools for the agent");
+  });
+
+  it("offers the API-key door only for a pack that declares one, and says where the key lives", () => {
+    const { c } = loadConsole();
+    c.S.gwStatus = {};
+    const withKey = { id: "slack", name: "Slack", installed: true, faces: { app: true, mcp: true, apiKey: true, skills: 2 } };
+    expect(body(c, { pack: withKey }).querySelector(".as-key")).not.toBeNull();
+    expect(body(c, { pack: withKey }).querySelector(".as-note")!.textContent).toBeTruthy();
+    // A stored key flips it to Clear.
+    const keyed = body(c, { pack: { ...withKey, apiKeyConnected: true } });
+    expect(keyed.querySelector(".as-keyclear")).not.toBeNull();
+    expect(keyed.querySelector(".as-key")).toBeNull();
+    // …and a pack without the face never shows the section at all.
+    const noKey = body(c, { pack: { ...withKey, faces: { ...withKey.faces, apiKey: false } } });
+    expect(noKey.querySelector(".as-key")).toBeNull();
+    expect(noKey.querySelector(".as-keyclear")).toBeNull();
+  });
+
+  it("offers Uninstall for an installed pack, and explains its absence for a custom app", () => {
+    const { c } = loadConsole();
+    c.S.gwStatus = {};
+    const installed = body(c, { pack: { id: "slack", name: "Slack", installed: true, faces: { app: true, mcp: true, apiKey: false, skills: 2 } } });
+    expect(installed.querySelector(".as-uninstall")).not.toBeNull();
+    // A hand-made app has no pack behind it — a button here would 404 on an unknown pack id.
+    const custom = body(c); // pack: null
+    expect(custom.querySelector(".as-uninstall")).toBeNull();
+    expect(custom.textContent).toContain("your own app");
+  });
+
+  it("shows where the app lives, and what the install shared with the team", () => {
+    const { c } = loadConsole();
+    c.S.gwStatus = {};
+    const h = body(c, { pack: { id: "slack", name: "Slack", installed: true, faces: { app: true, mcp: true, apiKey: false, skills: 2 } } });
+    const facts = [...h.querySelectorAll(".as-fact")].map((f) => f.textContent);
+    expect(facts.join(" ")).toContain("https://slack.com");
+    expect(facts.join(" ")).toContain("private");
+    expect(facts.join(" ")).toContain("2 shared with everyone");
+  });
+
+  it("ESCAPES an XSS-y app title (the dialog is built, not concatenated)", () => {
+    const { c } = loadConsole();
+    c.S.gwStatus = {};
+    const h = body(c, { title: XSS, app: { ...APP, title: XSS } });
+    expect(h.querySelector("img")).toBeNull();
+    expect(h.querySelector(".ovh")!.textContent).toBe(XSS);
+  });
+});
+
+describe("console renderers (jsdom) — the rail's ⚙ (Edit mode) and shared app glyph", () => {
+  it("gives every row a settings button in Edit mode, and none outside it", async () => {
+    const { doc, w, c } = loadConsole();
+    await railWith(3, c, w);
+    expect(doc.querySelector("#applist .acog")).toBeNull();
+    c.toggleAppsEdit();
+    expect(doc.querySelectorAll("#applist .acog")).toHaveLength(3);
+  });
+
+  it("appGlyph prefers the app's own short icon, else a kind glyph, and escapes it", () => {
+    const { c } = loadConsole();
+    expect(c.appGlyph({ icon: "💬", kind: "external" })).toBe("💬");
+    expect(c.appGlyph({ kind: "external" })).toBe("🌐");
+    expect(c.appGlyph({ kind: "local" })).toBe("◈");
+    expect(c.appGlyph({ icon: "a-very-long-not-an-icon", kind: "local" })).toBe("◈");
+    expect(c.appGlyph({ icon: "<b>", kind: "local" })).not.toContain("<b>"); // escaped, it lands in innerHTML
+  });
+});
+
+describe("console renderers (jsdom) — starting an app chat", () => {
+  const APP = { repo: "team", name: "notion", title: "Notion", kind: "local" };
+  // Sessions and project items are created server-side; route both and record what was asked for.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function routeChat(w: any): Array<{ url: string; body: any }> {
+    const seen: Array<{ url: string; body: any }> = [];
+    let n = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    w.fetch = (url: string, o?: any) => {
+      const u = String(url);
+      if (o && o.method === "POST") seen.push({ url: u, body: o.body ? JSON.parse(o.body) : null });
+      let data: unknown = {};
+      const post = !!(o && o.method === "POST");
+      if (u.includes("/api/sessions") && post) data = { id: "s" + ++n };
+      else if (u.includes("/api/sessions")) data = { sessions: [] };
+      else if (u.includes("/api/catalog")) data = { packs: [] };
+      else if (/\/api\/projects\/[^/]+\//.test(u) && post) data = { ok: true }; // items / remove-item
+      else if (u.includes("/api/projects") && post) data = { project: { id: "p1", name: "Work", items: [], createdAt: 0 } };
+      else if (u.includes("/api/projects")) data = { projects: [{ id: "p1", name: "Work", items: [], createdAt: 0 }] };
+      else if (u.includes("/api/apps")) data = { apps: [] };
+      else if (u.includes("/api/sync")) data = { status: "ok" };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) });
+    };
+    return seen;
+  }
+
+  it("starts a SECOND chat for the same app - parallel work in one session is allowed", async () => {
+    const { doc, w, c } = loadConsole();
+    routeChat(w);
+    await c.openAppChat(APP);
+    await c.openAppChat(APP);
+    expect(c.S.tabs).toHaveLength(2);
+    expect(c.S.tabs.map((t: any) => t.sessionId)).toEqual(["s1", "s2"]); // two real sessions
+    // Numbered from the second on, so the operator can tell parallel chats apart.
+    expect(c.S.tabs.map((t: any) => t.title)).toEqual(["Notion", "Notion 2"]);
+    expect(Array.from(doc.querySelectorAll("#tabbar .tab .tt"), (e: any) => e.textContent)).toEqual(["Notion", "Notion 2"]);
+  });
+
+  it("re-focuses instead when the caller is navigating (the app's row in the rail)", async () => {
+    const { w, c } = loadConsole();
+    routeChat(w);
+    await c.openAppChat(APP);
+    const first = c.S.active;
+    await c.openAppChat(APP, true);
+    expect(c.S.tabs).toHaveLength(1); // no duplicate…
+    expect(c.S.active).toBe(first); // …and it took us back to the one already open
+  });
+
+  it("carries the numbered title into the session item, so the rail shows it too", async () => {
+    const { w, c } = loadConsole();
+    const posts = routeChat(w);
+    c.S.activeProject = "p1";
+    await c.openAppChat(APP);
+    await c.openAppChat(APP);
+    const items = posts.filter((x) => x.url.includes("/api/projects/p1/items")).map((x) => x.body.item);
+    expect(items.map((i: any) => i.title)).toEqual(["Notion", "Notion 2"]);
+    expect(items.every((i: any) => i.app === "notion")).toBe(true); // still badged as an app chat
   });
 });

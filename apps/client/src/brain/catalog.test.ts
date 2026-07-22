@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { existsSync as ex, cpSync } from "node:fs";
+import { existsSync as ex, cpSync, readFileSync } from "node:fs";
 import { listPacks, readPack, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, type InstallDeps } from "./catalog.js";
 import { bundleCatalogSource, type CatalogSource } from "./catalog-source.js";
 import type { Root } from "./graph.js";
@@ -107,17 +107,23 @@ function deps(): InstallDeps & { pins: Record<string, unknown>; frags: string[] 
     },
     copySkill: (src, destDir) => { mkdirSync(destDir, { recursive: true }); cpSync(src, destDir, { recursive: true }); },
     pinMcp: (key, cfg) => { pins[key] = cfg; },
+    // Mirrors wiring.ts: a null policy REMOVES the fragment (that is how uninstall drops the
+    // install marker). Writing `{}` for null here would quietly leave every pack looking installed.
     writePolicyFragment: (target, id, policy) => {
       const p = join(target, "policy", "packs", `${id}.json`);
+      if (policy == null) { if (ex(p)) rmSync(p); return; }
       mkdirSync(join(target, "policy", "packs"), { recursive: true });
-      writeFileSync(p, JSON.stringify(policy ?? {}));
+      writeFileSync(p, JSON.stringify(policy));
       frags.push(p);
     },
   };
 }
 
-describe("installPack", () => {
-  it("installs all present faces into the target root and reports them", () => {
+/** Read a written JSON file back (the fragment/manifest assertions below). */
+function rd(p: string): unknown { return JSON.parse(readFileSync(p, "utf8")); }
+
+describe("installPack — the app face is the operator's, the rules are the company's", () => {
+  it("splits the faces: app + install marker to private, skills + policy to team", () => {
     pack("notion", {
       id: "notion", name: "Notion",
       app: { url: "https://www.notion.so" },
@@ -126,46 +132,76 @@ describe("installPack", () => {
       policy: { allow: ["mcp__notion__search"], ask: ["mcp__notion__create_page"] },
     }, { "notion-search": "---\nname: notion-search\n---\n# Search" });
     const d = deps();
-    const res = installPack(source, roots, { id: "notion", target: "team" }, d);
+    const res = installPack(source, roots, { id: "notion" }, d);
     expect(res.did).toEqual({ app: true, skills: ["notion-search"], mcp: true, policy: true });
-    expect(ex(join(dir, "team", "apps", "notion", "app.json"))).toBe(true);
+    expect(res.target).toBe("private");
+    expect(res.rulesTarget).toBe("team");
+    // Yours: the app in your rail.
+    expect(ex(join(dir, "private", "apps", "notion", "app.json"))).toBe(true);
+    expect(ex(join(dir, "team", "apps", "notion", "app.json"))).toBe(false);
+    // The company's: how this company uses Notion, and what Notion may do here.
     expect(ex(join(dir, "team", "skills", "notion-search", "SKILL.md"))).toBe(true);
+    expect(ex(join(dir, "private", "skills", "notion-search"))).toBe(false);
+    expect(rd(join(dir, "team", "policy", "packs", "notion.json"))).toEqual({ allow: ["mcp__notion__search"], ask: ["mcp__notion__create_page"] });
+    // The private fragment is a bare install marker — never a second, per-operator copy of the rules.
+    expect(rd(join(dir, "private", "policy", "packs", "notion.json"))).toEqual({});
     expect(d.pins["buildex-pack:notion"]).toEqual({ type: "http", url: "https://mcp.notion.com/mcp" });
+  });
+
+  it("keeps the real policy hints when the workspace has no team root (rules fall back to private)", () => {
+    pack("solo", { id: "solo", name: "Solo", mcp: { kind: "http", url: "https://s.co/mcp" }, policy: { ask: ["mcp__solo__send"] } });
+    const soloRoots = roots.filter((r) => r.name !== "team");
+    const d = deps();
+    const res = installPack(source, soloRoots, { id: "solo" }, d);
+    expect(res.rulesTarget).toBe("private");
+    // The marker write must NOT clobber the hints when both land in the same file.
+    expect(rd(join(dir, "private", "policy", "packs", "solo.json"))).toEqual({ ask: ["mcp__solo__send"] });
   });
 
   it("maps a stdio mcp face to a stdio pin config", () => {
     pack("loc", { id: "loc", name: "Loc", mcp: { kind: "stdio", command: "npx", args: ["-y", "@x/mcp"] } });
     const d = deps();
-    installPack(source, roots, { id: "loc", target: "private" }, d);
+    installPack(source, roots, { id: "loc" }, d);
     expect(d.pins["buildex-pack:loc"]).toEqual({ type: "stdio", command: "npx", args: ["-y", "@x/mcp"] });
   });
 
-  it("writes an install marker (policy fragment) even for a pack with no policy - so app-less packs are detected", () => {
+  it("writes the private install marker even for a pack with no policy - so app-less packs are detected", () => {
     pack("toolonly", { id: "toolonly", name: "ToolOnly", mcp: { kind: "http", url: "https://t.co/mcp" } });
     const d = deps();
-    installPack(source, roots, { id: "toolonly", target: "team" }, d);
-    expect(d.frags.some((f) => f.endsWith(`${"toolonly"}.json`))).toBe(true);
-  });
-
-  it("refuses to install into core", () => {
-    pack("x", { id: "x", name: "X", app: { url: "https://x.co" } });
-    expect(() => installPack(source, roots, { id: "x", target: "core" }, deps())).toThrow(/core/i);
+    installPack(source, roots, { id: "toolonly" }, d);
+    expect(ex(join(dir, "private", "policy", "packs", "toolonly.json"))).toBe(true);
+    expect(listPacks(source, roots).find((p) => p.id === "toolonly")!.installed).toBe(true);
   });
 
   it("throws on an unknown pack id", () => {
-    expect(() => installPack(source, roots, { id: "ghost", target: "team" }, deps())).toThrow(/unknown/i);
+    expect(() => installPack(source, roots, { id: "ghost" }, deps())).toThrow(/unknown/i);
   });
 
-  it("uninstall removes app, skills, pin (null) and policy fragment", () => {
-    pack("notion", { id: "notion", name: "Notion", app: { url: "https://www.notion.so" }, mcp: { kind: "http", url: "https://mcp.notion.com/mcp" }, skills: ["notion-search"] },
+  it("uninstall clears the operator's app + pin, and LEAVES the company rules standing", () => {
+    pack("notion", { id: "notion", name: "Notion", app: { url: "https://www.notion.so" }, mcp: { kind: "http", url: "https://mcp.notion.com/mcp" }, skills: ["notion-search"], policy: { ask: ["mcp__notion__create_page"] } },
       { "notion-search": "---\nname: notion-search\n---\n# Search" });
     const d = deps();
-    installPack(source, roots, { id: "notion", target: "team" }, d);
-    const res = uninstallPack(source, roots, { id: "notion", target: "team" }, d);
+    installPack(source, roots, { id: "notion" }, d);
+    const res = uninstallPack(source, roots, { id: "notion", target: "private" }, d);
     expect(res.did.mcp).toBe(true);
     expect(d.pins["buildex-pack:notion"]).toBeNull();
-    expect(ex(join(dir, "team", "apps", "notion", "app.json"))).toBe(false);
-    expect(ex(join(dir, "team", "skills", "notion-search"))).toBe(false);
+    expect(ex(join(dir, "private", "apps", "notion", "app.json"))).toBe(false);
+    expect(ex(join(dir, "private", "policy", "packs", "notion.json"))).toBe(false); // marker gone
+    expect(listPacks(source, roots).find((p) => p.id === "notion")!.installed).toBe(false);
+    // Untouched: other people may be working against these, and one person leaving must not
+    // silently change what the company allows.
+    expect(ex(join(dir, "team", "skills", "notion-search", "SKILL.md"))).toBe(true);
+    expect(rd(join(dir, "team", "policy", "packs", "notion.json"))).toEqual({ ask: ["mcp__notion__create_page"] });
+  });
+
+  it("a teammate's company rules alone do NOT read as installed on this machine", () => {
+    pack("linear", { id: "linear", name: "Linear", mcp: { kind: "http", url: "https://mcp.linear.app" }, policy: { ask: ["mcp__linear__create_issue"] } });
+    // Exactly what syncing down a colleague's install leaves behind: team rules, no private marker.
+    mkdirSync(join(dir, "team", "policy", "packs"), { recursive: true });
+    writeFileSync(join(dir, "team", "policy", "packs", "linear.json"), JSON.stringify({ ask: ["mcp__linear__create_issue"] }));
+    const meta = listPacks(source, roots).find((p) => p.id === "linear")!;
+    expect(meta.installed).toBe(false);
+    expect(meta.installedIn).toBeUndefined();
   });
 });
 
@@ -221,33 +257,36 @@ describe("slot → writable-root resolution (company-suffixed names)", () => {
     return rs;
   }
 
-  it("installs the 'team' slot into the team-* writable root", () => {
+  it("splits across the company-suffixed roots and returns their REAL names", () => {
     const rs = demoRoots();
     pack("notion", { id: "notion", name: "Notion", app: { url: "https://www.notion.so" }, skills: ["notion-search"] },
       { "notion-search": "---\nname: notion-search\n---\n# Search" });
     const d = deps();
-    const res = installPack(source, rs, { id: "notion", target: "team" }, d);
-    expect(res.target).toBe("team-acme");
-    expect(ex(join(dir, "team-acme", "apps", "notion", "app.json"))).toBe(true);
+    const res = installPack(source, rs, { id: "notion" }, d);
+    // The REAL names, not the slots: wiring.ts schedules the commit+push off these, and a slot
+    // lookup there found nothing on a provisioned workspace (the install silently missed its push).
+    expect(res.target).toBe("private-you");
+    expect(res.rulesTarget).toBe("team-acme");
+    expect(ex(join(dir, "private-you", "apps", "notion", "app.json"))).toBe(true);
     expect(ex(join(dir, "team-acme", "skills", "notion-search", "SKILL.md"))).toBe(true);
   });
 
-  it("installs the 'private' slot into the private-* writable root", () => {
+  it("pins an app-less pack installed into the private-* root", () => {
     const rs = demoRoots();
     pack("loc", { id: "loc", name: "Loc", mcp: { kind: "stdio", command: "npx", args: ["-y", "@x/mcp"] } });
     const d = deps();
-    const res = installPack(source, rs, { id: "loc", target: "private" }, d);
+    const res = installPack(source, rs, { id: "loc" }, d);
     expect(res.target).toBe("private-you");
     expect(d.pins["buildex-pack:loc"]).toEqual({ type: "stdio", command: "npx", args: ["-y", "@x/mcp"] });
   });
 
-  it("reports installedIn as the slot ('team'), not the raw repo name", () => {
+  it("reports installedIn as the slot ('private'), not the raw repo name", () => {
     const rs = demoRoots();
     pack("notion", { id: "notion", name: "Notion", app: { url: "https://www.notion.so" } });
-    installPack(source, rs, { id: "notion", target: "team" }, deps());
+    installPack(source, rs, { id: "notion" }, deps());
     const meta = listPacks(source, rs).find((p) => p.id === "notion")!;
     expect(meta.installed).toBe(true);
-    expect(meta.installedIn).toBe("team");
+    expect(meta.installedIn).toBe("private");
   });
 
   it("uninstalls via the slot round-trip from installedIn", () => {
@@ -255,10 +294,10 @@ describe("slot → writable-root resolution (company-suffixed names)", () => {
     pack("notion", { id: "notion", name: "Notion", app: { url: "https://www.notion.so" }, skills: ["notion-search"] },
       { "notion-search": "---\nname: notion-search\n---\n# Search" });
     const d = deps();
-    installPack(source, rs, { id: "notion", target: "team" }, d);
+    installPack(source, rs, { id: "notion" }, d);
     const slot = listPacks(source, rs).find((p) => p.id === "notion")!.installedIn!;
     uninstallPack(source, rs, { id: "notion", target: slot }, d);
-    expect(ex(join(dir, "team-acme", "apps", "notion", "app.json"))).toBe(false);
+    expect(ex(join(dir, "private-you", "apps", "notion", "app.json"))).toBe(false);
     expect(d.pins["buildex-pack:notion"]).toBeNull();
   });
 });

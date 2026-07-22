@@ -12,7 +12,9 @@
  * @param {object} it - a persisted project item ({type, plus type-specific fields}).
  */
 function openProjectItem(it) {
-  if (it.type === "chat") openChatTab({ id: it.sessionId, title: it.title || "Chat", status: "idle" });
+  // A chat started from an app carries its id; resolve it back to the installed app so the reopened
+  // tab keeps the app's mark and its connect banner (unresolvable id -> a plain chat, never a crash).
+  if (it.type === "chat") openChatTab({ id: it.sessionId, title: it.title || "Chat", status: "idle" }, it.app ? (S.apps || []).find((x) => x.name === it.app) : null);
   else if (it.type === "doc") openDocTab(it.path, false);
   else if (it.type === "browser") openBrowserTab(it.url, false);
   else if (it.type === "map") openMapTab(false);
@@ -48,7 +50,9 @@ async function switchToProject(pid, focusIdx) {
     renderTabbar();
     showProjectStart();
   }
-  refreshProjects();
+  // Awaited so a caller that touches the freshly-painted rail (newProject's inline rename) isn't
+  // racing a re-render that would replace the row it just grabbed.
+  await refreshProjects();
 }
 
 /** Render the empty-project start screen into the tab body: the two primitives (chat + document),
@@ -59,10 +63,7 @@ function showProjectStart() {
   const p = (S.projects || []).find((x) => x.id === S.activeProject);
   const apps = S.apps || [];
   // One launcher per installed app: clicking it starts an AI chat oriented to that app's tools.
-  const appBtns = apps.map((a) => {
-    const glyph = a.icon && a.icon.length <= 3 ? esc(a.icon) : (a.kind === "external" ? "🌐" : "◈");
-    return '<button class="ss-tool" data-app="' + escAttr(a.name) + '"><span>' + glyph + "</span>" + esc(a.title) + "</button>";
-  }).join("");
+  const appBtns = apps.map((a) => '<button class="ss-tool" data-app="' + escAttr(a.name) + '"><span class="ss-ic">' + appGlyph(a) + "</span>" + esc(a.title) + "</button>").join("");
   const el = elt("div", "startscreen");
   el.id = "startScreen";
   el.innerHTML = '<div class="ss-card"><div class="ss-emoji">✦</div><h2>' + esc((p && p.name) || "Session") + "</h2>"
@@ -141,10 +142,12 @@ function kbdLabel(shift, letter) {
 }
 
 // The add-menu items: icon glyph, label, keyboard shortcut (letter + shift flag), and the action.
+// `menu:false` keeps an action on the keyboard but off the ＋ menu - "Open a document" is a jump to
+// the Files rail, not a thing you START, so it doesn't belong in a menu of new things.
 const ADD_ACTIONS=[
   {icon:"◈",label:"New chat",       key:"n",shift:false,run:()=>newConversation()},
   {icon:"✎",label:"New document",   key:"n",shift:true, run:()=>openMarkdownEditor(null,"")},
-  {icon:"▤",label:"Open a document",key:"o",shift:false,run:()=>switchRight("files")},
+  {icon:"▤",label:"Open a document",key:"o",shift:false,menu:false,run:()=>switchRight("files")},
   {icon:"◉",label:"Web browser",    key:"b",shift:true, run:()=>openBrowserTab()},
 ];
 
@@ -182,24 +185,47 @@ function switchSession(dir) {
 }
 
 /**
- * Open the "＋" add-menu dropdown anchored under `anchor`, one button per add-action.
+ * Open the "＋" add-menu dropdown anchored under `anchor`: the primitives you can start (chat, doc,
+ * browser) and then every installed app, because "work with an app" is the main use case and was
+ * only reachable from the empty-session screen. Both ＋ buttons - the tab bar's and a session
+ * header's - open this same menu, so the answer to "what can I start?" is one list, not two.
  * @param {HTMLElement} anchor - the ＋ button the menu hangs off.
+ * @param {string} [pid] - session to start the new thing in; switched to first when given.
  */
-function openAddMenu(anchor) {
+function openAddMenu(anchor, pid) {
   closeMenus();
-  const m = elt("div", "dropdown");
-  m.style.top = "34px";
-  m.style.left = (anchor.offsetLeft) + "px";
-  ADD_ACTIONS.forEach((a) => {
+  const m = elt("div", "dropdown addmenu");
+  // A ＋ on a session header must act ON that session - switch first, then run, so a chat started
+  // from a row the operator is pointing at never lands in whatever session was active before.
+  const run = async (fn) => {
+    closeMenus();
+    if (pid && pid !== S.activeProject) await switchToProject(pid);
+    fn();
+  };
+  ADD_ACTIONS.filter((a) => a.menu !== false).forEach((a) => {
     const b = elt("button", null, '<span class="k">' + a.icon + '</span>' + esc(a.label) + '<span class="kbd">' + kbdLabel(a.shift, a.key.toUpperCase()) + '</span>');
-    b.onclick = () => {
-      closeMenus();
-      a.run();
-    };
+    b.onclick = () => run(a.run);
     m.appendChild(b);
   });
-  anchor.parentElement.appendChild(m);
+  const apps = S.apps || [];
+  m.appendChild(elt("div", "mhd", apps.length ? "Apps &amp; tools" : "Apps &amp; tools - none yet"));
+  apps.forEach((a) => {
+    const b = elt("button", "amenu", '<span class="k">' + appGlyph(a) + "</span>" + esc(a.title || a.name));
+    mountAppLogo($(".k", b), a.name, "mlogo");
+    b.onclick = () => run(() => openAppChat(a));
+    m.appendChild(b);
+  });
+  const store = elt("button", null, '<span class="k">⊕</span>Add apps &amp; tools');
+  store.onclick = () => run(() => openStoreTab());
+  m.appendChild(store);
+  // Pinned to the anchor's viewport position: a session header sits inside an overflow:auto rail,
+  // where an absolutely-positioned menu would be clipped (same reason projectMenu does this).
+  document.body.appendChild(m);
   m.dataset.menu = "1";
+  const r = anchor.getBoundingClientRect();
+  m.style.position = "fixed";
+  m.style.top = Math.min(r.bottom + 4, window.innerHeight - m.offsetHeight - 8) + "px";
+  m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - m.offsetWidth - 8)) + "px";
 }
 
 /** Remove every open dropdown menu, and hide the file menu if present. */

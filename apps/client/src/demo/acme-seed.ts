@@ -25,26 +25,45 @@ function file(dir: string, rel: string, content: string): void {
   writeFileSync(p, content);
 }
 
-// Install a catalog app into a seeded root exactly as a real install would - the external-app
-// manifest (`apps/<id>/app.json`) plus the policy-fragment install marker (`policy/packs/<id>.json`)
-// plus the pack's skill folders. That is precisely what `installPack` writes, so the demo boots with
-// a populated App Store, Skills panel, and per-app policy - all detected via those on-disk markers
-// (`installedRoot` in brain/catalog.ts). No `.mcp.json` is seeded: boot re-pins every installed pack's
-// MCP into the workspace `.mcp.json` (brain/pack-config.ts) on the first config regen.
-function installApp(rootDir: string, corePackDir: string, id: string): void {
+// Install a catalog app into the seeded roots exactly as a real install would (brain/catalog.ts
+// installPack), so the demo boots with a populated App Store, Skills panel, and per-app policy - all
+// detected via the same on-disk markers `installedRoot` reads. The faces SPLIT the way a real install
+// splits them: the app manifest and the install marker are the operator's (private), while the skills
+// and the policy are company rules (team). No `.mcp.json` is seeded: boot re-pins every installed
+// pack's MCP into the workspace `.mcp.json` (brain/pack-config.ts) on the first config regen.
+function installApp(appRootDir: string, rulesRootDir: string, corePackDir: string, id: string): void {
   const pack = JSON.parse(readFileSync(join(corePackDir, "catalog", id, "pack.json"), "utf8")) as {
+    name?: string;
     app?: { url: string; icon?: string };
     skills?: string[];
     policy?: Record<string, unknown>;
   };
   if (pack.app) {
-    file(rootDir, join("apps", id, "app.json"), JSON.stringify({ kind: "external", url: pack.app.url, ...(pack.app.icon ? { icon: pack.app.icon } : {}) }, null, 2) + "\n");
+    // `name` is the display title - without it the rail falls back to the folder id ("stripe").
+    file(appRootDir, join("apps", id, "app.json"), JSON.stringify({ kind: "external", name: pack.name ?? id, url: pack.app.url, ...(pack.app.icon ? { icon: pack.app.icon } : {}) }, null, 2) + "\n");
   }
-  file(rootDir, join("policy", "packs", `${id}.json`), JSON.stringify(pack.policy ?? {}, null, 2) + "\n");
+  file(appRootDir, join("policy", "packs", `${id}.json`), JSON.stringify({}, null, 2) + "\n"); // per-operator install marker
+  file(rulesRootDir, join("policy", "packs", `${id}.json`), JSON.stringify(pack.policy ?? {}, null, 2) + "\n"); // the company rule
   for (const s of pack.skills ?? []) {
     const src = join(corePackDir, "catalog", id, "skills", s);
-    if (existsSync(src)) cpSync(src, join(rootDir, "skills", s), { recursive: true });
+    if (existsSync(src)) cpSync(src, join(rulesRootDir, "skills", s), { recursive: true });
   }
+}
+
+/** The catalog apps the demo operator has installed (see installApp for how the faces split). */
+export const DEMO_INSTALLED_PACKS = ["slack", "notion", "linear", "stripe", "hubspot", "intercom"];
+
+/**
+ * Install the demo's stack across a root PAIR. Exported because an install now spans two repos, which
+ * no per-repo writer can express - both consumers (the packaged sandbox in seedAcmeWorkspace and the
+ * dev script scripts/demo-setup.ts, which seeds each repo in its own clone) must call this explicitly
+ * once both roots exist. Keeping it here keeps "what the demo has installed" a single definition.
+ * @param appRootDir - the operator's private root (app manifests + install markers).
+ * @param rulesRootDir - the team root (skills + policy: the company rules).
+ * @param corePackDir - the bundled core pack holding `catalog/<id>/`.
+ */
+export function installDemoPacks(appRootDir: string, rulesRootDir: string, corePackDir: string): void {
+  for (const id of DEMO_INSTALLED_PACKS) installApp(appRootDir, rulesRootDir, corePackDir, id);
 }
 
 /** core: the product pack (rules, verbs, conventions) laid down from the bundled pack. */
@@ -529,8 +548,6 @@ export function writeAcmeContent(dir: string, opts: { corePackDir: string }): vo
     "",
   ].join("\n"));
 
-  // --- installed apps: the stack a B2B SaaS operator would actually run on ---
-  for (const id of ["slack", "notion", "linear", "stripe", "hubspot", "intercom"]) installApp(dir, opts.corePackDir, id);
 }
 
 // --- Workspace extras: daemon-owned files that make the left rail feel lived-in (automations,
@@ -691,14 +708,16 @@ export function writeWorkspaceExtras(workspace: string, opts: { roots: Root[]; p
   // Projects (the left-rail task containers): group the sessions into workstreams, each holding its
   // chats plus a relevant doc/map so the rail shows a real mix (chat · doc · map). Chats reference
   // sessions by id; docs reference real seeded files (a doc item opens the file). NEVER synced.
-  const chat = (title: string): { type: "chat"; sessionId: string; title: string } => ({ type: "chat", sessionId: sessionIdByTitle.get(title)!, title });
+  // `app` marks a chat that was started from an installed app (the rail badges it with that app's
+  // mark) - the demo has to show the mixed case: some chats are about a tool, most are not.
+  const chat = (title: string, app?: string): { type: "chat"; sessionId: string; title: string; app?: string } => ({ type: "chat", sessionId: sessionIdByTitle.get(title)!, title, ...(app ? { app } : {}) });
   const doc = (path: string): { type: "doc"; path: string } => ({ type: "doc", path });
   const projects = [
     { name: "Fundraising", items: [chat("Draft the Q3 investor update"), doc("team-acme/finance/metrics-q3.md")] },
     { name: "Clients", items: [chat("Summarize this week's design-partner calls"), chat("Reply to Dana's kickoff email"), doc("team-acme/clients/globex/profile.md")] },
-    { name: "Finance", items: [chat("Reconcile Globex invoices for July"), doc("team-acme/finance/runway.md")] },
-    { name: "Product", items: [chat("Update the roadmap from Linear issues"), doc("team-acme/product/roadmap.md")] },
-    { name: "Sales", items: [chat("Prep the Umbrella pilot proposal"), doc("team-acme/gtm/pipeline.md")] },
+    { name: "Finance", items: [chat("Reconcile Globex invoices for July", "stripe"), doc("team-acme/finance/runway.md")] },
+    { name: "Product", items: [chat("Update the roadmap from Linear issues", "linear"), doc("team-acme/product/roadmap.md")] },
+    { name: "Sales", items: [chat("Prep the Umbrella pilot proposal", "hubspot"), doc("team-acme/gtm/pipeline.md")] },
     { name: "Operations", items: [chat("Friday weekly review"), { type: "map" as const }] },
     { name: "Hiring", items: [chat("Draft the backend engineer job post"), doc("team-acme/people/hiring/backend-engineer.md")] },
   ].map((p) => ({ id: randomUUID(), name: p.name, items: p.items, createdAt: Date.parse("2026-07-19T09:00:00Z") }));
@@ -726,15 +745,27 @@ export function seedAcmeWorkspace(opts: SeedAcmeOpts): Root[] {
     "team-acme": (dir) => writeAcmeContent(dir, { corePackDir: opts.corePackDir }),
     "private-you": (dir) => writePrivateContent(dir),
   };
+  // An install spans TWO repos (app face → private, company rules → team), so it cannot happen inside
+  // a per-repo writer. Lay the content down first, then install into the pair - but only when BOTH
+  // were freshly created, so a re-seed never clobbers a provisioned repo (invariant #8).
+  const fresh = new Set<string>();
   const roots: Root[] = ["core", "team-acme", "private-you"].map((name) => {
     const dir = join(opts.workspace, name);
     const root: Root = { name, dir };
     if (existsSync(join(dir, ".git"))) return root; // already provisioned - never clobber (invariant #8)
     mkdirSync(dir, { recursive: true });
     writers[name]!(dir);
-    initAndCommit(dir, actor, `seed ${name}`); // no remote → permanently local (non-syncable sandbox)
+    fresh.add(name);
     return root;
   });
+  // The stack a B2B SaaS operator would actually run on.
+  if (fresh.has("team-acme") && fresh.has("private-you")) {
+    installDemoPacks(join(opts.workspace, "private-you"), join(opts.workspace, "team-acme"), opts.corePackDir);
+  }
+  for (const root of roots) {
+    if (!fresh.has(root.name)) continue;
+    initAndCommit(root.dir, actor, `seed ${root.name}`); // no remote → permanently local (non-syncable sandbox)
+  }
   const preset = JSON.parse(readFileSync(join(opts.corePackDir, "policy", "preset.json"), "utf8")) as PolicyPreset;
   writeWorkspaceExtras(opts.workspace, { roots, preset });
   return roots;

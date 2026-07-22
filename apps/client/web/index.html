@@ -41,7 +41,12 @@
       <button class="brand" id="brandBtn" title="Your company brain - the whole system, live"><span class="dot"></span>BuildEx</button>
     </div>
 
-    <div class="tabs" id="tabbar"><button class="tabadd" id="tabAdd" title="New tab" aria-label="New tab">＋</button></div>
+    <!-- ＋ sits OUTSIDE the scrolling strip: "start something new" must never be the thing that
+         scrolls off when the operator has a lot of work open. -->
+    <div class="tabswrap">
+      <div class="tabs" id="tabbar"></div>
+      <button class="tabadd" id="tabAdd" title="New tab" aria-label="New tab">＋</button>
+    </div>
 
     <div class="tl tl-r">
       <div class="rtabs" id="rtabs" role="tablist" aria-label="Right panel">
@@ -50,7 +55,6 @@
         <button data-r="skills" role="tab" aria-selected="false" title="Skills" aria-label="Skills"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3z"/></svg></button>
         <!-- Automations UI is hidden for now (feature intact; remove display:none to re-enable) -->
         <button data-r="automations" role="tab" aria-selected="false" title="Automations" aria-label="Automations" style="display:none"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg></button>
-        <button data-r="apps" role="tab" aria-selected="false" title="Apps &amp; connectors" aria-label="Apps &amp; connectors"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 0 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
       </div>
       <div class="rgroup">
         <div class="sync ok" id="sync" role="status" aria-label="Sync status: Synced" title="Synced"><span class="d"></span></div>
@@ -67,11 +71,14 @@
       <!-- Organization switcher (B2a). Populated by js/orgs.js from /api/orgs; stays hidden on a
            single-workspace daemon (route absent). The demo org is a local-only sandbox, badged. -->
       <div class="orgbar" id="orgbar" hidden></div>
-      <div class="hd"><h3>Sessions</h3><button id="newSessionTop" title="New session">＋</button></div>
+      <!-- Apps & Tools sits directly under the company picker, ABOVE sessions: BuildEx is an
+           integrator + chat, so the tools the operator works through are the primary navigation.
+           The list shows the first few and expands; "Edit" turns it into a drag-to-reorder list. -->
+      <div class="hd apps-hd"><h3>Apps &amp; Tools</h3><button id="appsEdit" class="hdedit" title="Reorder your apps">Edit</button><button id="storeTop" class="hdstore" title="Browse the App Store - install apps &amp; connectors">⊕ Store</button></div>
+      <div class="applist" id="applist"></div>
+      <div class="hd sessions-hd"><h3>Sessions</h3><button id="newSessionTop" title="New session">＋</button></div>
       <div class="convos" id="convos"></div>
       <button class="newchat" id="newProject">＋ New session</button>
-      <div class="hd apps-hd"><h3>Apps</h3><button id="storeTop" class="hdstore" title="Browse the App Store - install apps &amp; connectors">⊕ Store</button></div>
-      <div class="applist" id="applist"></div>
     </aside>
 
     <!-- MIDDLE (tabs now live in the title bar) -->
@@ -113,6 +120,7 @@
 <script src="js/tabs.js"></script>
 <script src="js/apps.js"></script>
 <script src="js/store.js"></script>
+<script src="js/app-settings.js"></script>
 <script src="js/navmenu.js"></script>
 <script src="js/chat-turn.js"></script>
 <script src="js/composer.js"></script>
