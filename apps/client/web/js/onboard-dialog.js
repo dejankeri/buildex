@@ -30,10 +30,13 @@
  * (checkOnboarding() in onboarding.js), which owns the ".onboarded" completion marker (POST
  * /api/onboarding/complete) as it already does today. Either path just tears down the modal (the
  * cloud-connected path also calls refreshProjects() to repaint the console).
+ * The returned promise resolves only once the dialog tears down (any dismissal path) - callers
+ * that `await openOnboard()` before running the first-run wizard (see boot.js) rely on this so the
+ * wizard never stacks a second modal on top of a still-open onboard dialog.
  * @returns {Promise<void>}
  */
 async function openOnboard() {
-  if (document.querySelector(".onboard-modal")) return; // already open - don't stack a second
+  if (document.querySelector(".onboard-modal")) return Promise.resolve(); // already open - don't stack a second
   let signInAvailable = false;
   try {
     const s = await getJSON("/api/sync");
@@ -41,12 +44,16 @@ async function openOnboard() {
   } catch (e) {
     /* best-effort - treat as dormant, the safe default */
   }
+  return new Promise((resolve) => {
   const back = elt("div", "wz-backdrop onboard-modal"), card = elt("div", "wz-card");
   back.appendChild(card);
   document.body.appendChild(back);
   let mode = "cloud"; // default selection when the cloud option is offered
   let error = "";
-  const close = () => back.remove();
+  const close = () => {
+    back.remove();
+    resolve();
+  };
   const draw = () => {
     const nameInput = card.querySelector("#wz-company-name");
     const nameVal = nameInput ? nameInput.value : "";
@@ -124,4 +131,5 @@ async function openOnboard() {
     };
   };
   draw();
+  });
 }
