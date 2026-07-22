@@ -29,6 +29,34 @@ function syncDotState(s) {
 }
 
 /**
+ * Show/hide the left-rail "back up & sync" pill: a persistent, low-emphasis nudge to sign in,
+ * visible only while the workspace has no connected account (invariant 1 - the operator's work is
+ * safe either way; this just offers to also keep a copy with the company). Its click opens the same
+ * front door as the pending tray's save card (js/pending.js): startSignIn() (js/signin.js).
+ * @param {{unsaved?: {connected?: boolean}}|null} sync - the `/api/sync` response, or null if the
+ *   fetch failed (the pill stays hidden rather than guess).
+ * @returns {void}
+ */
+function renderSigninPill(sync) {
+  const host = $("#signinCta");
+  if (!host) return;
+  const show = !!(sync && sync.unsaved && sync.unsaved.connected === false);
+  host.hidden = !show;
+  if (!show) {
+    host.replaceChildren();
+    return;
+  }
+  host.replaceChildren(
+    el(
+      "button",
+      { class: "signin-pill", type: "button", onClick: () => startSignIn() },
+      el("span", { class: "signin-pill-dot", "aria-hidden": "true" }),
+      "Back up & sync — sign in (free)",
+    ),
+  );
+}
+
+/**
  * Reload projects + sessions from the daemon and repaint the left rail; also refresh the sync dot.
  * @returns {Promise<void>}
  */
@@ -44,11 +72,13 @@ async function refreshProjects() {
   // otherwise problems take precedence over the unsaved count - needs-help (a conflict was backed
   // up) / queued (offline) / local (no account) / unsaved (waiting on the operator to save) / ok.
   let st = "ok";
+  let syncResp = null;
   try {
-    const s = await getJSON("/api/sync");
-    st = syncDotState(s);
+    syncResp = await getJSON("/api/sync");
+    st = syncDotState(syncResp);
   } catch (e) {}
   setSync(syncBusy ? "busy" : st);
+  renderSigninPill(syncResp); // the left-rail "back up & sync" pill - hidden once an account is connected
   if (S.rightTab === "synclog") fillSyncLog();
   try {
     sessions = (await getJSON("/api/sessions")).sessions;

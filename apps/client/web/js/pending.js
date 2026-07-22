@@ -26,16 +26,18 @@ function saveCardHtml(sync, connected) {
   const stale = sync.unsaved.stale;
   const days = stale ? Math.max(1, Math.round((Date.now() - sync.unsaved.oldestAt) / DAY_MS)) : 0;
 
-  // No account yet: there is nowhere to save TO. State that plainly and offer no button - the
-  // console has no account-creation surface, so a "Connect an account" button promised something
-  // the product cannot do and led to the Apps tab.
+  // No account yet: there is nowhere to save TO automatically, but there IS now a sign-in surface
+  // (js/signin.js) - so, unlike before, this card offers a real next step instead of stating the
+  // fact and stopping. "connected" here still means "an account exists to save to", so the card
+  // reads as a straightforward context: this work is local, and signing in would fix that.
   if (!connected) {
     return (
-      '<div class="pcard save' + (stale ? " stale" : "") + '">' +
-      "<b>This work is on this machine only</b>" +
-      "<p>" + n + " " + noun + " " + are + " saved here and nowhere else. If you lose this computer, " +
-      "you lose " + (n === 1 ? "it" : "them") + "." +
+      '<div class="pcard save signin' + (stale ? " stale" : "") + '">' +
+      "<b>Your work only lives on this machine</b>" +
+      "<p>" + n + " " + noun + " " + are + " saved here and nowhere else. Sign in free to back " +
+      (n === 1 ? "it" : "them") + " up." +
       "</p>" +
+      '<button class="pbtn" id="signin-now" type="button">Sign in</button>' +
       "</div>"
     );
   }
@@ -223,6 +225,10 @@ function wireSaveCard() {
       rPending(); // re-render: the count is now zero, or the failure shows in the dot
     };
   }
+  // The not-connected variant of the same card (js/pending.js's saveCardHtml) - same tray, same
+  // idiom, but there is nowhere to save TO yet, so the button opens the sign-in modal instead.
+  const signinBtn = $("#signin-now");
+  if (signinBtn) signinBtn.onclick = () => startSignIn();
 }
 
 /**

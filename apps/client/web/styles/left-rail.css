@@ -2,6 +2,14 @@
    Part of the operator console design system (web/index.html). */
   /* left rail */
   .left{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0;overflow:hidden;}
+  /* "Back up & sync" pill (js/projects.js, renderSigninPill) — the very top of the rail, shown ONLY
+     while signed out. Subtle by design: it is a standing invitation, not an alarm, so it sits below
+     the visual weight of the sync dot / pending tray's own signed-out card. */
+  .signin-cta{padding:8px 8px 0;flex:none;}
+  .signin-cta[hidden]{display:none;}
+  .signin-pill{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:1px solid var(--line-2);border-radius:9px;background:var(--panel-2);color:var(--muted);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer;text-align:left;}
+  .signin-pill:hover{border-color:var(--brand-dim);color:var(--ink);}
+  .signin-pill-dot{width:7px;height:7px;border-radius:50%;background:var(--brand);flex:none;}
   /* org switcher (B2a) — top of the left rail; the demo org is a badged local-only sandbox */
   .orgbar{position:relative;padding:8px;border-bottom:1px solid var(--line);flex:none;}
   .orgbar[hidden]{display:none;}
