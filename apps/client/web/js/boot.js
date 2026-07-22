@@ -65,7 +65,9 @@ async function boot() {
   $("#sync").onclick = () => {
     const dot = $("#sync");
     if (dot.classList.contains("local") || dot.classList.contains("reconnect")) { openConnectAccount(); return; }
-    switchRight(dot.classList.contains("unsaved") ? "pending" : "synclog");
+    // Unsaved work and "what synced?" both live in the brain map now (the Gate holds the save card's
+    // sibling approvals; Learning is the change log) — the dot opens the map rather than a lone panel.
+    switchRight("brain");
   };
   $("#usageRefresh").onclick = () => refreshUsage(true);
   try {
@@ -75,7 +77,9 @@ async function boot() {
   await refreshProjects();
   await refreshApps();
   await loadTree();
-  switchRight("pending"); // Pending is the default right-panel tab
+  // Restore the scope lens + the persisted panel choice; the Brain map is the default right panel.
+  try { S.brainScope = localStorage.getItem("buildex.brainScope") || "all"; } catch (e) {}
+  switchRight("brain");
   // Restore the remembered column state; on the first-ever launch (nothing stored) leave BOTH columns
   // open so a new operator sees the whole workspace - left rail AND right panel - before collapsing.
   let panels = null;

@@ -16,7 +16,7 @@ function makeDaemon() {
     buildMap: () => ({ nodes: [], edges: [] }),
     syncFn: async () => "ok",
     catalog: {
-      skills: () => [{ name: "tidy", description: "Use when the workspace drifts." }],
+      skills: () => [{ name: "tidy", description: "Use when the workspace drifts.", root: "team" }],
       connectors: () => [{ name: "gmail", status: "synced", lastSync: "2026-07-16T10:00:00Z" }],
       routines: () => [],
     },

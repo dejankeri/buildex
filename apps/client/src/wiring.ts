@@ -9,7 +9,7 @@ import { confinePath } from "./lib/confine-path.js";
 import { createDaemon, type Handler, type VaultReader, type Catalog, type TreeNode, type SkillEditor, type AutomationEngine, type ConnectorControl, type ConnectorGatewayView } from "./daemon/daemon.js";
 import { startGatewayHttp, writeGatewayRegistration, writeMcpEntries } from "@buildex/connectors";
 import { ConnectorGatewayHub } from "./brain/connector-gateway.js";
-import { readSkill, writeSkillFile, composeSkill, validateSkill, skillTemplate } from "./brain/skills.js";
+import { readSkill, writeSkillFile, composeSkill, validateSkill, skillTemplate, originOf } from "./brain/skills.js";
 import { listApps, writeAppManifest, type AppManifest } from "./brain/apps.js";
 import { reconciledPackMcpEntries, composePreset } from "./brain/pack-config.js";
 import { listPacks, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, provisionKeychainKey, provisionBaseKeychainKey, slotOf, type InstallDeps } from "./brain/catalog.js";
@@ -287,7 +287,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
   };
 
   const catalog: Catalog = {
-    skills: () => listSkills(join(config.workspace, ".claude", "skills")),
+    skills: () => listSkills(config.workspace, config.roots),
     connectors: () => listConnectors(config.roots),
     routines: () => [], // local routines are a v1 seam - none configured yet
   };
@@ -982,16 +982,19 @@ function treeOf(dir: string, prefix: string): TreeNode[] {
   return nodes.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1));
 }
 
-/** The verbs available in the workspace, read from the generated .claude/skills links. */
-function listSkills(skillsDir: string): { name: string; description: string }[] {
+/** The verbs available in the workspace, read from the generated .claude/skills links. Each verb
+ *  carries `root` - the brain it came from (the origin repo name, precedence-resolved) - so the
+ *  console's Brain rail can filter verbs by Company vs Private without lying about ownership. */
+function listSkills(workspace: string, roots: Root[]): { name: string; description: string; root: string }[] {
+  const skillsDir = join(workspace, ".claude", "skills");
   if (!existsSync(skillsDir)) return [];
-  const out: { name: string; description: string }[] = [];
+  const out: { name: string; description: string; root: string }[] = [];
   for (const name of readdirSync(skillsDir).sort()) {
-    const md = join(skillsDir, name, "SKILL.md");
-    if (!existsSync(md)) continue;
-    const fm = readFileSync(md, "utf8").match(/^---\n([\s\S]*?)\n---/);
+    const dir = join(skillsDir, name);
+    if (!existsSync(join(dir, "SKILL.md"))) continue;
+    const fm = readFileSync(join(dir, "SKILL.md"), "utf8").match(/^---\n([\s\S]*?)\n---/);
     const desc = fm ? (fm[1]!.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? "") : "";
-    out.push({ name, description: desc });
+    out.push({ name, description: desc, root: originOf(workspace, roots, name, dir) });
   }
   return out;
 }

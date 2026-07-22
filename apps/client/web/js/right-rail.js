@@ -11,20 +11,28 @@
 
 /* ---------- right rail ---------- */
 
+// The right panel is two surfaces now: "brain" (the map) and "documents" (files + drives). Legacy
+// panel names still RESOLVE — a persisted S.rightTab from an older build, or a caller that still asks
+// for "pending"/"synclog"/"skills"/"files" — so an upgrade never lands the operator on a blank panel.
+// Pending/Skills/Sync folded into the brain's Gate/Policy/Learning stages, so they route to the map.
+const RIGHT_PANELS = { brain: rBrain, documents: rDocs };
+const RIGHT_ALIASES = { files: "documents", skills: "brain", pending: "brain", synclog: "brain", automations: "brain" };
+
 /**
  * Switch the right rail to panel `name`: mark it active, un-collapse the rail, and render it.
- * @param {string} name - one of files/skills/automations/pending/synclog.
+ * @param {string} name - "brain" | "documents" (legacy files/skills/pending/synclog/automations map on).
  */
 function switchRight(name) {
-  S.rightTab = name;
+  const panel = RIGHT_PANELS[name] ? name : (RIGHT_ALIASES[name] || "brain");
+  S.rightTab = panel;
   $(".app").classList.remove("rc");
   /* clicking a panel icon re-opens a collapsed panel */
   $$("#rtabs button[data-r]").forEach((b) => {
-    const sel = b.dataset.r === name;
+    const sel = b.dataset.r === panel;
     b.classList.toggle("on", sel);
     b.setAttribute("aria-selected", sel ? "true" : "false"); // keep the tablist state perceivable
   });
-  ({ files: rFiles, skills: rSkills, automations: rAuto, pending: rPending, synclog: rSyncLog }[name] || rFiles)();
+  (RIGHT_PANELS[panel] || rBrain)();
 }
 
 /** Fetch the repo file tree into `S.tree` (empty on failure). */
@@ -36,18 +44,80 @@ async function loadTree() {
   }
 }
 
-/** Render the Files panel: header, find box, agent-health strip, and the tree host. */
-function rFiles() {
+/** Render the Documents panel: two zones over one browser — "In your repo" (light, git-synced files:
+ *  the existing Company/Private tree) and "Connected" (external drives — Drive/Dropbox — where media
+ *  and heavy files live, out of the synced repo). Header, find box, agent-health strip, tree host. */
+function rDocs() {
   const p = $("#rpanel");
-  p.innerHTML = '<div class="rhead"><h4>Files</h4><button class="cog" id="filesCog" title="Files settings">⚙</button></div><div class="findwrap"><input class="find" placeholder="Find files…"></div><div id="agenthealth"></div><div class="tree" id="tree"></div>';
+  p.innerHTML = '<div class="rhead"><h4>Documents</h4><button class="cog" id="filesCog" title="Documents settings">⚙</button></div>'
+    + '<div class="findwrap"><input class="find" placeholder="Find files…"></div><div id="agenthealth"></div>'
+    + '<div class="dzone"><div class="dzone-h"><span class="dzone-t">In your repo</span><span class="dzone-b">synced</span></div><div class="tree" id="tree"></div></div>'
+    + '<div class="dzone dzone-ext"><div class="dzone-h"><span class="dzone-t">Connected</span><span class="dzone-b">external</span></div><div id="extdrives"></div></div>';
   $(".find", p).oninput = (e) => {
     S.treeFilter = e.target.value.toLowerCase();
     renderTree();
   };
   $("#filesCog").onclick = openFilesSettings;
+  renderExternalDrives();
   // in "show everything" mode the derived surface is part of the tree - load it first, draw once.
   if (S.showAllFiles) loadAgentView().then(renderTree);
   else renderTree();
+}
+
+// Alias: an older build (or a caller) that still says "files" lands on the same Documents panel.
+const rFiles = rDocs;
+
+/* ---------- Connected (external) storage — the seam for Drive/Dropbox/etc. (invariant #10) ----------
+   Day one there is one live backend: the synced repo. External drives are an interface with a stub
+   that reports none connected, so the zone renders honestly ("nothing connected yet") and the media
+   guard has somewhere real to route heavy files the moment a drive IS wired in. */
+
+/** The connected external drives (none in the stub). */
+function externalDrives() {
+  return (S.extStore && S.extStore.drives) || [];
+}
+
+/** Render the Connected zone: each drive, or an honest empty state, plus the connect affordance. */
+function renderExternalDrives() {
+  const host = $("#extdrives");
+  if (!host) return;
+  host.innerHTML = "";
+  const drives = externalDrives();
+  if (!drives.length) {
+    host.appendChild(elt("div", "dext-empty", "No drives connected. Media and large files live here — out of your synced repo — once you connect one."));
+  } else {
+    drives.forEach((dr) => host.appendChild(elt("div", "btool", '<span class="bdot live"></span> <code>' + esc(dr.name || "drive") + "</code><span class=\"btd\">" + esc(dr.provider || "") + "</span>")));
+  }
+  const add = elt("button", "dext-add", "+ Connect a drive");
+  add.onclick = () => connectDrive();
+  host.appendChild(add);
+}
+
+/** Connect an external drive. The provider wiring (OAuth to Drive/Dropbox) is the cloud path; today
+ *  this names the seam rather than pretending to open a provider the console can't yet reach. */
+function connectDrive() {
+  toast("Connecting a drive (Google Drive, Dropbox) is coming — media will live there, never in your synced repo.");
+}
+
+// The media guard. The synced repo carries only light, diff-able, sync-friendly files; everything
+// heavy is referenced from an external drive, never committed (invariant #2). This pure classifier is
+// the whole rule, unit-tested in isolation.
+const REPO_EXTS = ["md", "markdown", "txt", "text", "csv", "tsv", "json", "yaml", "yml", "toml"];
+const REPO_MAX_BYTES = 512 * 1024; // 512 KB — a light document, not a media asset
+
+/**
+ * Where a dropped/uploaded file belongs.
+ * @param {{name?:string,size?:number}} file
+ * @returns {"repo"|"external"|"held"} repo = light+small, syncs; external = routed to a connected
+ *   drive; held = no drive yet, so it is declined-with-guidance (the operator's own copy is untouched,
+ *   so nothing is lost — invariant #8 — and a "connect a drive" prompt tells them where it should go).
+ */
+function classifyDrop(file) {
+  const name = (file && file.name) || "";
+  const size = (file && file.size) || 0;
+  const ext = name.indexOf(".") >= 0 ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
+  if (REPO_EXTS.includes(ext) && size <= REPO_MAX_BYTES) return "repo";
+  return externalDrives().length ? "external" : "held";
 }
 
 /** Fetch the derived agent surface (`.claude`) into `S.agentView` (null on failure). */
@@ -341,14 +411,29 @@ function dropAt(m, anchor) {
   m.style.left = Math.max(8, Math.min(r.left - 40, window.innerWidth - m.offsetWidth - 8)) + "px";
 }
 
-/** Pick file(s) from the operator's machine and commit them into `dir`, bytes and all. */
+/** Pick file(s) from the operator's machine and bring them in — light ones into the synced repo, media
+ *  and heavy ones routed to a connected drive (or declined-with-guidance when none is connected). The
+ *  synced repo never takes an asset that would bloat git (classifyDrop is the rule). */
 function uploadIntoFolder(dir) {
   const inp = elt("input");
   inp.type = "file";
   inp.multiple = true;
   inp.onchange = async () => {
     for (const f of Array.from(inp.files || [])) {
-      // FileReader gives a data: URL; the base64 payload is everything after the comma.
+      const where = classifyDrop(f);
+      if (where === "held") {
+        // No drive to route it to. Decline rather than bloat the repo — the operator's own copy is
+        // untouched (nothing lost), and the prompt says where it should go.
+        toast("“" + f.name + "” is too big to sync. Connect a drive to store it — it won’t go in your repo.", true);
+        connectDrive();
+        continue;
+      }
+      if (where === "external") {
+        // A drive is connected: the file belongs there, not in git. (Provider upload is the cloud path.)
+        toast("“" + f.name + "” goes to your connected drive, not the synced repo.");
+        continue;
+      }
+      // Light + small: it syncs. FileReader gives a data: URL; the base64 payload is after the comma.
       const base64 = await new Promise((res, rej) => {
         const r = new FileReader();
         r.onload = () => res(String(r.result).split(",")[1] || "");

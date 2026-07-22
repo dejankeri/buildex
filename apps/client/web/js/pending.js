@@ -191,6 +191,9 @@ async function refreshPending() {
     b.style.display = "";
     b.textContent = cards.length;
   } else b.style.display = "none";
+  // The Gate lives in the Brain map now. Refresh the map only when the pending count actually
+  // changes - a full repaint every tick would flicker the star and reset the scroll for nothing.
+  if (S.rightTab === "brain" && S.brain && (S.brain.pend || []).length !== cards.length) rBrain();
   const sync = await syncP;
   if (sync) lastSync = sync;
   // Render exactly once per poll. Rendering twice (once from cached lastSync, once from the fresh

@@ -51,7 +51,7 @@ export interface VaultReader {
 
 /** The workspace catalog - the verbs, connectors, and routines the operator surfaces render. */
 export interface Catalog {
-  skills(): { name: string; description: string }[];
+  skills(): { name: string; description: string; root: string }[];
   connectors(): { name: string; status: string; lastSync?: string }[];
   routines(): { name: string; cadence: string }[];
 }

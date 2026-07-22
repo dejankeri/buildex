@@ -213,12 +213,12 @@ describe("console renderers (jsdom) — sync dot state mapping (syncDotState)", 
 describe("console a11y (jsdom) — right-rail tablist", () => {
   it("switchRight keeps the tablist aria-selected in step with the active panel", () => {
     const { doc, c } = loadConsole();
-    c.switchRight("files");
-    expect(doc.querySelector('#rtabs button[data-r="files"]')!.getAttribute("aria-selected")).toBe("true");
-    expect(doc.querySelector('#rtabs button[data-r="pending"]')!.getAttribute("aria-selected")).toBe("false");
-    c.switchRight("pending");
-    expect(doc.querySelector('#rtabs button[data-r="pending"]')!.getAttribute("aria-selected")).toBe("true");
-    expect(doc.querySelector('#rtabs button[data-r="files"]')!.getAttribute("aria-selected")).toBe("false");
+    c.switchRight("documents");
+    expect(doc.querySelector('#rtabs button[data-r="documents"]')!.getAttribute("aria-selected")).toBe("true");
+    expect(doc.querySelector('#rtabs button[data-r="brain"]')!.getAttribute("aria-selected")).toBe("false");
+    c.switchRight("brain");
+    expect(doc.querySelector('#rtabs button[data-r="brain"]')!.getAttribute("aria-selected")).toBe("true");
+    expect(doc.querySelector('#rtabs button[data-r="documents"]')!.getAttribute("aria-selected")).toBe("false");
   });
 });
 
