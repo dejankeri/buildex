@@ -60,6 +60,46 @@ export class ProvisioningService {
     return creds;
   }
 
+  /** Find-or-create a company-of-one for a verified Supabase user and mint machine credentials.
+   *  Same shape as `provision()`'s output, but the entry point is a Supabase session (`sub`)
+   *  instead of a setup token: no invite required, one operator per company. Idempotent - the
+   *  same `sub` always resolves to the same company/operator; each call mints a fresh machine
+   *  token pair. */
+  async provisionBySession(opts: { sub: string; email?: string; machineName: string }): Promise<Credentials> {
+    const { store, git } = this.deps;
+
+    const existing = store.findOperatorBySupabaseSub(opts.sub);
+    if (existing) {
+      return this.mintMachine(existing.operatorId, opts.machineName);
+    }
+
+    // Tight read -> create: no `await` between resolving the slug and inserting the company, so
+    // two concurrent sign-ins for a brand-new email can't both land on the same fallback slug.
+    const slug = store.slugFromEmail(opts.email ?? "user");
+    const companyId = this.deps.idFactory();
+    store.createCompany({ id: companyId, slug, name: slug });
+    const operatorId = this.deps.idFactory();
+    store.createOperator({ id: operatorId, companyId, email: opts.email ?? "" });
+    store.linkOperatorSupabaseSub(operatorId, opts.sub);
+
+    const repos = {
+      core: CORE_REPO,
+      team: teamRepo(slug),
+      private: privateRepo(operatorId),
+    };
+    await this.ensureCoreRepo();
+    await git.ensureRepo(repos.team);
+    await git.ensureRepo(repos.private);
+
+    store.setRepoPermission({ principal: operatorId, repo: repos.core, access: "read" });
+    store.setRepoPermission({ principal: operatorId, repo: repos.team, access: "write" });
+    store.setRepoPermission({ principal: operatorId, repo: repos.private, access: "write" });
+
+    const creds = this.mintMachine(operatorId, opts.machineName);
+    store.addAuditEvent({ actor: operatorId, companyId, action: "provision" });
+    return creds;
+  }
+
   /** Rotate a machine's credential pair, keyed on the presented refresh token. */
   async refresh(refreshToken: string): Promise<Credentials> {
     const { store } = this.deps;
