@@ -3,7 +3,7 @@
 // keep its URLs verbatim) plus the operatorId/companySlug we can derive from the repo names. It never
 // holds a token. The token pair lives under per-org keychain keys so two companies never share one
 // credential (invariant 6).
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { Keychain } from "../keychain/keychain.js";
 import type { ProvisionResult } from "./provision-client.js";
@@ -68,5 +68,15 @@ export class AccountStore {
 
   connected(): boolean {
     return this.load() !== null;
+  }
+
+  /** Local-disconnect primitive: wipe both keychain secrets and account.json, reverting this org to
+   *  unconnected. Best-effort on the file - `force: true` makes a missing account.json (already
+   *  cleared, or never saved) a no-op rather than a throw, so `disconnect()` can call this on every
+   *  root's org without first checking whether it was ever attached. */
+  clear(): void {
+    this.deps.keychain.delete(machineTokenKey(this.deps.orgId));
+    this.deps.keychain.delete(refreshTokenKey(this.deps.orgId));
+    rmSync(this.path, { force: true });
   }
 }

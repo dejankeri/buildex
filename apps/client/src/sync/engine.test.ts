@@ -422,3 +422,28 @@ describe("engine auth: revoked vs transient", () => {
     expect(await engineWithAuth("offline").publish(dir)).toBe("queued");
   });
 });
+
+describe("removeRemote - local disconnect (invariant 8: history untouched)", () => {
+  it("removes an existing origin remote but keeps every commit in git log", async () => {
+    const op = clone("op1");
+    const before = git(["log", "--pretty=%H"], op).trim();
+    expect(await engine().hasRemote(op)).toBe(true);
+
+    await engine().removeRemote(op);
+
+    expect(await engine().hasRemote(op)).toBe(false);
+    expect(git(["log", "--pretty=%H"], op).trim()).toBe(before); // history untouched
+  });
+
+  it("is a no-op (never throws) on a repo with no remote", async () => {
+    const dir = join(root, "no-remote");
+    mkdirSync(dir, { recursive: true });
+    git(["init", "--initial-branch=main", "."], dir);
+    writeFileSync(join(dir, "doc.md"), "x\n");
+    git(["add", "-A"], dir);
+    git(["commit", "-m", "seed"], dir);
+
+    await expect(engine().removeRemote(dir)).resolves.toBeUndefined();
+    expect(await engine().hasRemote(dir)).toBe(false);
+  });
+});
