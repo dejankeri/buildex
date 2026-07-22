@@ -602,3 +602,43 @@ describe("App Store - escape-hatch provisioning", () => {
     expect((await app(new Request("http://127.0.0.1/oauth/provision/protocol/callback?code=x&state=S"))).status).toBe(404);
   });
 });
+
+// The sign-in→attach chain (Task 10). Dormant (501) whenever `signIn` isn't wired - the default
+// today (no Supabase config) - and never a raw 500 once it is.
+describe("/api/signin", () => {
+  it("501s when sign-in isn't configured (dormant by default)", async () => {
+    const { app } = makeDaemon();
+    const res = await app(post("/api/signin", {}));
+    expect(res.status).toBe(501);
+    expect(((await res.json()) as { error: string }).error).toMatch(/sign-in not configured/i);
+  });
+
+  it("runs the wired sign-in and returns its resulting state", async () => {
+    const { app } = makeDaemon({ signIn: async () => ({ state: "connected" }) });
+    const res = await app(post("/api/signin", {}));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ state: "connected" });
+  });
+
+  it("can resolve to needs-help", async () => {
+    const { app } = makeDaemon({ signIn: async () => ({ state: "needs-help" }) });
+    const res = await app(post("/api/signin", {}));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ state: "needs-help" });
+  });
+
+  it("maps a sandbox refusal to 409", async () => {
+    const { app } = makeDaemon({
+      signIn: async () => { throw new Error("the sandbox org is local-only and cannot attach an account"); },
+    });
+    const res = await app(post("/api/signin", {}));
+    expect(res.status).toBe(409);
+  });
+
+  it("maps any other throw to a terse 400, never a 500", async () => {
+    const { app } = makeDaemon({ signIn: async () => { throw new Error("sign-in was denied: access_denied"); } });
+    const res = await app(post("/api/signin", {}));
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/access_denied/);
+  });
+});
