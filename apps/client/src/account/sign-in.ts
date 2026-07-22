@@ -15,6 +15,9 @@ export interface LoopbackServer {
 export interface SupabaseAuthClient {
   authorizeUrl(args: { redirectUri: string; state: string; codeChallenge: string }): string;
   exchangeCode(args: { code: string; codeVerifier: string; redirectUri: string }): Promise<{ jwt: string }>;
+  /** No-browser anonymous sign-in (GoTrue anonymous sign-up) - the anon-first onboarding path that
+   *  skips the loopback/PKCE dance entirely. */
+  signInAnonymously(): Promise<{ jwt: string }>;
 }
 
 export interface SignInDeps {
