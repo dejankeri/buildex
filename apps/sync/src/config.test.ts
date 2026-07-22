@@ -81,4 +81,74 @@ describe("readConfig", () => {
     expect(readConfig(env({ BUILDEX_DATA_DIR: "/srv/buildex" })).dataDir).toBe("/srv/buildex");
     expect(readConfig(env({ BUILDEX_DATA_DIR: "/data/nested" })).dataDir).toBe("/data/nested");
   });
+
+  it("still reads a complete environment when Supabase sign-in is untouched", () => {
+    const c = readConfig(env({ BUILDEX_DATA_DIR: "/data", PORT: "9000" }));
+    expect(c).toEqual({
+      serviceKey: KEY,
+      publicBaseUrl: "https://sync.example.test",
+      dataDir: "/data",
+      port: 9000,
+    });
+  });
+
+  describe("Supabase sign-in config (dormant unless fully configured)", () => {
+    it("leaves signIn undefined when none of the three vars are set", () => {
+      expect(readConfig(env()).signIn).toBeUndefined();
+    });
+
+    it("sets signIn when all three vars are set", () => {
+      const c = readConfig(
+        env({
+          BUILDEX_SUPABASE_JWKS_URL: "https://project.supabase.co/auth/v1/.well-known/jwks.json",
+          BUILDEX_SUPABASE_ISSUER: "https://project.supabase.co/auth/v1",
+          BUILDEX_SUPABASE_AUDIENCE: "authenticated",
+        }),
+      );
+      expect(c.signIn).toEqual({
+        jwksUrl: "https://project.supabase.co/auth/v1/.well-known/jwks.json",
+        issuer: "https://project.supabase.co/auth/v1",
+        audience: "authenticated",
+      });
+    });
+
+    it("leaves signIn undefined when only two of the three vars are set - no partial config", () => {
+      expect(
+        readConfig(
+          env({
+            BUILDEX_SUPABASE_JWKS_URL: "https://project.supabase.co/auth/v1/.well-known/jwks.json",
+            BUILDEX_SUPABASE_ISSUER: "https://project.supabase.co/auth/v1",
+          }),
+        ).signIn,
+      ).toBeUndefined();
+      expect(
+        readConfig(
+          env({
+            BUILDEX_SUPABASE_ISSUER: "https://project.supabase.co/auth/v1",
+            BUILDEX_SUPABASE_AUDIENCE: "authenticated",
+          }),
+        ).signIn,
+      ).toBeUndefined();
+      expect(
+        readConfig(
+          env({
+            BUILDEX_SUPABASE_JWKS_URL: "https://project.supabase.co/auth/v1/.well-known/jwks.json",
+            BUILDEX_SUPABASE_AUDIENCE: "authenticated",
+          }),
+        ).signIn,
+      ).toBeUndefined();
+    });
+
+    it("treats an empty or whitespace-only Supabase var as absent, same as the other optionals", () => {
+      expect(
+        readConfig(
+          env({
+            BUILDEX_SUPABASE_JWKS_URL: "https://project.supabase.co/auth/v1/.well-known/jwks.json",
+            BUILDEX_SUPABASE_ISSUER: "https://project.supabase.co/auth/v1",
+            BUILDEX_SUPABASE_AUDIENCE: "   ",
+          }),
+        ).signIn,
+      ).toBeUndefined();
+    });
+  });
 });
