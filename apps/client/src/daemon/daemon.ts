@@ -51,7 +51,7 @@ export interface VaultReader {
 
 /** The workspace catalog - the verbs, connectors, and routines the operator surfaces render. */
 export interface Catalog {
-  skills(): { name: string; description: string }[];
+  skills(): { name: string; description: string; root: string }[];
   connectors(): { name: string; status: string; lastSync?: string }[];
   routines(): { name: string; cadence: string }[];
 }
@@ -211,7 +211,10 @@ export interface DaemonDeps {
   fileTree?: () => TreeNode[];
   /** The derived agent surface (.claude/skills, .mcp.json, policy, assembled CLAUDE.md) - a health
    *  summary + tree fragment revealed by the Files panel's "Show agent files" toggle. Zero LLM. */
-  agentView?: () => { summary: unknown; tree: TreeNode[] };
+  agentView?: () => { summary: unknown; tree: TreeNode[]; discrepancies?: unknown };
+  /** Force a config rebuild (re-link skills, re-assemble CLAUDE.md, re-pin MCP) then return the fresh
+   *  agent view - powers the Agent Context viewer's "Regenerate & re-verify" action. */
+  agentViewRegen?: () => { summary: unknown; tree: TreeNode[]; discrepancies?: unknown };
   /** Live Claude subscription usage for the bottom status strip. `force` bypasses the cache
    *  (the manual-refresh affordance). */
   usageFn?: (force?: boolean) => Promise<UsageReport> | UsageReport;
@@ -374,6 +377,16 @@ export function createDaemon(deps: DaemonDeps): Handler {
     }
     if (method === "GET" && deps.fileTree && path === "/api/tree") return json({ tree: deps.fileTree() });
     if (method === "GET" && deps.agentView && path === "/api/agent-view") return json(deps.agentView());
+    if (method === "POST" && deps.agentViewRegen && path === "/api/agent-view/regen") {
+      // regenConfig() mutates disk (re-links skills, rewrites CLAUDE.md/.mcp.json, reads the keychain)
+      // and CAN throw - keep the "never a raw 500 for a user-triggered mutation" contract the rest of
+      // the API holds: surface a terse, showable error the viewer already handles (it checks r.error).
+      try {
+        return json(deps.agentViewRegen());
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "regenerate failed" }, 400);
+      }
+    }
     if (method === "GET" && deps.usageFn && path === "/api/usage")
       return json(await deps.usageFn(url.searchParams.get("refresh") === "1"));
 

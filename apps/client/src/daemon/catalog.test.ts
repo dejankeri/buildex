@@ -16,12 +16,16 @@ function makeDaemon() {
     buildMap: () => ({ nodes: [], edges: [] }),
     syncFn: async () => "ok",
     catalog: {
-      skills: () => [{ name: "tidy", description: "Use when the workspace drifts." }],
+      skills: () => [{ name: "tidy", description: "Use when the workspace drifts.", root: "team" }],
       connectors: () => [{ name: "gmail", status: "synced", lastSync: "2026-07-16T10:00:00Z" }],
       routines: () => [],
     },
+    agentView: () => ({ summary: { claudeMdOk: true }, tree: [], discrepancies: [] }),
+    agentViewRegen: () => { regenCalls++; return { summary: { claudeMdOk: true }, tree: [], discrepancies: [{ kind: "policy-missing", message: "x" }] }; },
   });
 }
+
+let regenCalls = 0;
 
 describe("catalog routes", () => {
   it("lists skills", async () => {
@@ -37,5 +41,16 @@ describe("catalog routes", () => {
   it("lists routines (empty in v1)", async () => {
     const res = await makeDaemon()(new Request("http://127.0.0.1/api/routines"));
     expect(await res.json()).toEqual({ routines: [] });
+  });
+
+  it("serves the agent view, and regen forces a rebuild before returning the fresh view", async () => {
+    const daemon = makeDaemon();
+    const before = regenCalls;
+    const view = await (await daemon(new Request("http://127.0.0.1/api/agent-view"))).json() as { discrepancies: unknown[] };
+    expect(view.discrepancies).toEqual([]); // GET reflects current state, no rebuild
+    expect(regenCalls).toBe(before);
+    const regen = await (await daemon(new Request("http://127.0.0.1/api/agent-view/regen", { method: "POST" }))).json() as { discrepancies: { kind: string }[] };
+    expect(regenCalls).toBe(before + 1); // the POST forced a rebuild
+    expect(regen.discrepancies[0]!.kind).toBe("policy-missing"); // and returned the fresh view
   });
 });
