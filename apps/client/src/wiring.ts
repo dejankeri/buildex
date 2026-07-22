@@ -299,6 +299,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
 
   const catalog: Catalog = {
     skills: () => listSkills(config.workspace, config.roots),
+    rules: () => listRules(config.roots),
     connectors: () => listConnectors(config.roots),
     routines: () => [], // local routines are a v1 seam - none configured yet
   };
@@ -1051,6 +1052,28 @@ function listSkills(workspace: string, roots: Root[]): { name: string; descripti
     const fm = readFileSync(join(dir, "SKILL.md"), "utf8").match(/^---\n([\s\S]*?)\n---/);
     const desc = fm ? (fm[1]!.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? "") : "";
     out.push({ name, description: desc, root: originOf(workspace, roots, name, dir) });
+  }
+  return out;
+}
+
+/** The always-on operating rules the agent reads every turn: each root's `CLAUDE.md` (core → team →
+ *  private), the source layers the workspace `CLAUDE.md` is assembled from. Unlike a skill (reached
+ *  for on demand), a rule always applies - so the Brain map surfaces both under "Rules & Skills".
+ *  Each carries its `root` (so the rail can scope Company vs Private without lying about ownership)
+ *  and a root-relative `path` the doc reader can open. The name is the doc's own H1, so it reads as
+ *  itself ("Operating rules", "Team rules") rather than a filename. */
+function listRules(roots: Root[]): { name: string; description: string; root: string; path: string }[] {
+  const out: { name: string; description: string; root: string; path: string }[] = [];
+  for (const root of roots) {
+    const src = join(root.dir, "CLAUDE.md");
+    if (!existsSync(src)) continue;
+    const text = readFileSync(src, "utf8");
+    const h1 = text.match(/^#\s+(.+)$/m)?.[1]?.trim();
+    // First real line (past headings and generated-by comments) as a one-line gloss for the card.
+    const desc = text
+      .split("\n")
+      .find((l) => l.trim() && !l.startsWith("#") && !l.trim().startsWith("<!--")) ?? "";
+    out.push({ name: h1 || `${root.name} rules`, description: desc.trim(), root: root.name, path: `${root.name}/CLAUDE.md` });
   }
   return out;
 }
