@@ -40,6 +40,9 @@
   @keyframes syncpulse{0%,100%{box-shadow:0 0 0 0 rgba(240,169,75,.55);}70%{box-shadow:0 0 0 5px rgba(240,169,75,0);}}
   @keyframes synchelp{0%,100%{box-shadow:0 0 0 0 rgba(224,115,107,.6);}70%{box-shadow:0 0 0 5px rgba(224,115,107,0);}}
   .top .ico{width:28px;height:28px;border:1px solid var(--line);border-radius:7px;background:var(--panel-2);color:var(--muted);font-size:13px;display:grid;place-items:center;flex:none;-webkit-app-region:no-drag;} .top .ico:hover{color:var(--ink);border-color:var(--line-2);}
+  .top .ico svg{width:16px;height:16px;}
+  /* Profile menu (js/profile.js): "Connected to <company>" reads as a header, not a clickable row. */
+  .profile-menu .mhd{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:700;padding:6px 9px 8px;}
   .dropdown{position:absolute;top:36px;left:0;background:var(--elevate);border:1px solid var(--line-2);border-radius:9px;padding:5px;min-width:180px;box-shadow:0 10px 30px rgba(0,0,0,.4);z-index:50;}
   .dropdown button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:none;border:0;font-size:13px;padding:7px 9px;border-radius:6px;color:var(--ink);} .dropdown button:hover{background:var(--brand-tint);}
   .dropdown .k{color:var(--faint);width:15px;text-align:center;}

@@ -48,6 +48,7 @@ async function boot() {
   $("#tgLeft").onclick = () => { $(".app").classList.toggle("lc"); savePanels(); }; // toggle + remember the left column
   $("#tgRight").onclick = () => { $(".app").classList.toggle("rc"); savePanels(); }; // toggle + remember the right column
   $("#helpBtn").onclick = () => startTour(true); // replay the guided tour any time
+  $("#profileBtn").onclick = () => openProfile(); // account home - sign in / your company / log out
   $("#brandBtn").onclick = () => openBrainTab();
   $("#navBack").onclick = () => navGo(-1);
   $("#navFwd").onclick = () => navGo(1);
