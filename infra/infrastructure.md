@@ -18,8 +18,10 @@
   repos onto a clean target and verifies) - the recovery logic is tested; the real object-storage
   transport runs on the VM.
 - **Deploy:** `task deploy:plan` (dry-run) → `task deploy` (gated: dry-run first, then confirms).
-- **Client release:** unsigned artifacts + hosted `latest.json` (`infra/latest.json.example` shape);
-  signing/notarization/auto-update is a fast-follow.
+- **Client release:** macOS ships a signed + notarized `.dmg` (`docs/guides/package-macos.md`);
+  Windows ships an **unsigned** NSIS installer (`docs/guides/package-windows.md`) - there is no
+  Authenticode certificate, so it trips SmartScreen. Both are hosted alongside a `latest.json`
+  (`infra/latest.json.example` shape). Windows code-signing and auto-update remain fast-follows.
 - **Restore command (clean VM):** `litestream restore -o /srv/buildex/control.db s3://<bucket>/control.db`,
   restic-restore the repos, then run the restore drill before serving traffic.
 
