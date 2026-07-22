@@ -25,11 +25,24 @@ export type CheckpointResult = "committed" | "no-change";
 /** Taking other people's work in. Never sends anything. */
 export type ReceiveResult = "ok" | "needs-help" | "offline" | "local";
 
+export interface EngineAuth {
+  /** gitAuthEnv(currentToken), or undefined when there is no account yet (local-only). */
+  headerEnv(): Record<string, string> | undefined;
+  /** Rotate the token after an auth-classified failure; resolve true if a retry should be made. */
+  onAuthError(): Promise<boolean>;
+}
+
 export interface SyncDeps {
   now: () => number;
   /** Label written into commit messages and (later) surfaced in history. */
   actor: string;
+  /** Present once an account is attached; injects the credential header and rotates on 401/403. */
+  auth?: EngineAuth;
+  /** Classify a git failure's stderr as an auth rejection. Overridable only for tests. */
+  classifyAuthError?: (stderr: string) => boolean;
 }
+
+const DEFAULT_AUTH_RE = /\b(401|403)\b|Authentication failed|could not read Username|invalid credentials/i;
 
 /** Workspace-internal paths that must never be committed, and must never be counted as unsaved work
  *  (invariant: secrets/backups stay local). Exported so `unsaved.ts` filters by the same list rather
@@ -204,20 +217,34 @@ export class SyncEngine {
     // rejected error (err.stderr) rather than leaking to the console.
     // pinnedGit keeps every checkout LF-canonical, so backupAndReset's byte-for-byte backup holds on
     // a stock Windows install too (invariant 8). See lib/git-pin.ts for why.
-    const { stdout } = await execFileAsync("git", pinnedGit(args), {
-      cwd,
-      encoding: "utf8",
-      timeout: GIT_TIMEOUT_MS,
-      maxBuffer: GIT_MAX_BUFFER,
-      env: {
-        ...process.env,
-        GIT_AUTHOR_NAME: this.deps.actor,
-        GIT_AUTHOR_EMAIL: `${this.deps.actor}@buildex.local`,
-        GIT_COMMITTER_NAME: this.deps.actor,
-        GIT_COMMITTER_EMAIL: `${this.deps.actor}@buildex.local`,
-      },
-    });
-    return stdout;
+    const base: NodeJS.ProcessEnv = {
+      ...process.env,
+      GIT_AUTHOR_NAME: this.deps.actor,
+      GIT_AUTHOR_EMAIL: `${this.deps.actor}@buildex.local`,
+      GIT_COMMITTER_NAME: this.deps.actor,
+      GIT_COMMITTER_EMAIL: `${this.deps.actor}@buildex.local`,
+    };
+    const run = (): Promise<{ stdout: string }> =>
+      execFileAsync("git", pinnedGit(args), {
+        cwd,
+        encoding: "utf8",
+        timeout: GIT_TIMEOUT_MS,
+        maxBuffer: GIT_MAX_BUFFER,
+        env: { ...base, ...(this.deps.auth?.headerEnv() ?? {}) }, // header read FRESH each attempt
+      });
+    try {
+      return (await run()).stdout;
+    } catch (e) {
+      // One rotate-and-retry when the failure is an auth rejection AND we have a way to rotate. Local
+      // ops never hit this (no network → no 401); only fetch/push can. A second failure propagates -
+      // the scheduler already turns a thrown publish into `needs-help` and never loses local work.
+      const stderr = (e as { stderr?: string })?.stderr ?? (e instanceof Error ? e.message : "");
+      const classify = this.deps.classifyAuthError ?? ((s: string) => DEFAULT_AUTH_RE.test(s));
+      if (this.deps.auth && classify(String(stderr)) && (await this.deps.auth.onAuthError())) {
+        return (await run()).stdout; // retry once with the rotated header (headerEnv re-read above)
+      }
+      throw e;
+    }
   }
 }
 
