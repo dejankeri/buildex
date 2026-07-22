@@ -21,6 +21,7 @@ files:
   - web/**/*          # the operator console the daemon serves
   - "!**/*.test.*"
   - "!electron/after-pack.cjs"   # build-time hook only (see afterPack above); never ships in the app
+  - "!electron/installer.nsh"    # NSIS build-time include (see nsis.include); never ships in the app
   # The daemon is fully bundled into build/daemon.cjs (esbuild), and main.cjs requires only electron +
   # its own .cjs files - nothing resolves node_modules at runtime. Excluding them drops ~12MB of dead
   # weight (the SDK + express are already inlined in the bundle).
@@ -40,6 +41,9 @@ extraResources:
 # combined with the single-instance lock in main.cjs, the app now runs exactly once at a time.
 nsis:
   runAfterFinish: false
+  # Custom (un)installer macros: on uninstall, remove the electron-updater download cache under
+  # %LOCALAPPDATA% that the default uninstaller leaves behind (~95 MB). See the file for detail.
+  include: electron/installer.nsh
 mac:
   target:
     - dmg

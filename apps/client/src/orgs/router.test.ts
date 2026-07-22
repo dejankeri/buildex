@@ -109,6 +109,15 @@ describe("createOrgRouter", () => {
     expect(created.id).not.toBe("demo");
   });
 
+  it("POST /api/orgs/forget-secrets clears every org's stored credentials (in-app 'remove all data')", async () => {
+    const r = router();
+    await r.handler(new Request("http://x/api/orgs/create", { method: "POST", body: JSON.stringify({ name: "Real" }) }));
+    const res = await r.handler(new Request("http://x/api/orgs/forget-secrets", { method: "POST" }));
+    expect(res.status).toBe(200);
+    // first-run bootstrap stood up "My Organization" + the Acme sandbox; plus the "Real" org just created
+    expect(await res.json()).toMatchObject({ ok: true, cleared: 3 });
+  });
+
   it("rejects a switch to an unknown org and a create with no name", async () => {
     const r = router();
     expect((await r.handler(new Request("http://x/api/orgs/switch", { method: "POST", body: JSON.stringify({ id: "nope" }) }))).status).toBe(404);

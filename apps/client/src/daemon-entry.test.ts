@@ -24,7 +24,7 @@ afterEach(async () => {
 describe("startPackagedDaemon - the shipped app's boot", () => {
   it("binds loopback, serves /healthz, and first-run lands in the operator's own org with the Acme sandbox alongside", async () => {
     // appDataDir stands in for Electron's userData; the org registry lands under <tmp>/orgs.
-    daemon = await startPackagedDaemon({ port: 0, appDataDir: tmp });
+    daemon = await startPackagedDaemon({ port: 0, appDataDir: tmp, keychainMode: "memory" });
 
     expect(daemon.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
     expect((await fetch(daemon.url + "/healthz")).status).toBe(200);
@@ -48,7 +48,7 @@ describe("startPackagedDaemon - the shipped app's boot", () => {
     const sentinel = join(tmp, "operator-tool", "bin"); // an inherited entry that is NOT in commonBinDirs
     process.env["PATH"] = [sentinel, savedPath].filter(Boolean).join(delimiter);
     try {
-      daemon = await startPackagedDaemon({ port: 0, appDataDir: tmp });
+      daemon = await startPackagedDaemon({ port: 0, appDataDir: tmp, keychainMode: "memory" });
       const dirs = (process.env["PATH"] ?? "").split(delimiter);
       // Every common install dir the widener knows about is now reachable (this is what fixes ENOENT)...
       for (const d of commonBinDirs(homedir())) expect(dirs).toContain(d);
