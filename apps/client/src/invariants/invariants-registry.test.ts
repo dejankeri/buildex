@@ -1,15 +1,15 @@
-// INVARIANT REGISTRY [release-gate:registry] (release-gate meta-check): the claim "five release-gate
-// suites, cannot be skipped" is only true if the five are actually present and named.
+// INVARIANT REGISTRY [release-gate:registry] (release-gate meta-check): the claim "six release-gate
+// suites, cannot be skipped" is only true if the six are actually present and named.
 // This scans every test file in the monorepo for `[release-gate:<name>]` describe tags and asserts
-// the tagged set is EXACTLY the five known invariants. Remove or rename a tag and this fails; add a
-// sixth invariant and this fails until the registry + `task invariants` are updated to match. That is
-// what makes the gate self-verifying rather than a claim in a doc.
+// the tagged set is EXACTLY the six known invariants. Remove or rename a tag and this fails; add a
+// seventh invariant and this fails until the registry + `task invariants` are updated to match. That
+// is what makes the gate self-verifying rather than a claim in a doc.
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-// The five release-gate invariant suites. Keep in sync with `task invariants`.
-const EXPECTED = ["determinism", "gates", "permission-matrix", "secrets", "sync-safety"];
+// The six release-gate invariant suites. Keep in sync with `task invariants`.
+const EXPECTED = ["determinism", "gates", "no-token-on-disk", "permission-matrix", "secrets", "sync-safety"];
 
 // Build the marker prefix from parts so this file's own source never contains a self-matching literal.
 const MARKER = new RegExp("\\[" + "release-gate:" + "([a-z-]+)\\]", "g");
@@ -24,7 +24,7 @@ function testFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-describe("INVARIANT REGISTRY [release-gate:registry]: exactly the five release-gate suites are tagged", () => {
+describe("INVARIANT REGISTRY [release-gate:registry]: exactly the six release-gate suites are tagged", () => {
   it("every expected invariant has a tagged suite, and there are no unknown ones", () => {
     // vitest runs this from the app dir (apps/client); the monorepo root is two levels up.
     const appsDir = join(process.cwd(), "..", "..", "apps");
@@ -32,7 +32,7 @@ describe("INVARIANT REGISTRY [release-gate:registry]: exactly the five release-g
     for (const f of testFiles(appsDir)) {
       for (const m of readFileSync(f, "utf8").matchAll(MARKER)) found.add(m[1]!);
     }
-    found.delete("registry"); // this meta-suite itself is not one of the five
+    found.delete("registry"); // this meta-suite itself is not one of the six
     expect([...found].sort()).toEqual([...EXPECTED].sort());
   });
 });

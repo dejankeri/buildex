@@ -75,7 +75,7 @@ describe("SECRETS INVARIANT [release-gate:secrets]: keychain values never leak i
     // secrets live ONLY in the keychain
     const keychain = new InMemoryKeychain();
     keychain.set("connector:gmail", SECRET);
-    keychain.set("machine-token", TOKEN);
+    keychain.set("org:demo:machine-token", TOKEN);
 
     // a core root with rules (no secret) + generate the native agent config at the workspace root
     const core = join(base, "core");
