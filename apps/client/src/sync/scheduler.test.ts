@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SyncScheduler } from "./scheduler.js";
+import { SyncScheduler, saveResultStatus, type SyncStatus } from "./scheduler.js";
 import type { SyncResult, CheckpointResult, ReceiveResult } from "./engine.js";
 
 /** Let the microtask/macrotask queue drain so an async flush settles before we assert. The scheduler's
@@ -577,5 +577,30 @@ describe("manual save", () => {
     clock.advance(30_000); // well past the 5s backoff - if the retry survived, it would fire in here
     await tick();
     expect(engine.calls.publish.length).toBe(publishCallsBeforeStop); // no further publish after stop
+  });
+});
+
+describe("saveResultStatus", () => {
+  // Pins the POST /api/sync mapping for every SyncStatus. The regression this guards: a revoked
+  // account's publishAll() resolving to "reconnect" must never be reported back to the operator's
+  // explicit "Save now" as a false "ok" - the old inline ternary in wiring.ts had no reconnect
+  // branch and silently fell through to "ok".
+  it("passes needs-help, reconnect, queued and local straight through", () => {
+    expect(saveResultStatus("needs-help")).toBe("needs-help");
+    expect(saveResultStatus("reconnect")).toBe("reconnect"); // the regression this fixes
+    expect(saveResultStatus("queued")).toBe("queued");
+    expect(saveResultStatus("local")).toBe("local");
+  });
+
+  it("collapses ok and busy to ok", () => {
+    expect(saveResultStatus("ok")).toBe("ok");
+    expect(saveResultStatus("busy")).toBe("ok"); // publishAll() never actually returns "busy"
+  });
+
+  it("covers every SyncStatus member - fails to compile if a new one is added and unhandled", () => {
+    const all: SyncStatus[] = ["ok", "busy", "queued", "needs-help", "reconnect", "local"];
+    for (const s of all) {
+      expect(() => saveResultStatus(s)).not.toThrow();
+    }
   });
 });

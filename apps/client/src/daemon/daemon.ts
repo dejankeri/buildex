@@ -131,7 +131,8 @@ export interface DaemonDeps {
   /** Recent repo-wide commits (newest first) - powers the Brain view's "Learning" surface. Read-only. */
   recentChanges?: () => ChangeEntry[];
   syncFn: () => Promise<string>;
-  /** Current background-sync status for the header dot: "ok" | "busy" | "queued" | "needs-help". */
+  /** Current background-sync status for the header dot: "ok" | "busy" | "queued" | "needs-help" |
+   *  "reconnect" (account revoked - reconnect). */
   syncStatus?: () => string;
   /** Per-root sync status, keyed by root dir - lets the console say WHICH root is stuck, alongside
    *  the collapsed `syncStatus`. Optional: `perRoot` is omitted from `GET /api/sync` entirely when

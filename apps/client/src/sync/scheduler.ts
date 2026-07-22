@@ -277,3 +277,22 @@ function worstStatus(results: SyncResult[]): SyncStatus {
   if (results.includes("local")) return "local";
   return "ok";
 }
+
+/** The status POST /api/sync reports back for an explicit "Save now". publishAll() never returns
+ *  "busy" (it resolves to the final worstStatus), but map it explicitly so this stays exhaustive:
+ *  every SyncStatus must have a case, so adding a new status forces a decision here. */
+export function saveResultStatus(s: SyncStatus): "ok" | "needs-help" | "reconnect" | "queued" | "local" {
+  switch (s) {
+    case "needs-help":
+      return "needs-help";
+    case "reconnect":
+      return "reconnect";
+    case "queued":
+      return "queued";
+    case "local":
+      return "local";
+    case "ok":
+    case "busy":
+      return "ok";
+  }
+}

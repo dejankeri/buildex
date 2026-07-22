@@ -42,7 +42,13 @@ import { buildGraph, type Root } from "./brain/graph.js";
 import { recentChanges } from "./brain/history.js";
 import { fileHistory, fileAtCommit } from "./brain/history.js";
 import { SyncEngine } from "./sync/engine.js";
-import { SyncScheduler, type Clock, type TimerHandle, type SyncStatus } from "./sync/scheduler.js";
+import {
+  SyncScheduler,
+  saveResultStatus,
+  type Clock,
+  type TimerHandle,
+  type SyncStatus,
+} from "./sync/scheduler.js";
 import { unsavedAcross, isStale } from "./sync/unsaved.js";
 import { generateAgentConfig } from "./brain/agent-config.js";
 import { AppBus } from "./miniapp/app-bus.js";
@@ -811,12 +817,9 @@ export function buildClientHandler(config: ClientConfig): Handler {
       return root ? recentChanges(root.dir, 12) : [];
     },
     // "Save now" (POST /api/sync) - the operator's explicit decision to send everything.
-    syncFn: async () => {
-      const s = await scheduler.publishAll();
-      return s === "needs-help" ? "needs-help" : s === "queued" ? "queued" : s === "local" ? "local" : "ok";
-    },
+    syncFn: async () => saveResultStatus(await scheduler.publishAll()),
     // The dot's live status (GET /api/sync) - "local" (no account yet) / "queued" (offline) /
-    // "needs-help" (conflict backed up).
+    // "needs-help" (conflict backed up) / "reconnect" (account revoked - reconnect).
     syncStatus: () => lastSyncStatus,
     // Per-root status of the last publish - lets the console say WHICH root is stuck.
     perRootStatus: () => scheduler.perRoot(),
