@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InMemoryKeychain } from "../keychain/keychain.js";
@@ -59,6 +59,15 @@ describe("AccountStore", () => {
     expect(store.connected()).toBe(false);
     expect(store.load()).toBeNull();
     expect(store.tokens()).toBeNull();
+  });
+
+  it("reads a corrupt account.json as not-connected rather than crashing the daemon", () => {
+    // The daemon calls load() on every status poll; a truncated or garbage file (a crash mid-write,
+    // a bad edit) must degrade to "no account" (invariant: never 500 the poll), never throw.
+    const { store } = make();
+    writeFileSync(join(dir, "account.json"), "{ this is not valid json");
+    expect(store.load()).toBeNull();
+    expect(store.connected()).toBe(false);
   });
 
   it("setTokens rotates the keychain pair without rewriting account.json", () => {
