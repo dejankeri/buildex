@@ -8,7 +8,7 @@
 // owns the right panel: a compact LIVE star on top (reusing brain.js's brainNodes/buildBrainSvg/
 // startBrainFlow), a Company/Private scope lens, and the five loop stages as accordion sections whose
 // items open in the CENTER. It replaces the old Pending/Skills/Sync right panels — those stages now
-// live in the Gate/Policy/Learning sections here. State it reads/writes on the shared global `S`:
+// live in the Gate / Rules & Skills / Learning sections here. State it reads/writes on shared `S`:
 // `S.brain` (the snapshot, shared shape with loadBrain), `S.brainScope` ("all"|"team"|"private"),
 // `S.brainOpen` (which sections are expanded), and `S._brail` (the flow-animation holder).
 
@@ -19,15 +19,16 @@
 async function rBrain() {
   const p = $("#rpanel");
   if (!S.brain) p.innerHTML = '<div class="bloading">Reading your brain…</div>';
-  const [conn, gw, pend, skills, changes, cfg] = await Promise.all([
+  const [conn, gw, pend, skills, rules, changes, cfg] = await Promise.all([
     getJSON("/api/connectors").catch(() => ({ connectors: [] })),
     getJSON("/api/connectors/gateway").catch(() => ({ status: [], tools: [] })),
     getJSON("/api/pending").catch(() => ({ cards: [] })),
     getJSON("/api/skills").catch(() => ({ skills: [] })),
+    getJSON("/api/rules").catch(() => ({ rules: [] })),
     getJSON("/api/changes").catch(() => ({ changes: [] })),
     getJSON("/api/config").catch(() => ({})),
   ]);
-  S.brain = { conn: conn.connectors || [], gw: gw || { status: [], tools: [] }, pend: pend.cards || [], skills: skills.skills || [], changes: changes.changes || [], cfg: cfg || {} };
+  S.brain = { conn: conn.connectors || [], gw: gw || { status: [], tools: [] }, pend: pend.cards || [], skills: skills.skills || [], rules: rules.rules || [], changes: changes.changes || [], cfg: cfg || {} };
   if (S.rightTab !== "brain") return; // switched away while the fetch was in flight
   renderBrainPanel();
 }
@@ -44,13 +45,14 @@ function setBrainScope(scope) {
   renderBrainPanel();
 }
 
-// Which loop stages are OWNER-scoped (team vs mine) vs company-wide. Only verbs (Policy) carry a
-// per-item owner — a private skill is genuinely yours; sensors, tools, the gate and the learning
-// history are the company's shared brain. So the scope lens filters Policy honestly and leaves the
-// company-wide stages labelled as such, never pretending a "Private" view hides them.
+// Which loop stages are OWNER-scoped (team vs mine) vs company-wide. Only the Rules & Skills stage
+// carries a per-item owner — a private rule or skill is genuinely yours; sensors, tools, the gate and
+// the learning history are the company's shared brain. So the scope lens filters Rules & Skills
+// honestly and leaves the company-wide stages labelled as such, never pretending "Private" hides them.
 const BRAIN_COMPANY_STAGES = { sensor: 1, tools: 1, gate: 1, learning: 1 };
 
-/** The verbs visible under the current scope: all of them, or just one brain's. */
+/** The rules/skills visible under the current scope: all of them, or just one brain's. Both rules and
+ *  skills carry `root`, so the same root filter honestly scopes either list. */
 function scopeVerbs(skills) {
   const s = brainScope();
   if (s === "all") return skills;
@@ -64,7 +66,7 @@ function scopeVerbs(skills) {
 function renderBrainPanel() {
   const p = $("#rpanel");
   if (!p) return;
-  const d = S.brain || { conn: [], gw: { status: [], tools: [] }, pend: [], skills: [], changes: [], cfg: {} };
+  const d = S.brain || { conn: [], gw: { status: [], tools: [] }, pend: [], skills: [], rules: [], changes: [], cfg: {} };
   const nodes = brainNodes(d);
   p.innerHTML = "";
 
@@ -102,7 +104,7 @@ function renderBrainPanel() {
 
 // One glyph per stage — mirrors the map's language (✦ is the verb/star mark used throughout).
 const BRAIN_STAGE_ICON = { sensor: "◈", policy: "✦", tools: "⚙", gate: "⚠", learning: "↺" };
-const BRAIN_STAGE_LABEL = { sensor: "Sensors", policy: "Policy · Verbs", tools: "Tools", gate: "Gate", learning: "Learning" };
+const BRAIN_STAGE_LABEL = { sensor: "Sensors", policy: "Rules & Skills", tools: "Tools", gate: "Gate", learning: "Learning" };
 
 /** Whether stage `key` is expanded right now. Default: closed, except the Gate opens itself when it
  *  has something waiting — the one stage that should catch the eye. */
@@ -117,7 +119,7 @@ function renderBrainSection(host, nd, d) {
   const companyWide = !!BRAIN_COMPANY_STAGES[nd.key];
   const open = brainSectionOpen(nd.key, d);
   const sec = elt("div", "bsec" + (nd.accent === "gate" ? " gate" : "") + (open ? "" : " closed"));
-  const count = nd.key === "policy" ? scopeVerbs(d.skills).length : nd.count;
+  const count = nd.key === "policy" ? scopeVerbs(d.rules).length + scopeVerbs(d.skills).length : nd.count;
   // Under a Company/Private lens the company-wide stages say so, so "Private" never reads as
   // "these are hidden/empty for you".
   const tag = companyWide && brainScope() !== "all" ? '<span class="bsec-tag">shared</span>' : "";
@@ -139,9 +141,24 @@ function renderBrainSection(host, nd, d) {
  *  (openSkillTab, resolveCard, openDocTab) so a click here and a click there do the same thing. */
 function renderBrainSectionBody(body, key, d) {
   if (key === "policy") {
-    const verbs = scopeVerbs(d.skills);
+    // Two groups: always-on RULES (each root's CLAUDE.md, read every turn) then on-demand SKILLS.
+    // Both carry a root, so the scope lens filters each honestly. A rule opens its CLAUDE.md layer;
+    // a skill opens its tab.
+    const rules = scopeVerbs(d.rules),
+      verbs = scopeVerbs(d.skills);
+    body.appendChild(elt("div", "bsub", "Always-on rules"));
+    if (!rules.length) {
+      body.appendChild(elt("div", "bempty", brainScope() === "private" ? "No private rules yet." : "No rules yet."));
+    } else {
+      rules.forEach((r) => {
+        const card = elt("div", "rcard rclick", '<div class="cn">§ ' + esc(r.name) + '</div><div class="cd">' + esc(r.description || "") + "</div>");
+        card.onclick = () => openDocTab(r.path);
+        body.appendChild(card);
+      });
+    }
+    body.appendChild(elt("div", "bsub", "Skills"));
     if (!verbs.length) {
-      body.appendChild(elt("div", "bempty", brainScope() === "private" ? "No private verbs yet." : "No verbs yet — teach your agent one."));
+      body.appendChild(elt("div", "bempty", brainScope() === "private" ? "No private skills yet." : "No skills yet — teach your agent one."));
     } else {
       verbs.forEach((s) => {
         const card = elt("div", "rcard rclick", '<div class="cn">✦ ' + esc(s.name) + '</div><div class="cd">' + esc(s.description || "") + "</div>");
@@ -149,7 +166,7 @@ function renderBrainSectionBody(body, key, d) {
         body.appendChild(card);
       });
     }
-    const teach = elt("button", "bsec-add", "+ Teach a verb");
+    const teach = elt("button", "bsec-add", "+ Teach a skill");
     teach.onclick = () => openSkillEditor(null);
     body.appendChild(teach);
     return;

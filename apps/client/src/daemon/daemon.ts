@@ -52,6 +52,9 @@ export interface VaultReader {
 /** The workspace catalog - the verbs, connectors, and routines the operator surfaces render. */
 export interface Catalog {
   skills(): { name: string; description: string; root: string }[];
+  /** The always-on operating rules (each root's CLAUDE.md layer). Optional so lightweight catalog
+   *  mocks predating the Rules & Skills stage still satisfy the interface. */
+  rules?(): { name: string; description: string; root: string; path: string }[];
   connectors(): { name: string; status: string; lastSync?: string }[];
   routines(): { name: string; cadence: string }[];
 }
@@ -395,6 +398,7 @@ export function createDaemon(deps: DaemonDeps): Handler {
       return json(await deps.usageFn(url.searchParams.get("refresh") === "1"));
 
     if (method === "GET" && deps.catalog && path === "/api/skills") return json({ skills: deps.catalog.skills() });
+    if (method === "GET" && deps.catalog && path === "/api/rules") return json({ rules: deps.catalog.rules ? deps.catalog.rules() : [] });
     if (deps.skillEditor) {
       if (method === "GET" && path === "/api/skill") {
         const name = url.searchParams.get("name");
