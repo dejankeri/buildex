@@ -30,8 +30,10 @@ export async function attachOrg(deps: {
     await deps.engine.addRemote(root.dir, url);
 
     if (slot === "core") {
-      // Read-only. syncReadonly fetches and resets onto the remote, backing up any local divergence
-      // (the stub→provisioned migration) via the engine's existing .conflicts path.
+      // Read-only. syncReadonly fetches and HARD-RESETS onto the remote - it does NOT back up local
+      // divergence, because core carries no operator work (it is pack content, pull-only by design);
+      // the manual-save design that supersedes this spec makes that discard explicit. Operator work
+      // lives only in the writable roots below, which DO go through the engine's backup path.
       try {
         await deps.engine.syncReadonly(root.dir);
       } catch {

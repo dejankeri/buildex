@@ -50,8 +50,7 @@ import { fetchUsage, nodeTokenReader, anthropicUsageCall, type UsageReport } fro
 import { AccountStore } from "./account/account-store.js";
 import { makeTokenProvider } from "./account/token-provider.js";
 import { gitAuthEnv } from "./account/credentials.js";
-import { provision } from "./account/provision-client.js";
-import { attachOrg } from "./account/attach.js";
+import { openAccount as runOpenAccount } from "./account/open-account.js";
 
 export interface ClientConfig {
   workspace: string;
@@ -268,12 +267,11 @@ export function buildClientHandler(config: ClientConfig): Handler {
   // matching DaemonDeps fields would fail the strict object-literal excess-property check against
   // daemon.ts's current (pre-Task-8) shape. Harmless either way: unused until Task 8 wires them in.
   const openAccount = account
-    ? async ({ baseUrl, setupToken }: { baseUrl: string; setupToken: string }): Promise<{ state: "connected" | "needs-help" }> => {
-        const result = await provision({ fetch: fetchImpl, baseUrl }, { setupToken, machineName: hostname() });
-        account.save(baseUrl, result);
-        const res = await attachOrg({ engine: sync, roots: config.roots, repos: result.repos, sandbox: config.sandbox ?? false });
-        return { state: res.status === "needs-help" ? "needs-help" : "connected" };
-      }
+    ? (input: { baseUrl: string; setupToken: string }): Promise<{ state: "connected" | "needs-help" }> =>
+        runOpenAccount(
+          { fetch: fetchImpl, account, engine: sync, roots: config.roots, sandbox: config.sandbox ?? false, machineName: hostname() },
+          input,
+        )
     : undefined;
   const accountState = (): { state: "local" | "connected"; operatorId?: string; companySlug?: string; remotes?: { core: string; team: string; private: string } } => {
     const a = account?.load();
