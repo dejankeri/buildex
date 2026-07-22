@@ -13,8 +13,8 @@ describe("console renderers (jsdom) — Files right rail", () => {
       { type: "dir", name: "src", children: [{ type: "file", name: "app.ts", path: "src/app.ts" }] },
       { type: "file", name: "README.md", path: "README.md" },
     ];
-    c.rFiles(); // builds #rpanel (header, find box, #agenthealth, #tree) then draws the tree
-    expect(doc.querySelector("#rpanel .rhead h4")!.textContent).toBe("Files");
+    c.rDocs(); // builds #rpanel (header, find box, #agenthealth, two zones + #tree) then draws the tree
+    expect(doc.querySelector("#rpanel .rhead h4")!.textContent).toBe("Documents");
     expect(doc.querySelectorAll("#tree .tnode")).toHaveLength(3); // dir + its child file + top-level file
     expect(doc.querySelectorAll("#tree .trow")).toHaveLength(3);
     expect(doc.querySelector("#tree .trow")!.textContent).toContain("src");
@@ -211,18 +211,35 @@ describe("console renderers (jsdom) — Files right rail", () => {
     expect((doc.querySelector("#tree .tsec-b .tnode") as any).className).not.toContain("closed")
   });
 
-  it("has NO apps tab — apps live in the left rail + Store, and a stale 'apps' request lands on Files", () => {
-    const { doc, c } = loadConsole();
-    expect(doc.querySelector('#rtabs button[data-r="apps"]')).toBeNull();
-    c.switchRight("apps"); // e.g. a persisted rightTab from an older build must not blank the panel
-    expect(doc.querySelector("#rpanel .rhead h4")!.textContent).toBe("Files");
+  it("the right panel is Brain + Documents — no pending/files/skills tabs remain", () => {
+    const { doc } = loadConsole();
+    expect(doc.querySelector('#rtabs button[data-r="pending"]')).toBeNull();
+    expect(doc.querySelector('#rtabs button[data-r="files"]')).toBeNull();
+    expect(doc.querySelector('#rtabs button[data-r="skills"]')).toBeNull();
+    expect(doc.querySelector('#rtabs button[data-r="brain"]')).not.toBeNull();
+    expect(doc.querySelector('#rtabs button[data-r="documents"]')).not.toBeNull();
   });
 
-  it("switchRight('files') marks the Files tab active and renders the Files panel", () => {
+  it("a stale legacy panel name still resolves to a real surface, never a blank", () => {
     const { doc, c } = loadConsole();
+    // A persisted rightTab from an older build (or a caller that still says "files"/"skills") must
+    // land on a rendered panel. "files" → Documents; the brain-bound names → the map.
     c.switchRight("files");
-    expect(c.S.rightTab).toBe("files");
-    expect(doc.querySelector("#rpanel .rhead h4")!.textContent).toBe("Files");
+    expect(c.S.rightTab).toBe("documents");
+    expect(doc.querySelector("#rpanel .rhead h4")!.textContent).toBe("Documents");
+    c.switchRight("skills"); // folded into the brain's Policy stage
+    expect(c.S.rightTab).toBe("brain");
+    // the map fetches then paints; synchronously it shows its loading state — never an empty panel
+    expect(doc.querySelector("#rpanel")!.textContent).not.toBe("");
+  });
+
+  it("switchRight('documents') marks Documents active and renders both zones", () => {
+    const { doc, c } = loadConsole();
+    c.switchRight("documents");
+    expect(c.S.rightTab).toBe("documents");
+    expect(doc.querySelector("#rpanel .rhead h4")!.textContent).toBe("Documents");
+    expect(doc.querySelectorAll("#rpanel .dzone")).toHaveLength(2); // In your repo · Connected
+    expect(doc.querySelector("#rpanel .dext-add")!.textContent).toContain("Connect a drive");
   });
 });
 

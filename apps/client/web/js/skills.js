@@ -138,7 +138,8 @@ async function openSkillEditor(name) {
         return;
       }
       msg.innerHTML = (r.issues && r.issues.length) ? '<span class="warn">Saved - notes: ' + esc(r.issues.join("; ")) + '</span>' : '<span class="good">Saved ✓ linked &amp; committed</span>';
-      if (S.rightTab === "skills") await rSkills();
+      // Verbs live in the Brain map's Policy stage now — refresh it so the new verb shows immediately.
+      if (S.rightTab === "brain") rBrain();
       openSkillTab(body.name);
     } catch (e) {
       msg.innerHTML = '<span class="bad">' + esc(e && e.message || e) + '</span>';

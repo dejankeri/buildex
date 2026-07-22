@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { validateSkill, composeSkill, readSkill, writeSkillFile } from "./skills.js";
+import { validateSkill, composeSkill, readSkill, writeSkillFile, originOf } from "./skills.js";
 import type { Root } from "./graph.js";
 
 describe("validateSkill - the console's teach-a-verb quality check", () => {
@@ -57,6 +57,12 @@ describe("skill fs surface (read/write, precedence, path-safety)", () => {
     ];
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("originOf reports the brain a verb came from - what the LIST carries so scope filtering is honest", () => {
+    // The Brain rail's Company/Private toggle filters verbs by this; the daemon's listSkills runs
+    // originOf per link, so a direct check pins the ownership resolution the whole filter rests on.
+    expect(originOf(workspace, roots, "shared", join(workspace, ".claude", "skills", "shared"))).toBe("team");
+  });
 
   it("reads a skill's full content and reports the origin repo (precedence winner)", () => {
     const s = readSkill(workspace, roots, "shared");

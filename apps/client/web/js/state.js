@@ -29,10 +29,15 @@ const S = {
   config: { company: { name: "BuildEx" }, roots: [] },
   tabs: [],
   active: null,
-  rightTab: "files",
+  rightTab: "brain",
   tree: [],
   treeFilter: "",
   treeOpen: {},
+  // Brain map (right panel): the live snapshot, the Company/Private scope lens, and which loop stages
+  // are expanded (by key, so a repaint keeps the operator's place - same contract as treeOpen).
+  brain: null,
+  brainScope: "all",
+  brainOpen: {},
   projects: [],
   activeProject: null,
   apps: [],

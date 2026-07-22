@@ -15,17 +15,21 @@
    into that component's real data - connectors & their status, the verbs you've decided,
    the agent's live tools, the Pending gate, and the decisions accruing in git. */
 
-/** Open the brain tab (focusing it if already open), then kick off a data load. */
-function openBrainTab() {
+/** Open the brain tab (focusing it if already open), then kick off a data load. An optional
+ *  `focusKey` (a loop-stage key from the rail's star) lands the poster already zoomed into that
+ *  stage; the brand button passes nothing and lands on the overview. */
+function openBrainTab(focusKey) {
+  const foc = focusKey || "";
   const ex = S.tabs.find((t) => t.type === "brain");
   if (ex) {
+    ex.focusKey = foc;
     activateTab(ex.id);
     loadBrain(ex);
     return;
   }
   const tab = addTab({ type: "brain", title: "Brain" });
   tab.pane.className = "pane brainpane on";
-  tab.focusKey = "";
+  tab.focusKey = foc;
   tab.pane.innerHTML = '<div class="bloading">Reading your brain…</div>';
   loadBrain(tab);
 }
@@ -171,6 +175,7 @@ function startBrainFlow(tab) {
   if (!svg) return;
   const edges = $$(".bedge", svg);
   if (!edges.length) return;
+  if (typeof edges[0].getTotalLength !== "function") return; // no SVG path geometry (headless/jsdom) → skip the flow
   const lens = edges.map((e) => e.getTotalLength());
   const maxOp = tab.focusKey ? .26 : .95, // dim the flow when a node is focused
     perSeg = 2,

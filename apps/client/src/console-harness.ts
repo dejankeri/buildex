@@ -96,6 +96,11 @@ const EXPOSE = [
   "appGateActive", "renderAppGate", "clearAppGate", "syncAppConn", "renderCtxChip",
   "appGlyph", "mountAppLogo", "openAppSettings", "appSettingsBody",
   "stripFrontmatter", "switchRight", "switchToProject", "syncDotState", "wireAppBridge", "wysiInline", "wysiToMd",
+  // Brain rail (right panel) + Documents zones + the media guard.
+  "rBrain", "renderBrainPanel", "renderBrainSection", "renderBrainSectionBody", "brainScope", "setBrainScope",
+  "scopeVerbs", "brainSectionOpen", "rDocs", "externalDrives", "renderExternalDrives", "connectDrive", "classifyDrop",
+  // Agent Context viewer ("what my agent sees").
+  "openAgentContextTab", "loadAgentContext", "renderAgentContext", "regenAgentContext", "actxGroup", "actxRow", "actxSelectFile",
 ];
 const SHIM = ";globalThis.__c = { " + EXPOSE.join(", ") + " };";
 

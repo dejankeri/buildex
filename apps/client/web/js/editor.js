@@ -202,7 +202,7 @@ async function openMarkdownEditor(path, content) {
       folder = savePath.slice(0, savePath.lastIndexOf("/"));
       renderTabbar();
       await loadTree();
-      if (S.rightTab === "files") renderTree();
+      if (S.rightTab === "documents") renderTree(); // the Documents panel shows the tree; repaint it so the saved/renamed file appears
       const head = $(".mdpath", tab.pane);
       if (head) head.innerHTML = '<span class="mdname">' + esc(savePath.split("/").pop()) + '</span><span class="mdwhere">' + esc(locationLabel(folder)) + "</span>";
     } catch (e) {
