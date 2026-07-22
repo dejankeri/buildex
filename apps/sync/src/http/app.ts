@@ -19,6 +19,12 @@ export interface AppDeps {
   schedules: ScheduleStore;
   serviceKey: string;
   publicBaseUrl: string;
+  /**
+   * Verifies a Supabase-issued sign-in JWT, resolving to the claims `/session` needs to
+   * provision a company-of-one. Undefined means sign-in is dormant (no Supabase config at
+   * boot) - `/session` answers 501 rather than standing up a broken or absent verifier.
+   */
+  verifySession?: (jwt: string) => Promise<{ sub: string; email?: string }>;
 }
 
 export type Handler = (req: Request) => Promise<Response>;
@@ -87,6 +93,28 @@ async function route(deps: AppDeps, req: Request): Promise<Response> {
   if (method === "POST" && path === "/token/refresh") {
     const b = await body<{ refreshToken: string }>(req);
     const creds = await deps.provisioning.refresh(b.refreshToken);
+    return json(withCloneUrls(deps, creds));
+  }
+
+  // --- sign-in (Supabase JWT) → company-of-one, dormant-safe ---
+  if (method === "POST" && path === "/session") {
+    const b = await body<{ jwt?: string; machineName?: string }>(req);
+    if (!b.jwt) throw new ValidationError("missing jwt");
+    if (!deps.verifySession) return json({ error: "sign-in not configured" }, 501);
+
+    // A rejected verification MUST NOT reach provisionBySession - the whole point of the check.
+    let claims: { sub: string; email?: string };
+    try {
+      claims = await deps.verifySession(b.jwt);
+    } catch {
+      return json({ error: "sign-in failed" }, 401);
+    }
+
+    const creds = await deps.provisioning.provisionBySession({
+      sub: claims.sub,
+      email: claims.email,
+      machineName: b.machineName ?? "device",
+    });
     return json(withCloneUrls(deps, creds));
   }
 
