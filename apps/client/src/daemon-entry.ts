@@ -30,6 +30,10 @@ export interface PackagedDaemonOpts {
   /** Fixed loopback port (the gate-hook command embeds it, so it must be known before binding).
    *  Defaults to BUILDEX_PORT or 4319 (clear of the dev demo's 4317/4318). */
   port?: number;
+  /** Keychain backend. "auto" (default, the shipped app) persists to the OS vault when available; a
+   *  smoke test passes "memory" so a fresh-provision purge never shells to the real `security`/Cred
+   *  Manager. */
+  keychainMode?: "auto" | "system" | "memory";
 }
 
 /** Boot the multi-org daemon for the packaged app. Returns the running daemon (URL/port/close) so the
@@ -72,7 +76,7 @@ export async function startPackagedDaemon(opts: PackagedDaemonOpts = {}): Promis
       usageOAuth: true,
       actor: "operator",
       schedulerIntervalMs: 60000,
-      keychainMode: "auto",
+      keychainMode: opts.keychainMode ?? "auto",
       webRoot,
       // Per-org connector gateway: hosts BuildEx's OAuth+MCP gateway on a loopback port so an installed
       // pack's tools (e.g. HeyGen, Linear) surface to the agent and show live Connect/connected status.

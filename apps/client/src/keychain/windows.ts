@@ -52,6 +52,8 @@ public static class BXKCred {
   public static extern bool CredReadW(string target, uint type, uint flags, out IntPtr credential);
   [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
   public static extern bool CredDeleteW(string target, uint type, uint flags);
+  [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+  public static extern bool CredEnumerateW(string filter, uint flags, out uint count, out IntPtr credentials);
   [DllImport("advapi32.dll")] public static extern void CredFree(IntPtr buffer);
 }
 '@
@@ -101,6 +103,29 @@ elseif ($action -eq 'delete') {
   }
   exit 0
 }
+elseif ($action -eq 'enumerate') {
+  # Every target matching BXK_FILTER (a '<prefix>*' wildcard), one TargetName per line on STDOUT.
+  # CredEnumerate returns an array of CREDENTIAL* pointers; read each, print its TargetName. No match
+  # is ERROR_NOT_FOUND -> exit ${WIN_NOT_FOUND}, so the caller distinguishes "empty" from "failed".
+  $filter = $env:BXK_FILTER
+  $count = 0
+  $ptr = [IntPtr]::Zero
+  if (-not [BXKCred]::CredEnumerateW($filter, 0, [ref]$count, [ref]$ptr)) {
+    $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    if ($err -eq $ERROR_NOT_FOUND) { exit ${WIN_NOT_FOUND} }
+    throw "CredEnumerate failed: $err"
+  }
+  try {
+    $names = New-Object System.Collections.Generic.List[string]
+    for ($i = 0; $i -lt $count; $i++) {
+      $credPtr = [Runtime.InteropServices.Marshal]::ReadIntPtr($ptr, $i * [IntPtr]::Size)
+      $cred = [Runtime.InteropServices.Marshal]::PtrToStructure($credPtr, [Type][BXKCred+CREDENTIAL])
+      $names.Add($cred.TargetName)
+    }
+    [Console]::Out.Write([string]::Join("\`n", $names))
+  } finally { [BXKCred]::CredFree($ptr) }
+  exit 0
+}
 else { throw "unknown action: $action" }`;
 
 /** A single Credential Manager operation. Injected so WindowsKeychain is unit-testable without the OS
@@ -110,7 +135,10 @@ export type WinCredRunner = (
   op:
     | { action: "read"; target: string }
     | { action: "write"; target: string; value: string }
-    | { action: "delete"; target: string },
+    | { action: "delete"; target: string }
+    // Enumerate targets under a `<prefix>*` filter (used by clear()): stdout is newline-joined target
+    // names, status WIN_NOT_FOUND when nothing matches.
+    | { action: "enumerate"; filter: string },
 ) => { status: number; stdout: string };
 
 /** The canonical Windows PowerShell path (may not exist on a broken install - callers check). Windows
@@ -174,7 +202,11 @@ export function defaultWinCredRunner(exec: WinExec = nodeExec): WinCredRunner {
   return (op) => {
     try {
       const stdout = exec(psExe, ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], {
-        env: { ...process.env, BXK_ACTION: op.action, BXK_TARGET: op.target },
+        env: {
+          ...process.env,
+          BXK_ACTION: op.action,
+          ...(op.action === "enumerate" ? { BXK_FILTER: op.filter } : { BXK_TARGET: op.target }),
+        },
         ...(op.action === "write" ? { input: op.value } : {}),
         encoding: "utf8",
         stdio: ["pipe", "pipe", "ignore"],
@@ -318,6 +350,22 @@ export class WindowsKeychain implements Keychain {
     }
     this.pruneChunks(target, 0, oldN);
     this.deleteRaw(target); // header last = the commit
+  }
+
+  /** Remove every credential under this service - raw values, chunk headers, and chunk siblings alike -
+   *  by enumerating `<service>:*` and deleting each match. The peer of SystemKeychain.clear(); the seam
+   *  for the path-reuse purge (invariant 6) and an in-app "remove all data". Best-effort: a backend that
+   *  cannot enumerate, or an empty service, leaves the vault untouched rather than throwing, so a purge
+   *  never blocks the provision that triggered it. */
+  clear(): void {
+    let r: { status: number; stdout: string };
+    try {
+      r = this.run({ action: "enumerate", filter: `${this.service}:*` });
+    } catch {
+      return;
+    }
+    if (r.status !== 0) return; // WIN_NOT_FOUND (nothing stored) or a real failure → nothing to purge
+    for (const target of r.stdout.split("\n").filter(Boolean)) this.deleteRaw(target);
   }
 }
 

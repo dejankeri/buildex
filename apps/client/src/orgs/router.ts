@@ -141,6 +141,13 @@ export function createOrgRouter(deps: OrgRouterDeps): OrgRouter {
       return json({ id: org.id, name: org.name }, 201);
     }
 
+    // Clear every org's stored credentials from the OS vault - the honest "remove all data" before an
+    // uninstall (macOS runs no code on drag-to-Trash, so nothing else can reach the vault). Workspace
+    // FILES are left intact (invariant 8); only the connector tokens / git credentials are wiped.
+    if (path === "/api/orgs/forget-secrets" && req.method === "POST") {
+      return json({ ok: true, cleared: deps.manager.forgetAllSecrets() });
+    }
+
     return current!.handler(req);
   };
 

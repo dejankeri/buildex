@@ -23,6 +23,17 @@ describe("console org switcher (renderOrgSwitcher) [browser-net]", () => {
     expect(doc.querySelector(".orgitem.on .orgname")!.textContent).toBe("My Startup");
   });
 
+  it("offers a 'clear stored credentials' action that arms on the first tap (two-tap confirm)", () => {
+    const { doc, c } = loadConsole();
+    c.renderOrgSwitcher({ orgs: [{ id: "r1", name: "Real", sandbox: false }], activeId: "r1" });
+    const btn = doc.querySelector(".orgforget")!;
+    expect(btn).not.toBeNull();
+    expect(btn.textContent).toBe("Clear stored credentials");
+    btn.click(); // first tap only arms - no network, no reload
+    expect(btn.textContent).toContain("Tap again");
+    expect(btn.className).toContain("armed");
+  });
+
   it("badges the demo as a sandbox and marks the body when it's active", () => {
     const { doc, c } = loadConsole();
     c.renderOrgSwitcher({ orgs: [{ id: "demo", name: "Acme Labs", sandbox: true }], activeId: "demo" });

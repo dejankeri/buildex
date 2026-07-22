@@ -59,6 +59,8 @@ function renderOrgSwitcher(data) {
     ),
     el("div", { class: "orgsep" }),
     orgCreateRow(),
+    el("div", { class: "orgsep" }),
+    orgForgetRow(),
   );
 
   const current = el(
@@ -81,6 +83,38 @@ function orgCreateRow() {
     if (e.key === "Enter") createOrg(input.value);
   });
   return el("div", { class: "orgcreate" }, input, el("button", { class: "orgcreatebtn", type: "button", text: "Start my company", onClick: () => createOrg(input.value) }));
+}
+
+/**
+ * A destructive footer action: clear EVERY org's stored credentials from the OS keychain — the honest
+ * "remove all data" the operator runs before uninstalling, because macOS runs no code when the app is
+ * dragged to the Trash, so nothing else can reach the vault. Two-tap inline confirm (no browser
+ * confirm() dialog, matching the create row). Files are kept; only connector tokens / git credentials
+ * are wiped, then the console reloads.
+ */
+function orgForgetRow() {
+  const btn = el("button", {
+    class: "orgforget",
+    type: "button",
+    text: "Clear stored credentials",
+    title: "Disconnect every app and wipe stored tokens from your OS keychain. Your files are kept.",
+  });
+  let armed = false;
+  btn.addEventListener("click", async () => {
+    if (!armed) {
+      armed = true;
+      btn.textContent = "Tap again to clear all credentials";
+      btn.classList.add("armed");
+      return;
+    }
+    try {
+      await postJSON("/api/orgs/forget-secrets", {});
+      location.reload();
+    } catch {
+      btn.textContent = "Couldn’t clear — try again";
+    }
+  });
+  return el("div", { class: "orgforgetrow" }, btn);
 }
 
 /** Toggle the org dropdown open/closed. */

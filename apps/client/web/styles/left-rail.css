@@ -32,6 +32,10 @@
   .orgnew:focus{outline:none;border-color:var(--brand-dim);}
   .orgcreatebtn{flex:none;background:var(--brand);color:#0c1413;border:0;border-radius:6px;padding:5px 9px;font-size:11.5px;font-weight:650;cursor:pointer;white-space:nowrap;}
   .orgcreatebtn:hover{filter:brightness(1.08);}
+  .orgforgetrow{padding:4px;}
+  .orgforget{width:100%;background:transparent;border:1px solid var(--line-2);border-radius:6px;padding:6px 9px;color:var(--faint);font:inherit;font-size:11.5px;cursor:pointer;text-align:left;}
+  .orgforget:hover{color:var(--danger,#e5534b);border-color:var(--danger,#e5534b);}
+  .orgforget.armed{color:#0c1413;background:var(--danger,#e5534b);border-color:var(--danger,#e5534b);font-weight:650;}
   .orgnote{font-size:10.5px;color:var(--faint);padding:5px 4px 1px;}
   /* a sandbox org is never syncable — hide the sync affordance so nothing implies it syncs */
   body.sandbox .top .sync{display:none;}
