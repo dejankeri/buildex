@@ -39,8 +39,10 @@ export interface RunOutcome {
 }
 
 /** yyyy-mm-dd-hhmmss in local time - readable at a glance in a directory listing, and seconds-
- *  granular so two runs of the same pack started within the same minute don't collide. */
-function slugTimestamp(d: Date): string {
+ *  granular so two runs of the same pack started within the same minute don't collide. Exported:
+ *  the proof track (proof.ts) reuses it verbatim for its own run-dir slug, rather than forking a
+ *  second copy of the same formatting rule. */
+export function slugTimestamp(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }

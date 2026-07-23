@@ -123,7 +123,7 @@ describe("writeResults", () => {
     const runDir = tmp("results-write-");
     const ctx: RunContext = { runDir, workspace: join(runDir, "workspace"), roots: [] };
     const r = collectResults({
-      pack: "protocol",
+      pack: "acme",
       ctx,
       install: INSTALL,
       sandbox: { minted: true, destroyed: true },

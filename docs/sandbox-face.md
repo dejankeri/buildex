@@ -130,3 +130,35 @@ sandbox face remains the durable path for providers not run by the operator.
   provider's TTL job.
 - **Sandbox mode for `stdio`/`direct` packs.** The engine targets gateway-routable http MCP
   packs with an `mcp-bearer` api-key face; other shapes wait until a pack needs them.
+
+## Trust model — the pack under test is trusted code
+
+The e2e engine drives the real BuildEx agent against a pack's live surface. A pack's skills, MCP
+server, tool descriptions, and tool **results** are treated as **trusted input** — because the
+driven agent runs with the core preset (Read/Write/Bash) and, in the headless test lane, **without**
+the product's PreToolUse approval gate (see `install-step.ts`'s `regenAgentConfig` doc comment: a
+harness run has no daemon, so the gate hook isn't wired; a server-level allow rule reproduces only
+the allow-tier behavior for the pack under test). There is therefore no outbound gate on the driven
+agent in this lane.
+
+Redaction of secrets from persisted transcripts (`redact.ts`'s `redactText`, used by `drive-step.ts`,
+`scenario-step.ts`, and `judge-step.ts`) is **best-effort** — a literal substring scrub applied to
+the on-disk transcript — **not a security boundary**. An agent with Bash could transform (encode,
+split, re-derive) or exfiltrate a pinned key before it is ever written to disk, and in the local lane
+that key is the operator's real, non-expiring provider key.
+
+**Therefore: only point the engine at providers you trust. Do not run it against an
+untrusted/hostile MCP endpoint.**
+
+Mitigations that DO exist, and their limits:
+
+- The generator and judge each run in an isolated scratch dir with no `.mcp.json` and no pinned
+  key — they cannot exfiltrate a credential they were never handed (see `proof.ts`'s `genDir` and
+  `judge-step.ts`'s `scratchDir`).
+- The judge is granted only `Read` — enough to read its copied transcript, nothing that could act on
+  a live provider.
+- Every known secret is scrubbed from persisted transcripts and from thrown generator/judge errors
+  before they can ride a retry prompt into a later spawn or land in `report.md`.
+
+This is documentation of an accepted limitation, not a code change: the mitigations narrow the
+blast radius of an untrusted pack, they do not close it.
