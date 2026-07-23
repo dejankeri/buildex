@@ -43,6 +43,27 @@ describe("ClaudeStreamParser", () => {
     expect(events).toContainEqual({ kind: "tool_result", id: "tu_1", name: "Edit", ok: true, output: "ok" });
   });
 
+  it("stringifies non-string tool_result content parts (objects) instead of collapsing them to \"[object Object]\"", () => {
+    const objResult = JSON.stringify({
+      type: "user",
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tu_1",
+            content: [{ type: "text", text: "ok" }, { some: "obj" }],
+            is_error: false,
+          },
+        ],
+      },
+    });
+    const events = drain([toolLine, objResult]);
+    const result = events.find((e) => e.kind === "tool_result") as { output?: string } | undefined;
+    expect(result?.output).toContain("ok");
+    expect(result?.output).toContain(JSON.stringify({ some: "obj" }));
+    expect(result?.output).not.toContain("[object Object]");
+  });
+
   it("marks a tool_result with is_error:true as not ok", () => {
     const errResult = JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu_1", content: "boom", is_error: true }] } });
     const events = drain([toolLine, errResult]);
