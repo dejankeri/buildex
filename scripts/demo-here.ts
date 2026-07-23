@@ -1,15 +1,16 @@
 // Launch THIS git worktree's local app in an isolated demo environment, so several worktrees can
 // run side by side. Derives a stable per-worktree demo dir + non-colliding console/gateway ports
 // from the worktree path, exports them as the env vars the existing scripts already honor, and
-// delegates to `npm run demo` (browser) or `npm run demo:app` (Electron).
-// Usage:  tsx scripts/demo-here.ts [web|app]
+// delegates to `npm run demo` (browser), `npm run demo:app` (Electron), or `npm run demo:orgs`
+// (the multi-org browser demo: org switcher + "Start my company", where cloud sign-in/onboarding live).
+// Usage:  tsx scripts/demo-here.ts [web|app|orgs]
 import { execFileSync, spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { basename } from "node:path";
 import net from "node:net";
 import { deriveWorktreeEnv } from "../apps/client/src/demo/worktree-env.js";
 
-const mode = process.argv[2] === "app" ? "app" : "web";
+const mode = process.argv[2] === "app" ? "app" : process.argv[2] === "orgs" ? "orgs" : "web";
 const worktreeRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
 
 const isPortFree = (port: number) =>
@@ -39,7 +40,7 @@ const env = {
   BUILDEX_DEMO_PORT: String(consolePort),
   BUILDEX_DEMO_GATEWAY_PORT: String(gatewayPort),
 };
-const script = mode === "app" ? "demo:app" : "demo";
+const script = mode === "app" ? "demo:app" : mode === "orgs" ? "demo:orgs" : "demo";
 // On Windows `npm` is the npm.cmd shim, which modern Node refuses to spawn directly (EINVAL, per
 // CVE-2024-27980) unless shell:true; POSIX keeps the plain spawn.
 const isWin = process.platform === "win32";

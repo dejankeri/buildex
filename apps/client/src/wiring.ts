@@ -361,14 +361,17 @@ export function buildClientHandler(config: ClientConfig): Handler {
     ? (): Promise<{ state: "local" }> => runDisconnect({ engine: sync, account, roots: config.roots })
     : undefined;
   // The browser sign-in→attach chain (Task 10): system-browser OAuth via Supabase (sign-in.ts), then
-  // the SAME postSession→persistAndAttach tail the setup-token flow above ends in. Gated on BOTH an
-  // account seam (org id+dir - openAccount's own precondition) and a Supabase project config -
-  // absent either, `signIn` stays undefined and `/api/signin` stays dormant (501). This is the
-  // DEFAULT today (the owner hasn't configured Supabase), so a normal boot is unaffected. Captured
-  // into local consts (`acc`/`supabaseCfg`) once, here, rather than re-checked inside the closure -
-  // this is the one narrowing TypeScript can't carry through a later-called async closure.
+  // the SAME postSession→persistAndAttach tail the setup-token flow above ends in. Gated on an account
+  // seam (org id+dir - openAccount's own precondition), a Supabase project config, AND a non-sandbox
+  // org - absent any, `signIn` stays undefined and `/api/signin` stays dormant (501). The sandbox gate
+  // matters because `signInAvailable` (the console's sign-in CTAs) is exactly `!!deps.signIn`: without
+  // it a Supabase-configured build would advertise sign-in on the local-only sandbox and then throw at
+  // call time (the sandbox can never attach). This is the DEFAULT today when Supabase is unconfigured,
+  // so a normal boot is unaffected. Captured into local consts (`acc`/`supabaseCfg`) once, here, rather
+  // than re-checked inside the closure - the one narrowing TypeScript can't carry through a later-called
+  // async closure.
   const signIn: (() => Promise<{ state: "connected" | "needs-help" }>) | undefined = (() => {
-    if (!account || !config.supabase) return undefined;
+    if (!account || !config.supabase || config.sandbox) return undefined;
     const acc = account;
     const supabaseCfg = config.supabase;
     return async (): Promise<{ state: "connected" | "needs-help" }> => {
@@ -398,10 +401,11 @@ export function buildClientHandler(config: ClientConfig): Handler {
   })();
   // Anonymous onboarding (Task 4): the operator never leaves the app - an anonymous Supabase user is
   // minted no-browser (signUpAnonymous), then handed to the SAME postSession→persistAndAttach tail as
-  // `signIn` above. Gated identically (account seam + Supabase project config); absent either,
-  // `onboard` stays undefined and `/api/onboard` stays dormant (501) - the default today.
+  // `signIn` above. Gated identically (account seam + Supabase project config + non-sandbox org);
+  // absent any, `onboard` stays undefined and `/api/onboard` stays dormant (501) - the default today.
+  // The sandbox gate keeps the local-only Acme sandbox from firing the onboarding dialog it can't fulfil.
   const onboard: ((input: { companyName: string }) => Promise<{ state: "connected" | "needs-help" }>) | undefined = (() => {
-    if (!account || !config.supabase) return undefined;
+    if (!account || !config.supabase || config.sandbox) return undefined;
     const acc = account;
     const supabaseCfg = config.supabase;
     return (input: { companyName: string }): Promise<{ state: "connected" | "needs-help" }> =>
