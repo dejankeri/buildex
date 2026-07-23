@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildClientHandler } from "./wiring.js";
+import type { SyncScheduler } from "./sync/scheduler.js";
 
 // Escaping DIRECTORY link via each platform's real, unprivileged primitive: a junction on Windows
 // (skills are materialized as junctions - the actual Windows attack surface - needing no elevation),
@@ -12,12 +13,21 @@ function linkDir(target: string, linkPath: string): void {
 }
 
 let ws: string;
+// Every handler() builds a real SyncScheduler with live debounce timers. A route that writes into a
+// root arms one, and if it fires after afterEach has deleted the tmpdir it lands as an ENOENT
+// unhandled rejection - noise that turns into a flaky failure the moment a test writes enough. Hold
+// each scheduler and stop it before the directory goes.
+let schedulers: SyncScheduler[];
 beforeEach(() => {
   ws = mkdtempSync(join(tmpdir(), "buildex-wire-"));
+  schedulers = [];
   mkdirSync(join(ws, "team"), { recursive: true });
   writeFileSync(join(ws, "team", "conventions.md"), "# Conventions\n\nWe ship weekly.\n");
 });
-afterEach(() => rmSync(ws, { recursive: true, force: true }));
+afterEach(() => {
+  for (const s of schedulers) s.stop();
+  rmSync(ws, { recursive: true, force: true });
+});
 
 describe("buildClientHandler - the client composition root", () => {
   const handler = () =>
@@ -26,6 +36,7 @@ describe("buildClientHandler - the client composition root", () => {
       roots: [{ name: "team", dir: join(ws, "team") }],
       preset: { allow: ["Read"], ask: ["Bash"], deny: [], default: "ask" },
       claudeBin: "claude",
+      onScheduler: (s) => schedulers.push(s),
     });
 
   it("assembles a working daemon (healthz responds)", async () => {
@@ -235,6 +246,32 @@ describe("buildClientHandler - the client composition root", () => {
     const yaml = readFileSync(join(ws, "team", "loops.yaml"), "utf8");
     expect(yaml).toContain("- name: sweep");
     expect(yaml).toContain("every: 2h");
+  });
+
+  it("switches a loop between a prompt and a verb without ending up with both or neither", async () => {
+    const app = handler();
+    const post = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
+    const patch = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
+
+    await post("/api/loops", { title: "Digest", prompt: "summarise the pipeline", every: "2h" });
+
+    // The console sends BOTH keys with the unused one empty - the empty one must not win.
+    const toVerb = (await (await patch("/api/loops/digest", { prompt: "", verb: "pipeline-digest" })).json()) as { prompt?: string; verb?: string };
+    expect(toVerb.verb).toBe("pipeline-digest");
+    expect(toVerb.prompt).toBeUndefined();
+
+    const backToPrompt = (await (await patch("/api/loops/digest", { prompt: "summarise it again", verb: "" })).json()) as { prompt?: string; verb?: string };
+    expect(backToPrompt.prompt).toBe("summarise it again");
+    expect(backToPrompt.verb).toBeUndefined();
+
+    // ...and the committed file agrees, so the next boot reads the same loop.
+    const yaml = readFileSync(join(ws, "team", "loops.yaml"), "utf8");
+    expect(yaml).toContain("prompt: summarise it again");
+    expect(yaml).not.toContain("verb:");
+
+    // An edit that mentions neither leaves the body alone.
+    const renamed = (await (await patch("/api/loops/digest", { title: "Pipeline digest" })).json()) as { title: string; prompt?: string };
+    expect(renamed).toMatchObject({ title: "Pipeline digest", prompt: "summarise it again" });
   });
 
   it("rejects a loop with no schedule, and one that would run every minute (400, nothing persisted)", async () => {

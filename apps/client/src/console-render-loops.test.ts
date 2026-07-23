@@ -178,8 +178,9 @@ describe("console renderers (jsdom) — the loop composer", () => {
 
   it("switches to the interval mode and previews that instead", () => {
     const { doc } = withComposer();
-    const segs = Array.from(doc.querySelectorAll("#loopcomposer .seg") as any, (n: any) => n) as any[];
-    segs[0].click(); // "Every…"
+    // Select by attribute, not position: there are two segmented controls now (what it runs, how
+    // often), so an index would silently target the wrong one.
+    (doc.querySelector('#loopcomposer .seg[data-mode="every"]') as any).click();
     const preview = doc.querySelector("#loopcomposer .loopreview") as any;
     expect(preview.textContent).toBe("Choose how often it runs.");
   });
@@ -190,6 +191,43 @@ describe("console renderers (jsdom) — the loop composer", () => {
     const msg = doc.querySelector("#loopcomposer .emsg") as any;
     expect(msg.textContent).toContain("needs a name");
     expect(msg.className).toContain("bad");
+  });
+
+  it("round-trips a real loop's schedule - the /api/loops shape, not the flat suggestion shape", () => {
+    // Regression: the form read flat at/every/days, which only a SUGGESTION has. An /api/loops
+    // record carries a structured `schedule`, so editing a real loop opened with an empty schedule
+    // and saving 400'd.
+    const { doc } = withComposer(loop({ schedule: { kind: "at", hour: 16, minute: 0, days: ["fri"] } }));
+    expect((doc.querySelector("#loopcomposer .f-at") as any).value).toBe("16:00");
+    const on = Array.from(doc.querySelectorAll("#loopcomposer .daybtn.on") as any, (n: any) => n.dataset.day);
+    expect(on).toEqual(["fri"]);
+    const mode = Array.from(doc.querySelectorAll("#loopcomposer .seg.on") as any, (n: any) => n.dataset.mode).filter(Boolean);
+    expect(mode).toEqual(["at"]);
+    expect((doc.querySelector("#loopcomposer .loopreview") as any).textContent).toBe("Runs every Friday at 16:00");
+  });
+
+  it("round-trips an interval loop the same way", () => {
+    const { doc } = withComposer(loop({ schedule: { kind: "every", ms: 7_200_000, raw: "2h" } }));
+    expect((doc.querySelector("#loopcomposer .f-every") as any).value).toBe("2h");
+    const mode = Array.from(doc.querySelectorAll("#loopcomposer .seg.on") as any, (n: any) => n.dataset.mode).filter(Boolean);
+    expect(mode).toEqual(["every"]);
+  });
+
+  it("opens a verb loop on the verb side instead of pretending it has no body", () => {
+    const { doc } = withComposer(loop({ prompt: undefined, verb: "pipeline-digest", schedule: { kind: "every", ms: 7_200_000, raw: "2h" } }));
+    const body = Array.from(doc.querySelectorAll("#loopcomposer .seg.on") as any, (n: any) => n.dataset.body).filter(Boolean);
+    expect(body).toEqual(["verb"]);
+    const promptRow = (doc.querySelector("#loopcomposer .f-prompt") as any).closest(".looprow");
+    expect(promptRow.style.display).toBe("none");
+    expect((doc.querySelector("#loopcomposer .f-verb") as any)).not.toBeNull();
+  });
+
+  it("defaults a fresh loop to a prompt, with the verb picker out of the way", () => {
+    const { doc } = withComposer();
+    const body = Array.from(doc.querySelectorAll("#loopcomposer .seg.on") as any, (n: any) => n.dataset.body).filter(Boolean);
+    expect(body).toEqual(["prompt"]);
+    const verbRow = (doc.querySelector("#loopcomposer .f-verb") as any).closest(".looprow");
+    expect(verbRow.style.display).toBe("none");
   });
 
   it("titles itself Edit when opened on an existing loop", () => {

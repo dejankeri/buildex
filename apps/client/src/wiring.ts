@@ -839,6 +839,13 @@ export function buildClientHandler(config: ClientConfig): Handler {
     if (!schedule) throw new Error("a loop needs either `every` (e.g. 30m) or `at` (e.g. 09:00), not both");
     return schedule;
   };
+  /** The prompt-xor-verb half of an edit: whichever arrives non-empty wins and clears the other;
+   *  an edit that mentions neither leaves the body untouched. */
+  const bodyPatch = (b: { prompt?: string; verb?: string }): { prompt?: string; verb?: string } => {
+    if (b.prompt?.trim()) return { prompt: b.prompt.trim(), verb: undefined };
+    if (b.verb?.trim()) return { verb: b.verb.trim(), prompt: undefined };
+    return {};
+  };
   const loops: LoopsEngineControl = {
     list: () => loopsEngine.list(),
     add: (b) =>
@@ -852,8 +859,10 @@ export function buildClientHandler(config: ClientConfig): Handler {
     update: (name, b) =>
       loopsEngine.update(name, {
         ...(b.title !== undefined ? { title: b.title } : {}),
-        ...(b.prompt !== undefined ? { prompt: b.prompt, verb: undefined } : {}),
-        ...(b.verb !== undefined ? { verb: b.verb, prompt: undefined } : {}),
+        // A loop runs a prompt XOR a verb, so an edit that sets one must CLEAR the other. The
+        // console sends both keys with the unused one empty, so emptiness - not presence - is what
+        // decides here; keying off `!== undefined` would let a blank prompt beat a real verb.
+        ...bodyPatch(b),
         ...(b.every !== undefined || b.at !== undefined ? { schedule: toSchedule(b) } : {}),
         ...(b.enabled !== undefined ? { enabled: b.enabled } : {}),
       }),

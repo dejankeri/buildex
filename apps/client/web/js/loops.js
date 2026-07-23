@@ -247,6 +247,38 @@ function removeLoop(loop) {
 /* ---------- the composer ---------- */
 
 /**
+ * Flatten whatever we were handed into the fields the form edits. Two shapes arrive here and they
+ * do NOT look alike: a SUGGESTION is already flat ({at, days} / {every}), while a LOOP from
+ * /api/loops carries a structured `schedule` object. Reading only the flat keys is what silently
+ * emptied the schedule when editing a real loop, so normalise once, here.
+ * @param {object} seed - a suggestion or an /api/loops record.
+ * @returns {{title:string, prompt:string, verb:string, mode:string, every:string, at:string, days:string[]}}
+ */
+function loopSeedFields(seed) {
+  const src = seed || {};
+  const out = {
+    title: src.title || "",
+    prompt: src.prompt || "",
+    verb: src.verb || "",
+    mode: "at",
+    every: src.every || "",
+    at: src.at || "09:00",
+    days: String(src.days || "").split(",").map((d) => d.trim()).filter(Boolean),
+  };
+  if (src.schedule && src.schedule.kind === "every") {
+    out.mode = "every";
+    out.every = src.schedule.raw || "";
+  } else if (src.schedule && src.schedule.kind === "at") {
+    out.mode = "at";
+    out.at = String(src.schedule.hour).padStart(2, "0") + ":" + String(src.schedule.minute).padStart(2, "0");
+    out.days = src.schedule.days || [];
+  } else if (src.every) {
+    out.mode = "every";
+  }
+  return out;
+}
+
+/**
  * Open the inline new/edit-loop form above the list.
  * @param {object} [seed] - a suggestion or an existing loop to pre-fill. An existing loop (one with
  *   a `name`) is EDITED in place; anything else creates.
@@ -256,19 +288,20 @@ function openLoopComposer(seed) {
   if (!host) return;
   const src = seed || {};
   const editing = !!src.name;
-  const mode = src.at || (!src.every && !src.name) ? "at" : "every";
+  const f = loopSeedFields(src);
+  const mode = f.mode;
 
-  const title = el("input", { class: "f-title", placeholder: "Monday update", value: src.title || "" });
+  const title = el("input", { class: "f-title", placeholder: "Monday update", value: f.title });
   const prompt = el("textarea", { class: "f-prompt", rows: "3", placeholder: "Read last week's activity log and draft the Monday update." });
-  prompt.value = src.prompt || "";
-  const every = el("input", { class: "f-every", placeholder: "2h", value: src.every || "" });
-  const at = el("input", { class: "f-at", type: "time", value: src.at || "09:00" });
+  prompt.value = f.prompt;
+  const every = el("input", { class: "f-every", placeholder: "2h", value: f.every });
+  const at = el("input", { class: "f-at", type: "time", value: f.at });
   const days = el(
     "div",
     { class: "loopdays" },
     ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) =>
       el("button", {
-        class: "daybtn" + (String(src.days || "").includes(d) ? " on" : ""),
+        class: "daybtn" + (f.days.includes(d) ? " on" : ""),
         type: "button",
         // Two letters, so the whole week fits one row in a ~250px rail without orphaning Sunday.
         text: d[0].toUpperCase() + d.slice(1, 2),
@@ -281,6 +314,18 @@ function openLoopComposer(seed) {
     ),
   );
 
+  // What it runs: free text, or one of the operator's own verbs. Without this the API's verb
+  // support is unreachable from the console - a verb loop could only be made by hand-editing
+  // loops.yaml, and EDITING one would drop its body on the floor.
+  const verb = el("select", { class: "f-verb" }, el("option", { value: "", text: "loading your verbs…" }));
+  const bodyMode = f.verb ? "verb" : "prompt";
+  const bodySeg = el(
+    "div",
+    { class: "loopmode", role: "radiogroup", "aria-label": "What it runs" },
+    el("button", { class: "seg" + (bodyMode === "prompt" ? " on" : ""), dataset: { body: "prompt" }, text: "A prompt", onClick: () => setBody("prompt") }),
+    el("button", { class: "seg" + (bodyMode === "verb" ? " on" : ""), dataset: { body: "verb" }, text: "One of my verbs", onClick: () => setBody("verb") }),
+  );
+
   const modeSeg = el(
     "div",
     { class: "loopmode", role: "radiogroup", "aria-label": "How often" },
@@ -288,6 +333,8 @@ function openLoopComposer(seed) {
     el("button", { class: "seg" + (mode === "at" ? " on" : ""), dataset: { mode: "at" }, text: "At a time", onClick: () => setMode("at") }),
   );
 
+  const promptRow = el("label", { class: "looprow" }, "What should it do? ", prompt);
+  const verbRow = el("label", { class: "looprow" }, "Which verb? ", verb);
   const everyRow = el("label", { class: "looprow" }, "Run every ", every, el("span", { class: "hint", text: "e.g. 30m, 2h, 1d" }));
   const atRow = el("label", { class: "looprow" }, "Run at ", at, days);
   const sentence = el("div", { class: "loopreview", "aria-live": "polite" });
@@ -298,7 +345,9 @@ function openLoopComposer(seed) {
     { class: "loopform" },
     el("h5", { text: editing ? "Edit loop" : "New loop" }),
     el("label", { class: "looprow" }, "Name it ", title),
-    el("label", { class: "looprow" }, "What should it do? ", prompt),
+    bodySeg,
+    promptRow,
+    verbRow,
     modeSeg,
     everyRow,
     atRow,
@@ -314,8 +363,40 @@ function openLoopComposer(seed) {
 
   host.innerHTML = "";
   host.append(form);
+  setBody(bodyMode);
   setMode(mode);
   title.focus();
+  loadVerbOptions();
+
+  /** Fill the verb picker from the workspace's own verbs, keeping whatever this loop already runs
+   *  selected even if the fetch fails (an offline daemon must not silently rewrite the loop). */
+  async function loadVerbOptions() {
+    let names = [];
+    try {
+      names = ((await getJSON("/api/skills")).skills || []).map((sk) => sk.name);
+    } catch (e) {
+      /* fall through - the current verb is still offered below */
+    }
+    if (f.verb && names.indexOf(f.verb) < 0) names.unshift(f.verb);
+    verb.innerHTML = "";
+    if (!names.length) {
+      verb.append(el("option", { value: "", text: "(teach a verb first)" }));
+      return;
+    }
+    for (const n of names) verb.append(el("option", { value: n, text: n, selected: n === f.verb || undefined }));
+    if (f.verb) verb.value = f.verb;
+  }
+
+  function setBody(m) {
+    for (const b of $$(".seg", bodySeg)) b.classList.toggle("on", b.dataset.body === m);
+    promptRow.style.display = m === "prompt" ? "" : "none";
+    verbRow.style.display = m === "verb" ? "" : "none";
+  }
+
+  function currentBody() {
+    const on = $$(".seg", bodySeg).filter((b) => b.classList.contains("on"))[0];
+    return on ? on.dataset.body : "prompt";
+  }
 
   function setMode(m) {
     for (const b of $$(".seg", modeSeg)) b.classList.toggle("on", b.dataset.mode === m);
@@ -355,8 +436,9 @@ function openLoopComposer(seed) {
   }
 
   async function submit() {
-    const body = Object.assign({ title: title.value.trim(), prompt: prompt.value.trim() }, schedule());
-    if (!body.title || !body.prompt) {
+    const runs = currentBody() === "verb" ? { verb: verb.value, prompt: "" } : { prompt: prompt.value.trim(), verb: "" };
+    const body = Object.assign({ title: title.value.trim() }, runs, schedule());
+    if (!body.title || !(body.prompt || body.verb)) {
       msg.className = "emsg bad";
       msg.textContent = "A loop needs a name and something to do.";
       return;
