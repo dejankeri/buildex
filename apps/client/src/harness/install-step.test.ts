@@ -2,7 +2,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { installPackHeadless, verifyInstall } from "./install-step.js";
+import { readFileSync } from "node:fs";
+import { installPackHeadless, regenAgentConfig, serverAllowRule, verifyInstall } from "./install-step.js";
 import type { PackManifest } from "../brain/catalog.js";
 import type { CatalogSource } from "../brain/catalog-source.js";
 import type { Root } from "../brain/graph.js";
@@ -63,5 +64,90 @@ describe("installPackHeadless + verifyInstall", () => {
     const check = verifyInstall(source, roots, "acme");
     expect(check.ok).toBe(false);
     expect(check.skills).toEqual([{ name: "acme-howto", present: false }]);
+  });
+
+  it("throws on an unknown pack id instead of returning a misleading half-true shape", () => {
+    expect(() => verifyInstall(sourceWith(M), fakeRoots(), "ghost")).toThrow(/unknown pack/i);
+  });
+
+  it("falls back to the private root for skills+policy when the workspace has no team root", () => {
+    const source = sourceWith(M);
+    const ws = tmp("ws-");
+    const roots = (["core", "private-you"] as const).map((name) => {
+      const dir = join(ws, name);
+      mkdirSync(dir, { recursive: true });
+      return { name, dir } as Root;
+    });
+    installPackHeadless(source, roots, "acme");
+    const check = verifyInstall(source, roots, "acme");
+    expect(check.ok).toBe(true);
+    expect(existsSync(join(roots[1]!.dir, "skills", "acme-howto", "SKILL.md"))).toBe(true);
+  });
+
+  it("reports app=true for a manifest without an app face (nothing to verify)", () => {
+    const { app: _a, ...noApp } = M;
+    const source = sourceWith(noApp as PackManifest);
+    const roots = fakeRoots();
+    installPackHeadless(source, roots, "acme");
+    const check = verifyInstall(source, roots, "acme");
+    expect(check.app).toBe(true);
+    expect(check.ok).toBe(true);
+  });
+});
+
+describe("serverAllowRule", () => {
+  it("normalizes the .mcp.json server key the way Claude Code names its tools (verified live: ':' → '_')", () => {
+    expect(serverAllowRule("buildex-pack:acme")).toBe("mcp__buildex-pack_acme");
+  });
+});
+
+describe("regenAgentConfig - the product's post-install config regen, mirrored", () => {
+  function corePack(): string {
+    const d = tmp("core-");
+    mkdirSync(join(d, "policy"), { recursive: true });
+    writeFileSync(join(d, "policy", "preset.json"), JSON.stringify({ allow: ["Read"], ask: ["WebFetch"], deny: [] }));
+    return d;
+  }
+
+  function wsAndRoots(): { workspace: string; roots: Root[] } {
+    const workspace = tmp("ws-");
+    const roots = (["core", "team-acme", "private-you"] as const).map((name) => {
+      const dir = join(workspace, name);
+      mkdirSync(dir, { recursive: true });
+      return { name, dir } as Root;
+    });
+    return { workspace, roots };
+  }
+
+  it("links the installed pack's skills into .claude/skills and writes the composed settings", () => {
+    const { workspace, roots } = wsAndRoots();
+    installPackHeadless(sourceWith(M), roots, "acme");
+    regenAgentConfig({ workspace, roots, corePackDir: corePack(), allowMcpServer: "buildex-pack:acme", linkStrategy: "copy" });
+
+    expect(existsSync(join(workspace, ".claude", "skills", "acme-howto", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(workspace, "CLAUDE.md"))).toBe(true);
+    const settings = JSON.parse(readFileSync(join(workspace, ".claude", "settings.json"), "utf8"));
+    expect(settings.permissions.allow).toContain("Read");
+    expect(settings.permissions.allow).toContain("mcp__buildex-pack_acme");
+    expect(settings.permissions.ask).toContain("WebFetch");
+  });
+
+  it("composes installed pack policy fragments into the preset, like the product's sync", () => {
+    const { workspace, roots } = wsAndRoots();
+    const m = { ...M, policy: { ask: ["SendEmail"] } } as PackManifest;
+    installPackHeadless(sourceWith(m), roots, "acme");
+    regenAgentConfig({ workspace, roots, corePackDir: corePack(), linkStrategy: "copy" });
+
+    const settings = JSON.parse(readFileSync(join(workspace, ".claude", "settings.json"), "utf8"));
+    expect(settings.permissions.ask).toContain("SendEmail");
+    // No allowMcpServer given - no mcp__ rule invented.
+    expect(settings.permissions.allow.some((r: string) => r.startsWith("mcp__"))).toBe(false);
+  });
+
+  it("names the core pack dir operator-readably when preset.json is missing, instead of a bare ENOENT", () => {
+    const { workspace, roots } = wsAndRoots();
+    const emptyCore = tmp("core-empty-");
+    expect(() => regenAgentConfig({ workspace, roots, corePackDir: emptyCore, linkStrategy: "copy" }))
+      .toThrow(/preset\.json/);
   });
 });

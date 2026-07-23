@@ -109,6 +109,18 @@ anything the workspace minted).
 5. `DELETE destroyUrl` — **always**, including on failure and on interrupt; teardown is the
    engine's only unconditional step. The minted key is discarded with the run.
 
+## The local lane — running without the endpoints
+
+A provider the operator runs locally needs none of the above: the engine's CLI takes
+`--mcp-url <url>` plus a key in `BUILDEX_LOCAL_MCP_KEY` and writes the pin directly, skipping
+mint/seed/destroy entirely. `http://` is accepted for loopback hosts only (`localhost`,
+`127.0.0.1`, `[::1]`); everywhere else stays `https://`.
+
+The clean-slate contract is correspondingly weaker and belongs to the operator: resetting the
+local instance replaces `destroy`, and the hand-minted key has no TTL — after a hard kill
+mid-run, sweep the leftover run dir (or rotate the key on the local instance) yourself. The
+sandbox face remains the durable path for providers not run by the operator.
+
 ## Deferred — designed around, not built
 
 - **OAuth-path sandboxes.** Driving the gateway's browser OAuth consent against a provider

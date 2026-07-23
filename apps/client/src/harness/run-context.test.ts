@@ -30,6 +30,13 @@ describe("provisionRunContext", () => {
     expect(ctx.workspace).toBe(join(ctx.runDir, "workspace"));
   });
 
+  it("refuses a slug collision - run A's teardown must never be able to delete run B's live workspace", () => {
+    const b = base();
+    const core = resolveCorePackDir({ repoRoot: REPO });
+    provisionRunContext({ baseDir: b, corePackDir: core, slug: "same" });
+    expect(() => provisionRunContext({ baseDir: b, corePackDir: core, slug: "same" })).toThrow(/already exists/i);
+  });
+
   it("teardown removes the workspace but keeps the run dir (artifacts survive)", () => {
     const ctx = provisionRunContext({ baseDir: base(), corePackDir: resolveCorePackDir({ repoRoot: REPO }), slug: "t2" });
     teardownRunContext(ctx);

@@ -105,6 +105,17 @@ describe("collectResults", () => {
     expect(results.commits).toEqual([{ root: "core", count: 0, subjects: [] }]);
     expect(results.drives).toEqual([]);
   });
+
+  it("fails soft on an INITIALIZED repo with zero commits (git exists, no HEAD yet)", () => {
+    const base = tmp("results-init-");
+    const bareInit = join(base, "core");
+    mkdirSync(bareInit, { recursive: true });
+    execSync("git init --initial-branch=main", { cwd: bareInit, env: GIT_ENV, stdio: "ignore" });
+    const ctx: RunContext = { runDir: base, workspace: join(base, "workspace"), roots: [{ name: "core", dir: bareInit }] };
+
+    const results = collectResults({ pack: "acme", ctx, install: INSTALL, sandbox: { minted: false, destroyed: false }, drives: [] });
+    expect(results.commits).toEqual([{ root: "core", count: 0, subjects: [] }]);
+  });
 });
 
 describe("writeResults", () => {

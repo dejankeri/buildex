@@ -20,6 +20,13 @@ export interface DriveCaseOpts {
   prompt: string;
   runDir: string;
   caseId: string;
+  /** Permission rules pre-granted for the spawn (see RunPromptOpts.allowedTools) - the harness's
+   *  fresh workspaces are never folder-trusted, so settings.json permissions alone cannot grant
+   *  the pinned pack's MCP tools to a headless session. */
+  allowedTools?: string[];
+  /** Secret values (pinned keys, admin secrets) scrubbed from the PERSISTED transcript - the one
+   *  artifact that survives the run. In-memory events keep their raw form for counting. */
+  redact?: string[];
   now?: () => Date;
 }
 
@@ -34,34 +41,58 @@ export async function driveCase(
 
   const getNow = opts.now ?? (() => new Date());
 
-  for await (const event of driver.runPrompt({
-    prompt: opts.prompt,
-    workspace: opts.workspace,
-  })) {
-    const stampedEvent = {
-      ...event,
-      at: getNow().toISOString(),
-    };
-    stampedEvents.push(stampedEvent);
+  // A drive must never lose its transcript and must never mistake a crash for a pass. So: a
+  // mid-stream iterator throw becomes a captured error event (no rethrow - the driver's failure IS
+  // the case's result), a stream that just ends with neither done nor error is a crashed agent
+  // (errored), and the transcript is written from whatever was captured, always.
+  let sawTerminal = false;
+  try {
+    for await (const event of driver.runPrompt({
+      prompt: opts.prompt,
+      workspace: opts.workspace,
+      ...(opts.allowedTools ? { allowedTools: opts.allowedTools } : {}),
+    })) {
+      const stampedEvent = {
+        ...event,
+        at: getNow().toISOString(),
+      };
+      stampedEvents.push(stampedEvent);
 
-    if (event.kind === "tool") {
-      toolCalls++;
-    }
+      if (event.kind === "tool") {
+        toolCalls++;
+      }
 
-    if (event.kind === "tool_result" && !event.ok) {
-      toolFailures++;
-    }
+      if (event.kind === "tool_result" && !event.ok) {
+        toolFailures++;
+      }
 
-    if (event.kind === "error") {
-      errored = true;
+      if (event.kind === "error") {
+        errored = true;
+        sawTerminal = true;
+      }
+      if (event.kind === "done") {
+        sawTerminal = true;
+      }
     }
+  } catch (e) {
+    errored = true;
+    sawTerminal = true;
+    stampedEvents.push({ kind: "error", message: e instanceof Error ? e.message : String(e), at: getNow().toISOString() });
+  }
+  if (!sawTerminal) {
+    errored = true;
   }
 
-  // Write transcript to disk
+  // Write the transcript, scrubbing any secrets a caller declared (the pinned key would otherwise
+  // survive the run if the agent ever quoted .mcp.json).
   const transcriptDir = join(opts.runDir, "transcripts");
   mkdirSync(transcriptDir, { recursive: true });
   const transcriptPath = join(transcriptDir, `${opts.caseId}.json`);
-  writeFileSync(transcriptPath, JSON.stringify(stampedEvents, null, 2));
+  let serialized = JSON.stringify(stampedEvents, null, 2);
+  for (const secret of opts.redact ?? []) {
+    if (secret) serialized = serialized.split(secret).join("[REDACTED]");
+  }
+  writeFileSync(transcriptPath, serialized);
 
   return {
     caseId: opts.caseId,

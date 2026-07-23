@@ -2,7 +2,7 @@
 // (the throwaway three-root BuildEx workspace - deleted at teardown) beside the artifacts the run
 // leaves behind (transcripts, results.json - the only thing that survives, per the clean-slate
 // contract in docs/sandbox-face.md).
-import { mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { seedAcmeWorkspace } from "../demo/acme-seed.js";
 import type { Root } from "../brain/graph.js";
@@ -15,6 +15,12 @@ export interface RunContext {
 
 export function provisionRunContext(opts: { baseDir: string; corePackDir: string; slug: string }): RunContext {
   const runDir = join(opts.baseDir, opts.slug);
+  // Two runs sharing a slug would share a runDir - and the first teardown would delete the second
+  // run's LIVE workspace (invariant 8). Refuse loudly instead; slugs are seconds-granular, so a
+  // collision means two simultaneous runs of the same pack.
+  if (existsSync(runDir)) {
+    throw new Error(`run dir already exists: ${runDir} - a second run of the same pack within the same second?`);
+  }
   const workspace = join(runDir, "workspace");
   mkdirSync(workspace, { recursive: true });
   const roots = seedAcmeWorkspace({ workspace, corePackDir: opts.corePackDir });

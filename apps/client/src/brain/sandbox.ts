@@ -24,6 +24,18 @@ function authHeaders(s: PackSandbox, secret: string): Record<string, string> {
   return { [s.authHeader ?? SANDBOX_AUTH_HEADER]: secret };
 }
 
+/** A rejected fetch (DNS, refused connection, TLS) must read as a sandbox problem, not a bare
+ *  "fetch failed" - the operator's next move (is the provider up? is the url right?) should be in
+ *  the message. */
+async function reach(what: "create" | "destroy" | "seed", call: () => Promise<Response>): Promise<Response> {
+  try {
+    return await call();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`could not reach the provider's sandbox ${what} endpoint: ${msg}`);
+  }
+}
+
 /** Mint a throwaway workspace. Throws operator-readably on every failure path; never returns a
  *  partial workspace (an id without a key is useless, a key without an id is undestroyable). */
 export async function createSandboxWorkspace(
@@ -32,11 +44,13 @@ export async function createSandboxWorkspace(
   opts: { name: string; host: string },
   deps: SandboxDeps,
 ): Promise<SandboxWorkspace> {
-  const res = await deps.fetch(s.createUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...authHeaders(s, secret) },
-    body: JSON.stringify({ name: opts.name, host: opts.host }),
-  });
+  const res = await reach("create", () =>
+    deps.fetch(s.createUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...authHeaders(s, secret) },
+      body: JSON.stringify({ name: opts.name, host: opts.host }),
+    }),
+  );
   if (!res.ok) throw new Error(`the provider refused to mint a sandbox workspace (HTTP ${res.status})`);
   let parsed: unknown;
   try {
@@ -57,10 +71,12 @@ export async function createSandboxWorkspace(
  *  engine calls this unconditionally (including after crashes), so a repeat must never throw. Any
  *  other failure throws, because a silently leaked workspace is worse than a loud one. */
 export async function destroySandboxWorkspace(s: PackSandbox, secret: string, id: string, deps: SandboxDeps): Promise<void> {
-  const res = await deps.fetch(s.destroyUrl.replace("{id}", encodeURIComponent(id)), {
-    method: "DELETE",
-    headers: authHeaders(s, secret),
-  });
+  const res = await reach("destroy", () =>
+    deps.fetch(s.destroyUrl.replace("{id}", encodeURIComponent(id)), {
+      method: "DELETE",
+      headers: authHeaders(s, secret),
+    }),
+  );
   if (!res.ok && res.status !== 404) throw new Error(`the provider refused to destroy sandbox workspace ${id} (HTTP ${res.status})`);
 }
 
@@ -68,11 +84,14 @@ export async function destroySandboxWorkspace(s: PackSandbox, secret: string, id
  *  through the provider's normal MCP/API surface instead (the real write path), so calling this
  *  without the endpoint is a programming error, not a fallback. */
 export async function seedSandboxWorkspace(s: PackSandbox, secret: string, id: string, seed: unknown, deps: SandboxDeps): Promise<void> {
-  if (!s.seedUrl) throw new Error("this pack's sandbox face declares no seed endpoint");
-  const res = await deps.fetch(s.seedUrl.replace("{id}", encodeURIComponent(id)), {
-    method: "POST",
-    headers: { "content-type": "application/json", ...authHeaders(s, secret) },
-    body: JSON.stringify(seed),
-  });
+  const seedUrl = s.seedUrl;
+  if (!seedUrl) throw new Error("this pack's sandbox face declares no seed endpoint");
+  const res = await reach("seed", () =>
+    deps.fetch(seedUrl.replace("{id}", encodeURIComponent(id)), {
+      method: "POST",
+      headers: { "content-type": "application/json", ...authHeaders(s, secret) },
+      body: JSON.stringify(seed),
+    }),
+  );
   if (!res.ok) throw new Error(`the provider refused the sandbox seed for workspace ${id} (HTTP ${res.status})`);
 }

@@ -18,6 +18,23 @@ const res = (status: number, body?: unknown) =>
 const fetchOf = (r: Response) => vi.fn(async () => r) as unknown as typeof globalThis.fetch;
 
 describe("createSandboxWorkspace", () => {
+  it("treats a whitespace-only id or key as missing - a partial workspace is never returned", async () => {
+    const bodies = [
+      { data: { workspaceId: "  ", apiKey: "sb_pk_1" } },
+      { data: { workspaceId: "ws_1", apiKey: "  " } },
+    ];
+    for (const body of bodies) {
+      await expect(createSandboxWorkspace(S, "k", { name: "n", host: "h" }, { fetch: fetchOf(res(201, body)) }))
+        .rejects.toThrow(/did not contain a workspace id and key/);
+    }
+  });
+
+  it("wraps a network failure (fetch rejects) into an operator-readable sandbox error", async () => {
+    const fetchMock = vi.fn(async () => { throw new TypeError("fetch failed"); });
+    await expect(createSandboxWorkspace(S, "k", { name: "n", host: "h" }, { fetch: fetchMock as unknown as typeof globalThis.fetch }))
+      .rejects.toThrow(/could not reach the provider's sandbox create endpoint/i);
+  });
+
   it("POSTs name+host with the secret in the default auth header and extracts id/key/mcpUrl", async () => {
     const fetchMock = vi.fn(async () => res(201, okBody));
     const ws = await createSandboxWorkspace(S, "sb_admin", { name: "e2e-acme", host: "OPERATOR-PC" }, { fetch: fetchMock as unknown as typeof globalThis.fetch });

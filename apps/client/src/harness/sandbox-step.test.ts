@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mintAndPin, withSandbox } from "./sandbox-step.js";
+import { mintAndPin, pinKey, withSandbox } from "./sandbox-step.js";
 import type { PackManifest } from "../brain/catalog.js";
 
 const dirs: string[] = [];
@@ -52,6 +52,81 @@ describe("mintAndPin", () => {
       .rejects.toThrow(/no sandbox face/i);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("throws before any fetch when the pack has no mcp-bearer apiKey face (ride guards precede mint)", async () => {
+    const fetchMock = vi.fn();
+    const { apiKey: _k, ...bare } = M;
+    await expect(mintAndPin(bare as PackManifest, "k", { workspace: ws(), runName: "r", host: "h" }, { fetch: fetchMock as unknown as typeof globalThis.fetch }))
+      .rejects.toThrow(/mcp-bearer api-key face/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("throws before any fetch when the pack has no http mcp face", async () => {
+    const fetchMock = vi.fn();
+    const { mcp: _m, ...bare } = M;
+    await expect(mintAndPin(bare as PackManifest, "k", { workspace: ws(), runName: "r", host: "h" }, { fetch: fetchMock as unknown as typeof globalThis.fetch }))
+      .rejects.toThrow(/http mcp face/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("destroys the just-minted workspace when the pin write fails - a mint with no pin must not leak", async () => {
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (u: string | URL | Request, i?: RequestInit) => {
+      calls.push(`${i?.method} ${u}`);
+      return i?.method === "DELETE" ? res(204) : res(201, okBody);
+    });
+    // A workspace path that cannot take the .mcp.json write: a path UNDER a regular file.
+    const w = ws();
+    writeFileSync(join(w, "blocker"), "");
+    await expect(
+      mintAndPin(M, "k", { workspace: join(w, "blocker", "nope"), runName: "r", host: "h" }, { fetch: fetchMock as unknown as typeof globalThis.fetch }),
+    ).rejects.toThrow();
+    expect(calls.some((c) => c.startsWith("DELETE") && c.includes("ws_1"))).toBe(true);
+  });
+});
+
+describe("pinKey - the local lane's direct pin (no mint, no fetch)", () => {
+  // The local lane exists precisely for packs whose provider has NO sandbox endpoints yet - so
+  // pinKey must work on a manifest without a sandbox face.
+  const { sandbox: _s, ...LOCAL } = M;
+
+  it("writes the buildex-pack pin with the CALLER's url and key", () => {
+    const w = ws();
+    pinKey(LOCAL as PackManifest, { workspace: w, url: "http://localhost:3010/mcp", key: "pk_local_1" });
+    const cfg = JSON.parse(readFileSync(join(w, ".mcp.json"), "utf8"));
+    expect(cfg.mcpServers["buildex-pack:acme"]).toEqual({
+      type: "http", url: "http://localhost:3010/mcp", headers: { Authorization: "Bearer pk_local_1" },
+    });
+  });
+
+  it("merges into an existing .mcp.json without clobbering other servers", () => {
+    const w = ws();
+    writeFileSync(join(w, ".mcp.json"), JSON.stringify({ mcpServers: { other: { type: "http", url: "https://x.example.com" } } }));
+    pinKey(LOCAL as PackManifest, { workspace: w, url: "http://localhost:3010/mcp", key: "pk_local_1" });
+    const cfg = JSON.parse(readFileSync(join(w, ".mcp.json"), "utf8"));
+    expect(cfg.mcpServers.other).toEqual({ type: "http", url: "https://x.example.com" });
+    expect(cfg.mcpServers["buildex-pack:acme"]).toBeDefined();
+  });
+
+  it("honors the pack's apiKey header/prefix overrides", () => {
+    const w = ws();
+    const m = { ...LOCAL, apiKey: { transport: "mcp-bearer", docsUrl: "https://help.example.com/k", header: "x-api-key", prefix: "" } } as PackManifest;
+    pinKey(m, { workspace: w, url: "http://localhost:3010/mcp", key: "pk_local_1" });
+    const cfg = JSON.parse(readFileSync(join(w, ".mcp.json"), "utf8"));
+    expect(cfg.mcpServers["buildex-pack:acme"].headers).toEqual({ "x-api-key": "pk_local_1" });
+  });
+
+  it("throws when the pack has no mcp-bearer apiKey face", () => {
+    const { apiKey: _k, ...bare } = LOCAL;
+    expect(() => pinKey(bare as PackManifest, { workspace: ws(), url: "http://localhost:3010/mcp", key: "k" }))
+      .toThrow(/mcp-bearer api-key face/i);
+  });
+
+  it("throws when the pack has no http mcp face", () => {
+    const { mcp: _m, ...bare } = LOCAL;
+    expect(() => pinKey(bare as PackManifest, { workspace: ws(), url: "http://localhost:3010/mcp", key: "k" }))
+      .toThrow(/mcp/i);
+  });
 });
 
 describe("withSandbox", () => {
@@ -69,6 +144,13 @@ describe("withSandbox", () => {
       withSandbox(M, "k", { workspace: ws(), runName: "r", host: "h" }, { fetch: fetchMock as unknown as typeof globalThis.fetch }, async () => { throw new Error("scenario exploded"); }),
     ).rejects.toThrow("scenario exploded");
     expect(fetchMock.mock.calls.some(([, i]) => (i as RequestInit | undefined)?.method === "DELETE")).toBe(true);
+  });
+
+  it("rethrows the SCENARIO error when fn throws AND destroy also fails (destroy failure only logged)", async () => {
+    const fetchMock = vi.fn(async (u: string | URL | Request, i?: RequestInit) => (i?.method === "DELETE" ? res(500) : res(201, okBody)));
+    await expect(
+      withSandbox(M, "k", { workspace: ws(), runName: "r", host: "h" }, { fetch: fetchMock as unknown as typeof globalThis.fetch }, async () => { throw new Error("scenario exploded"); }),
+    ).rejects.toThrow("scenario exploded");
   });
 
   it("rejects with the destroy error when fn succeeds but destroy fails", async () => {
