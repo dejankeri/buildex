@@ -19,16 +19,54 @@ const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 30_000;
 const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 
-export type SyncResult = "ok" | "needs-help" | "queued" | "no-change" | "local";
+export type SyncResult = "ok" | "needs-help" | "reconnect" | "queued" | "no-change" | "local";
+/** Recording work locally. No network, so no offline case exists. */
+export type CheckpointResult = "committed" | "no-change";
+/** Taking other people's work in. Never sends anything. */
+export type ReceiveResult = "ok" | "needs-help" | "reconnect" | "offline" | "local";
+
+/** Outcome of an auth-rotation attempt, returned by EngineAuth.onAuthError():
+ *  - "rotated": a fresh token is stored - retry the git op once.
+ *  - "revoked": the refresh token itself was rejected (401/403) - the account is dead, not a
+ *    transient blip, so the engine throws AuthRevokedError and receive/publish surface reconnect.
+ *  - "offline": rotation could not reach the server - transient; the original error propagates and
+ *    the caller treats it as offline/queued and retries on the next tick. */
+export type AuthRotation = "rotated" | "revoked" | "offline";
+
+/** A push/fetch failed auth AND the refresh token was rejected - the account must be reconnected.
+ *  Distinct from a transient network failure so the scheduler surfaces `reconnect` rather than
+ *  `offline`/`queued` (will retry on its own). Carries NO conflict semantics: it never
+ *  triggers a backup or hard-reset - the operator's work simply stays local until they reconnect. */
+export class AuthRevokedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthRevokedError";
+  }
+}
+
+export interface EngineAuth {
+  /** gitAuthEnv(currentToken), or undefined when there is no account yet (local-only). */
+  headerEnv(): Record<string, string> | undefined;
+  /** Rotate after an auth-classified failure. See AuthRotation for what each outcome means. */
+  onAuthError(): Promise<AuthRotation>;
+}
 
 export interface SyncDeps {
   now: () => number;
   /** Label written into commit messages and (later) surfaced in history. */
   actor: string;
+  /** Present once an account is attached; injects the credential header and rotates on 401/403. */
+  auth?: EngineAuth;
+  /** Classify a git failure's stderr as an auth rejection. Overridable only for tests. */
+  classifyAuthError?: (stderr: string) => boolean;
 }
 
-/** Workspace-internal paths that must never be committed (invariant: secrets/backups stay local). */
-const INTERNAL = [".conflicts", ".sync-needs-help", ".sessions", ".agent"];
+const DEFAULT_AUTH_RE = /\b(401|403)\b|Authentication failed|could not read Username|invalid credentials/i;
+
+/** Workspace-internal paths that must never be committed, and must never be counted as unsaved work
+ *  (invariant: secrets/backups stay local). Exported so `unsaved.ts` filters by the same list rather
+ *  than keeping a second copy that could drift. */
+export const INTERNAL = [".conflicts", ".sync-needs-help", ".sessions", ".agent"];
 const CLOUD_DIRS = /(Dropbox|Google Drive|iCloud|Mobile Documents|CloudStorage|OneDrive)/i;
 
 export class SyncEngine {
@@ -41,46 +79,78 @@ export class SyncEngine {
     await this.git(["reset", "--hard", "origin/main"], dir);
   }
 
-  /** Writable repos (team/private): commit → rebase → push, with never-lose conflict backup. */
-  async syncWritable(dir: string): Promise<SyncResult> {
+  /** Record local work as a checkpoint. NO NETWORK - this is the operation that made automatic
+   *  publishing possible when it was fused with push, and keeping it network-free is what makes
+   *  "your work leaves only when you say so" true rather than aspirational. */
+  async checkpoint(dir: string): Promise<CheckpointResult> {
     assertNotCloudSynced(dir);
     await this.stage(dir);
-    if (await this.isDirty(dir)) {
-      await this.git(["commit", "-m", await this.commitMessage(dir)], dir);
-    }
+    const staged = await this.stagedFiles(dir);
+    if (staged.length === 0) return "no-change";
+    await this.git(["commit", "-m", this.commitMessage(staged)], dir);
+    return "committed";
+  }
 
-    // Local-only stub repo - no account opened yet, so no remote is configured. The operator's work
-    // is safely committed to local git (git is the database, invariant #2); there is simply nothing
-    // to sync *to*. Report "local" so the loop no-ops cleanly and the dot shows a neutral not-synced
-    // state - never "queued", which means a remote exists but is offline and should be retried.
+  /** Take other people's work in: fetch, then rebase our checkpoints on top. Sends nothing. On a
+   *  real conflict the operator's version is backed up before anything is reset (invariant 8). */
+  async receive(dir: string): Promise<ReceiveResult> {
+    assertNotCloudSynced(dir);
+    // No account yet - nothing to receive from. Not an error, and never "offline", which means a
+    // remote exists but could not be reached.
     if (!(await this.hasRemote(dir))) return "local";
-
-    // Fetch to learn the remote head; if we're offline (or the remote is wedged - the git timeout
-    // fires), retain any local commits (offline queue).
     try {
       await this.git(["fetch", "origin"], dir);
+    } catch (e) {
+      if (e instanceof AuthRevokedError) return "reconnect"; // revoked - operator must reconnect
+      return "offline";
+    }
+    // A freshly-provisioned remote has no main branch yet, so there is nothing to rebase onto.
+    if (!(await this.remoteMainExists(dir))) return "ok";
+    try {
+      await this.git(["rebase", "origin/main"], dir);
     } catch {
-      return (await this.isAhead(dir)) ? "queued" : "no-change";
+      await this.backupAndReset(dir);
+      return "needs-help";
     }
+    return "ok";
+  }
 
-    // Rebase local commits onto the remote - but only if the remote has a main branch yet. A
-    // freshly-provisioned repo is empty (no origin/main), so there is nothing to rebase onto; we
-    // just push the initial commit. On a real conflict, never lose the local version.
-    if (await this.remoteMainExists(dir)) {
-      try {
-        await this.git(["rebase", "origin/main"], dir);
-      } catch {
-        return this.backupAndReset(dir);
-      }
-    }
+  /** Send everything to the company's copy. The ONLY operation that pushes, and the only one the
+   *  operator triggers - nothing schedules it. */
+  async publish(dir: string): Promise<SyncResult> {
+    assertNotCloudSynced(dir);
+    await this.checkpoint(dir);
+
+    if (!(await this.hasRemote(dir))) return "local";
+
+    const received = await this.receive(dir);
+    if (received === "needs-help") return "needs-help";
+    if (received === "reconnect") return "reconnect"; // revoked during the pre-push fetch
+    // Offline: any checkpoints are retained locally and go out on the next attempt.
+    if (received === "offline") return (await this.isAhead(dir)) ? "queued" : "no-change";
 
     if (!(await this.isAhead(dir))) return "no-change";
     try {
       await this.git(["push", "origin", "HEAD:main"], dir);
-    } catch {
-      return "queued"; // push failed (offline / wedged) - commit retained, will push on the next sync
+    } catch (e) {
+      if (e instanceof AuthRevokedError) return "reconnect"; // revoked - operator must reconnect
+      return "queued";
     }
     return "ok";
+  }
+
+  /** Point (or re-point) a root's `origin` at `url`, idempotently. No fetch, no auth needed. */
+  async addRemote(dir: string, url: string): Promise<void> {
+    if (await this.hasRemote(dir)) await this.git(["remote", "set-url", "origin", url], dir);
+    else await this.git(["remote", "add", "origin", url], dir);
+  }
+
+  /** Local-disconnect primitive (invariant 8): drop `origin` so the root reverts to unconnected, but
+   *  touch nothing else - no fetch, no reset, no commit is read or written, so every checkpoint stays
+   *  in `git log` exactly as it was. A no-op (never throws) on a root that has no remote, since
+   *  "already disconnected" is success, not an error the caller must special-case. */
+  async removeRemote(dir: string): Promise<void> {
+    if (await this.hasRemote(dir)) await this.git(["remote", "remove", "origin"], dir);
   }
 
   // --- internals ---
@@ -97,10 +167,6 @@ export class SyncEngine {
     }
   }
 
-  private async isDirty(dir: string): Promise<boolean> {
-    return (await this.git(["status", "--porcelain"], dir)).trim().length > 0;
-  }
-
   private async isAhead(dir: string): Promise<boolean> {
     try {
       return parseInt((await this.git(["rev-list", "--count", "origin/main..HEAD"], dir)).trim(), 10) > 0;
@@ -109,8 +175,11 @@ export class SyncEngine {
     }
   }
 
-  /** Whether any git remote is configured - false for a local-only stub repo (no account yet). */
-  private async hasRemote(dir: string): Promise<boolean> {
+  /** Whether any git remote is configured - false for a local-only stub repo (no account yet).
+   *  Public because the console has to tell "waiting to be saved" apart from "there is nowhere to
+   *  save to yet": with no account the card must state the truth rather than offer a save that
+   *  cannot do anything. `git remote` is a local read - no network. */
+  async hasRemote(dir: string): Promise<boolean> {
     return (await this.git(["remote"], dir)).trim().length > 0;
   }
 
@@ -124,11 +193,16 @@ export class SyncEngine {
     }
   }
 
-  private async commitMessage(dir: string): Promise<string> {
-    const files = (await this.git(["diff", "--cached", "--name-only"], dir))
+  /** Files staged for the next checkpoint. Empty means there is genuinely nothing to record - which
+   *  `status --porcelain` cannot tell us, because it also reports the internal paths we just unstaged. */
+  private async stagedFiles(dir: string): Promise<string[]> {
+    return (await this.git(["diff", "--cached", "--name-only"], dir))
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean);
+  }
+
+  private commitMessage(files: string[]): string {
     const shown = files.slice(0, 5).join(", ");
     const more = files.length > 5 ? ` (+${files.length - 5} more)` : "";
     return `${this.deps.actor}: update ${shown}${more}`;
@@ -142,12 +216,21 @@ export class SyncEngine {
       /* rebase may have failed before starting (e.g. bad upstream) - nothing to abort */
     }
     const stamp = String(this.deps.now());
-    const changed = (await this.git(["diff", "--name-only", "HEAD", "origin/main"], dir))
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    // Everything the reset is about to overwrite, from BOTH sources:
+    //  - what the remote changed relative to our HEAD (the classic conflict case), and
+    //  - anything dirty in the working tree right now (modified, staged, or untracked).
+    // The second half is not redundant: a rebase refuses to start at all on a dirty tree, so the
+    // file that provoked this may never appear in the HEAD..origin/main list. Backing up only that
+    // list would hard-reset an operator's uncommitted edit into nothing (invariant 8).
+    const changed = new Set<string>([
+      ...lines(await this.git(["diff", "--name-only", "HEAD", "origin/main"], dir)),
+      ...lines(await this.git(["ls-files", "--modified", "--others", "--exclude-standard"], dir)),
+      ...lines(await this.git(["diff", "--cached", "--name-only"], dir)),
+    ]);
 
     for (const rel of changed) {
+      // Never copy workspace-internal paths - .conflicts/ into .conflicts/ would nest forever.
+      if (INTERNAL.some((p) => rel === p || rel.startsWith(`${p}/`))) continue;
       const src = join(dir, rel);
       if (!existsSync(src)) continue;
       const dest = join(dir, ".conflicts", stamp, rel);
@@ -170,21 +253,44 @@ export class SyncEngine {
     // rejected error (err.stderr) rather than leaking to the console.
     // pinnedGit keeps every checkout LF-canonical, so backupAndReset's byte-for-byte backup holds on
     // a stock Windows install too (invariant 8). See lib/git-pin.ts for why.
-    const { stdout } = await execFileAsync("git", pinnedGit(args), {
-      cwd,
-      encoding: "utf8",
-      timeout: GIT_TIMEOUT_MS,
-      maxBuffer: GIT_MAX_BUFFER,
-      env: {
-        ...process.env,
-        GIT_AUTHOR_NAME: this.deps.actor,
-        GIT_AUTHOR_EMAIL: `${this.deps.actor}@buildex.local`,
-        GIT_COMMITTER_NAME: this.deps.actor,
-        GIT_COMMITTER_EMAIL: `${this.deps.actor}@buildex.local`,
-      },
-    });
-    return stdout;
+    const base: NodeJS.ProcessEnv = {
+      ...process.env,
+      GIT_AUTHOR_NAME: this.deps.actor,
+      GIT_AUTHOR_EMAIL: `${this.deps.actor}@buildex.local`,
+      GIT_COMMITTER_NAME: this.deps.actor,
+      GIT_COMMITTER_EMAIL: `${this.deps.actor}@buildex.local`,
+    };
+    const run = (): Promise<{ stdout: string }> =>
+      execFileAsync("git", pinnedGit(args), {
+        cwd,
+        encoding: "utf8",
+        timeout: GIT_TIMEOUT_MS,
+        maxBuffer: GIT_MAX_BUFFER,
+        env: { ...base, ...(this.deps.auth?.headerEnv() ?? {}) }, // header read FRESH each attempt
+      });
+    try {
+      return (await run()).stdout;
+    } catch (e) {
+      // One rotate-and-retry when the failure is an auth rejection AND we have a way to rotate. Local
+      // ops never hit this (no network → no 401); only fetch/push can. A second failure propagates -
+      // the scheduler already turns a thrown publish into `needs-help` and never loses local work.
+      const stderr = (e as { stderr?: string })?.stderr ?? (e instanceof Error ? e.message : "");
+      const classify = this.deps.classifyAuthError ?? ((s: string) => DEFAULT_AUTH_RE.test(s));
+      if (this.deps.auth && classify(String(stderr))) {
+        const outcome = await this.deps.auth.onAuthError();
+        if (outcome === "rotated") return (await run()).stdout; // retry once with the rotated header
+        if (outcome === "revoked") throw new AuthRevokedError(String(stderr)); // account dead → needs-help
+        // "offline": rotation couldn't reach the server - fall through and propagate the original
+        // error so the caller treats it as a transient offline/queued failure and retries later.
+      }
+      throw e;
+    }
   }
+}
+
+/** Split git's newline output into trimmed, non-empty entries. */
+function lines(out: string): string[] {
+  return out.split("\n").map((s) => s.trim()).filter(Boolean);
 }
 
 /** Refuse to operate inside a cloud-synced folder - concurrent cloud sync corrupts git repos. */

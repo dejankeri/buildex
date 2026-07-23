@@ -1,12 +1,46 @@
-# Litestream - continuous replication of the sync control database to object storage.
-# Pairs with an hourly restic snapshot of /srv/buildex/repos (see infra/backup-repos.sh). The bucket
-# and endpoint are supplied via infra/.env at deploy time (public repo - placeholders only).
+# Litestream - continuous replication of the sync SQLite databases to object storage.
+# Runs as the container ENTRYPOINT (see apps/sync/entrypoint.sh, invoked by apps/sync/Dockerfile): a
+# Fly machine runs one container, so it cannot be a compose sidecar. `litestream replicate -exec`
+# itself never restores anything - it only ships the live db forward to the replica. entrypoint.sh
+# runs a separate `litestream restore -if-db-not-exists -if-replica-exists` before starting replicate,
+# which is what actually gives restore-before-serve ordering on a cold start; without that separate
+# invocation, a machine that boots on an empty volume would create a fresh (empty) db and immediately
+# replicate it over the real backup.
+#
+# This whole file - and litestream itself - is only invoked when entrypoint.sh sees a configured
+# LITESTREAM_ENDPOINT. Production (Fly) always sets one, so production is always replicated. Local
+# dev (infra/compose.yml) leaves it unset by default, so entrypoint.sh skips litestream entirely and
+# local dev runs unreplicated - there is no implicit dev target here to accidentally write to.
+#
+# Target is Cloudflare R2 (S3-compatible, zero egress). Bucket, endpoint and credentials come from
+# the environment at deploy time - public repo, placeholders only.
+#
+# NOTE: these MUST be plain ${VAR} references, never bash-style ${VAR:-default}. Litestream's env
+# substitution does not understand the `:-default` shell fallback syntax - it treats the whole
+# `VAR:-default` string as one literal (unresolvable) variable name, resolves it to empty, and exits
+# with "bucket required for s3 replica" before the -exec child (node) ever runs. Since Litestream is
+# the container ENTRYPOINT, that failure means node never starts and /healthz is never reachable.
+# Every environment that runs this image with replication enabled - compose for dev opt-in, Fly for
+# prod - MUST supply LITESTREAM_BUCKET and LITESTREAM_ENDPOINT itself; there is no in-file default
+# to fall back to.
 dbs:
   - path: /srv/buildex/control.db
     replicas:
       - type: s3
-        bucket: ${LITESTREAM_BUCKET:-buildex-backups-REPLACE}
+        bucket: ${LITESTREAM_BUCKET}
         path: control.db
-        endpoint: ${LITESTREAM_ENDPOINT:-https://object-storage.example.com}
-        # Restore on a clean VM with:  litestream restore -o /srv/buildex/control.db s3://<bucket>/control.db
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: auto
+        # Restore onto a clean machine with:
+        #   litestream restore -config /etc/litestream.yml -o /srv/buildex/control.db /srv/buildex/control.db
         # then run the rehearsed restore drill (apps/sync restore-drill) before serving traffic.
+  # server.ts also opens a second SQLite database, schedules.db, in the same data dir (automation
+  # run-state). The automations tick loop is deliberately unwired today, so the impact of missing it
+  # here is near zero - but the moment it goes live this file must already be backing it up.
+  - path: /srv/buildex/schedules.db
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: schedules.db
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: auto

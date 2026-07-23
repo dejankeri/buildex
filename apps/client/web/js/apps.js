@@ -188,7 +188,7 @@ function appRow(a, editing) {
   mountAppLogo($(".aemoji", row), a.name);
   // The row IS the AI chat. Not connected → the Connect dialog first (never drop the operator into a
   // chat with dead tools); connected / no-auth-needed → straight into the chat.
-  row.onclick = () => (needsAuth ? openConnectDialog(a) : openAppChat(a));
+  row.onclick = () => (needsAuth ? openConnectDialog(a) : openAppChat(a, true)); // the rail is navigation: re-focus
   const conn = $(".aconn", row);
   if (conn) conn.onclick = (e) => { e.stopPropagation(); openConnectDialog(a); };
   $(".aweb", row).onclick = (e) => { e.stopPropagation(); openAppTab(a); };
@@ -261,16 +261,26 @@ async function appCatalog() {
  * stays EMPTY - the orienting context (the app's MCP tools + bundled skills) is INJECTED invisibly as a
  * system-prompt append on every turn (`tab.systemAppend`), not typed into the box. A discrete context
  * chip above the composer shows it's active and, if the tools aren't connected yet, offers to connect.
- * One chat per app: clicking the rail row again re-focuses the chat that is already open rather than
- * stacking up empty duplicates (the rail is now primary navigation, so it gets clicked a lot).
+ * Asking for a new one always GETS a new one - an operator can have three Notion chats going at once
+ * in the same session, the way they can have three of anything else. Only navigation re-focuses:
+ * clicking the app's row in the rail means "take me to my Notion chat", so it passes reuse=true and
+ * lands on the open one instead of stacking up empty duplicates. The ＋ menus mean "start a new
+ * Notion chat" and always do.
  * @param {object} app - the installed app record (name === catalog pack id).
+ * @param {boolean} [reuse] - true to re-focus an already-open chat for this app instead of starting one.
  */
-async function openAppChat(app) {
-  const open = (S.tabs || []).find((t) => t.type === "chat" && t.app && t.app.name === app.name);
-  if (open) {
-    activateTab(open.id);
-    return;
+async function openAppChat(app, reuse) {
+  if (reuse) {
+    const open = (S.tabs || []).find((t) => t.type === "chat" && t.app && t.app.name === app.name);
+    if (open) {
+      activateTab(open.id);
+      return;
+    }
   }
+  // Parallel chats for one app need telling apart, so the second and later carry a number - the
+  // title is what the operator reads in the tab strip AND in the session's list of chats.
+  const nth = (S.tabs || []).filter((t) => t.type === "chat" && t.app && t.app.name === app.name).length + 1;
+  const title = nth > 1 ? app.title + " " + nth : app.title;
   // Look up the app's catalog pack (id === app.name) for its MCP + skills, so the agent is oriented.
   const pack = (await appCatalog()).find((p) => p.id === app.name);
   const skills = (pack && pack.skills) || [];
@@ -285,13 +295,13 @@ async function openAppChat(app) {
 
   const proj = S.projects && S.projects.find((p) => p.id === S.activeProject);
   const folder = (proj && proj.name) || (S.config.company && S.config.company.name) || "Conversations";
-  const { id } = await postJSON("/api/sessions", { folder, title: app.title });
+  const { id } = await postJSON("/api/sessions", { folder, title });
   // `app` is persisted on the item so the rail can badge this chat with the app's mark, and so
   // re-opening the session restores the chat's app context (connect banner + logo) instead of
   // degrading it to a plain chat.
-  if (S.activeProject) await postJSON("/api/projects/" + S.activeProject + "/items", { item: { type: "chat", sessionId: id, title: app.title, app: app.name } });
+  if (S.activeProject) await postJSON("/api/projects/" + S.activeProject + "/items", { item: { type: "chat", sessionId: id, title, app: app.name } });
   await refreshProjects();
-  const tab = addTab({ type: "chat", title: app.title, sessionId: id, status: "idle", systemAppend, app: app, appConn: conn });
+  const tab = addTab({ type: "chat", title, sessionId: id, status: "idle", systemAppend, app: app, appConn: conn });
   buildChatPane(tab);
   loadSession(tab);
 }
@@ -349,7 +359,7 @@ async function openConnectDialog(app) {
   const conn = appConn(app.name);
   const pack = (await appCatalog()).find((p) => p.id === app.name);
   const routes = appConnectRoutes(app, pack, conn);
-  if (!routes.length) { openAppChat(app); return; } // nothing to connect → just open the chat
+  if (!routes.length) { openAppChat(app, true); return; } // nothing to connect → just open the chat
 
   const single = routes.length === 1;
   const bd = elt("div", "ovbackdrop");

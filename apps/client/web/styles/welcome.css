@@ -10,3 +10,23 @@
   .wz-actions{display:flex;align-items:center;margin-top:20px;gap:10px;} .wz-right{display:flex;gap:8px;margin-left:auto;}
   .wz-primary{background:var(--brand);color:#04211d;border:0;border-radius:8px;padding:9px 16px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;} .wz-primary:hover{filter:brightness(1.08);}
   .wz-ghost{background:none;border:1px solid var(--line-2);color:var(--muted);border-radius:8px;padding:9px 14px;font:inherit;font-size:13px;cursor:pointer;} .wz-ghost:hover{color:var(--ink);background:var(--panel-2);}
+  /* the final step's "connect an account" form (Task 10) */
+  .wz-connect{margin-top:12px;display:flex;flex-direction:column;gap:8px;}
+  .wz-field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);}
+  .wz-field input{font:inherit;font-size:13px;color:var(--ink);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px;}
+  .wz-err{color:var(--gate);font-size:12.5px;}
+  /* the sign-in modal (js/signin.js): Google only in v1 - email magic-link is deferred (needs a
+     backend flow that doesn't exist yet) - a plain-text link steps aside into the existing
+     setup-code flow (account.js) rather than duplicating those fields. */
+  .wz-full{width:100%;box-sizing:border-box;text-align:center;}
+  .wz-link{display:inline-block;margin-top:10px;padding:0;background:none;border:0;color:var(--muted);font:inherit;font-size:12px;text-decoration:underline;cursor:pointer;}
+  .wz-link:hover{color:var(--ink);}
+  /* the first-run "name your company" dialog (js/onboard-dialog.js): a Company name field plus,
+     when signInAvailable, a choice between backing up to the cloud (default) and staying local. */
+  .wz-onboard-opts{margin-top:14px;display:flex;flex-direction:column;gap:8px;}
+  .wz-onboard-opt{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line-2);border-radius:10px;cursor:pointer;transition:border-color .15s,background .15s;}
+  .wz-onboard-opt:hover{border-color:var(--muted);}
+  .wz-onboard-opt.on{border-color:var(--brand);background:var(--panel-2);}
+  .wz-onboard-opt input[type="radio"]{margin-top:3px;flex:none;}
+  .wz-onboard-opt b{display:block;color:var(--ink);font-size:13px;}
+  .wz-onboard-opt p{margin:2px 0 0;font-size:12.5px;line-height:1.45;color:var(--muted);}

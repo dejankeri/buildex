@@ -114,8 +114,10 @@ function assertName(name: string): void {
 }
 
 /** Which repo the winning skill came from. Prefer the generated manifest (survives junctions and
- *  copies, where the link target can't be read back); otherwise infer from the canonical path. */
-function originOf(workspace: string, roots: Root[], name: string, skillDir: string): string {
+ *  copies, where the link target can't be read back); otherwise infer from the canonical path.
+ *  Exported so the skills LIST (not just a single read) can carry ownership - the Brain rail's
+ *  Company/Private scope filter is only honest if every verb knows which brain it came from. */
+export function originOf(workspace: string, roots: Root[], name: string, skillDir: string): string {
   const manifest = join(workspace, ".claude", "skill-origins.json");
   if (existsSync(manifest)) {
     try {

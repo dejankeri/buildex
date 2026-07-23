@@ -1,48 +1,35 @@
-# buildex sync - deployment stack. One small VM, Docker Compose: the sync
-# service behind a TLS reverse proxy, with continuous SQLite replication. 12-factor throughout, so
-# re-hosting is configuration, not a rewrite.
+# buildex sync - LOCAL DEVELOPMENT stack. Production runs on Fly.io (infra/fly.toml), which
+# terminates TLS and runs one container, so there is no reverse proxy and no litestream sidecar
+# here either - the image's own entrypoint wraps litestream (see apps/sync/Dockerfile).
 #
-# PUBLIC REPO - no live values. Real hosts, keys, and object-storage targets live in the private
-# infra repo and are supplied via an untracked infra/.env at deploy time.
+# Replication is off by default here: LITESTREAM_ENDPOINT has no default, and entrypoint.sh skips
+# litestream entirely when it is unset, so a fresh `docker compose up` boots unreplicated - no
+# object storage, no credentials, needed to develop locally. To exercise real replication against a
+# bucket, set LITESTREAM_ENDPOINT, LITESTREAM_BUCKET and the LITESTREAM_ACCESS_KEY_ID /
+# LITESTREAM_SECRET_ACCESS_KEY pair in the untracked infra/.env below.
+#
+# PUBLIC REPO - no live values. Real hosts and keys live outside this repo and are supplied via an
+# untracked infra/.env.
+#
+# Build context is the repository root: tsc is hoisted there.
 services:
-  proxy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-    depends_on:
-      - sync
-
   sync:
-    build: ../apps/sync
+    build:
+      context: ..
+      dockerfile: apps/sync/Dockerfile
     restart: unless-stopped
     environment:
-      # Supplied from infra/.env (untracked). Never bake secrets into the image.
       - BUILDEX_SERVICE_KEY=${BUILDEX_SERVICE_KEY:?set in infra/.env}
-      - BUILDEX_JWT_SECRET=${BUILDEX_JWT_SECRET:?set in infra/.env}
+      - BUILDEX_PUBLIC_BASE_URL=${BUILDEX_PUBLIC_BASE_URL:-http://127.0.0.1:8080}
       - BUILDEX_DATA_DIR=/srv/buildex
-    volumes:
-      - buildex_data:/srv/buildex   # /srv/buildex/{control.db, repos}
-    expose:
-      - "8080"
-
-  litestream:
-    image: litestream/litestream:0.3
-    restart: unless-stopped
-    command: replicate
+      - LITESTREAM_BUCKET=${LITESTREAM_BUCKET}
+      - LITESTREAM_ENDPOINT=${LITESTREAM_ENDPOINT}
+      - LITESTREAM_ACCESS_KEY_ID=${LITESTREAM_ACCESS_KEY_ID}
+      - LITESTREAM_SECRET_ACCESS_KEY=${LITESTREAM_SECRET_ACCESS_KEY}
     volumes:
       - buildex_data:/srv/buildex
-      - ./litestream.yml:/etc/litestream.yml:ro
-    environment:
-      - LITESTREAM_ACCESS_KEY_ID=${LITESTREAM_ACCESS_KEY_ID:?set in infra/.env}
-      - LITESTREAM_SECRET_ACCESS_KEY=${LITESTREAM_SECRET_ACCESS_KEY:?set in infra/.env}
-    depends_on:
-      - sync
+    ports:
+      - "8080:8080"
 
 volumes:
   buildex_data:
-  caddy_data:

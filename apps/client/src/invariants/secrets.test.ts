@@ -75,7 +75,7 @@ describe("SECRETS INVARIANT [release-gate:secrets]: keychain values never leak i
     // secrets live ONLY in the keychain
     const keychain = new InMemoryKeychain();
     keychain.set("connector:gmail", SECRET);
-    keychain.set("machine-token", TOKEN);
+    keychain.set("org:demo:machine-token", TOKEN);
 
     // a core root with rules (no secret) + generate the native agent config at the workspace root
     const core = join(base, "core");
@@ -92,7 +92,7 @@ describe("SECRETS INVARIANT [release-gate:secrets]: keychain values never leak i
 
     // the operator does real work and it syncs
     writeFileSync(join(team, "conventions.md"), "# our conventions\n");
-    await new SyncEngine({ now: () => 1, actor: "operator" }).syncWritable(team);
+    await new SyncEngine({ now: () => 1, actor: "operator" }).publish(team);
 
     // a chat session records agent events (never secrets)
     const sessions = new FileSessionStore(join(ws, ".sessions"));

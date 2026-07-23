@@ -48,6 +48,7 @@ async function boot() {
   $("#tgLeft").onclick = () => { $(".app").classList.toggle("lc"); savePanels(); }; // toggle + remember the left column
   $("#tgRight").onclick = () => { $(".app").classList.toggle("rc"); savePanels(); }; // toggle + remember the right column
   $("#helpBtn").onclick = () => startTour(true); // replay the guided tour any time
+  $("#profileBtn").onclick = () => openProfile(); // account home - sign in / your company / log out
   $("#brandBtn").onclick = () => openBrainTab();
   $("#navBack").onclick = () => navGo(-1);
   $("#navFwd").onclick = () => navGo(1);
@@ -59,7 +60,16 @@ async function boot() {
   $("#tabAdd").onclick = (e) => openAddMenu(e.currentTarget);
   document.addEventListener("keydown", onAddShortcut); // ⌘/Ctrl shortcuts for the ＋ add-menu
   $$("#rtabs button[data-r]").forEach((b) => b.onclick = () => switchRight(b.dataset.r));
-  $("#sync").onclick = () => switchRight("synclog");
+  // The dot leads to whatever the operator most likely wants: no account yet - or an account that
+  // needs reconnecting - means the action is to (re)connect; unsaved work lives in the pending tray;
+  // otherwise the change log answers "what happened?".
+  $("#sync").onclick = () => {
+    const dot = $("#sync");
+    if (dot.classList.contains("local") || dot.classList.contains("reconnect")) { openConnectAccount(); return; }
+    // Unsaved work and "what synced?" both live in the brain map now (the Gate holds the save card's
+    // sibling approvals; Learning is the change log) — the dot opens the map rather than a lone panel.
+    switchRight("brain");
+  };
   $("#usageRefresh").onclick = () => refreshUsage(true);
   try {
     S.config = await getJSON("/api/config");
@@ -68,7 +78,9 @@ async function boot() {
   await refreshProjects();
   await refreshApps();
   await loadTree();
-  switchRight("pending"); // Pending is the default right-panel tab
+  // Restore the scope lens + the persisted panel choice; the Brain map is the default right panel.
+  try { S.brainScope = localStorage.getItem("buildex.brainScope") || "all"; } catch (e) {}
+  switchRight("brain");
   // Restore the remembered column state; on the first-ever launch (nothing stored) leave BOTH columns
   // open so a new operator sees the whole workspace - left rail AND right panel - before collapsing.
   let panels = null;
@@ -85,5 +97,17 @@ async function boot() {
   setInterval(() => refreshUsage(), 15 * 60000);
   // load the active project's context (its tabs), or show the start screen if it's empty
   if (S.activeProject) switchToProject(S.activeProject);
+  // First run: ask for the company name (and, when available, whether to back up to the cloud)
+  // BEFORE the rest of the wizard. openOnboard() does NOT mark onboarding complete - it only tears
+  // itself down - so /api/onboarding still reports firstRun:true afterward and checkOnboarding()
+  // (called unconditionally below) runs its full step sequence, including the essential "Connect
+  // your agent (Claude Code)" step. checkOnboarding() itself POSTs /api/onboarding/complete when
+  // it finishes, so the marker is set exactly once, by the wizard.
+  let firstRun = false;
+  try {
+    const o = await getJSON("/api/onboarding");
+    firstRun = !!(o && o.firstRun);
+  } catch (e) {}
+  if (firstRun && typeof openOnboard === "function") await openOnboard();
   checkOnboarding(); // fire-and-forget - shows the first-run wizard once on a fresh install
 }

@@ -80,22 +80,27 @@ const EXPOSE = [
   "findPendingCard", "flattenTree", "fmtNext", "fmtReset", "getJSON", "hideProjectStart",
   "injectApproval", "kbdLabel", "loadAgentView", "loadBrain", "loadDoc", "loadMap", "loadSession", "loadStorePane",
   "loadTree", "navGo", "navRecord", "navUpdate", "newConversation", "newProject", "offerConnect",
-  "onAddShortcut", "openAddAppForm", "openAddMenu", "openAppTab", "openAutomationEditor",
+  "onAddShortcut", "openAddAppForm", "openAddMenu", "openAppTab", "openAutomationEditor", "openConnectAccount",
   "openBrainTab", "openBrowserTab", "openChatTab", "openConnectorEditor", "openDocTab", "openFilesSettings",
-  "openMapTab", "openMarkdownEditor", "openMcpEditor", "openProjectItem", "openSaveMenu", "openSaveDialog", "locationLabel",
+  "openMapTab", "openMarkdownEditor", "openMcpEditor", "openOnboard", "openProfile", "openLogoutConfirm", "openProjectItem", "openSaveMenu", "openSaveDialog", "locationLabel",
   "openSkillEditor", "openSkillTab", "openStoreTab", "parseSkill", "postJSON", "projectMenu",
   "refreshOrgs", "renderOrgSwitcher", "toggleOrgMenu", "switchOrg", "createOrg",
   "projectRename", "projectStatus", "rAuto", "rFiles", "rGateway", "rPending", "rSkills", "rSyncLog", "refreshApps",
   "refreshPending", "refreshProjects", "refreshUsage", "removeProjectItem", "renderAgentHealth", "rootSlot", "toggleTreeNode", "treeActions", "wireTreeActions", "openFileMenu", "openTreeMoreMenu", "uploadIntoFolder", "fsDo", "promptAction", "toast", "renderBrain",
-  "renderBrainRail", "renderConnectorEditor", "renderHistory", "renderMcpEditor", "renderPending",
+  "renderBrainRail", "renderConnectorEditor", "renderHistory", "renderMcpEditor", "renderPending", "renderSigninPill",
   "renderTabbar", "renderTree", "reorderTab", "resolveCard", "runSkill", "scrollTabIntoView", "sendPrompt", "setMsg", "setSync",
-  "showProjectStart", "startApiKey", "clearApiKey", "startAppHost", "startBrainFlow", "startInstall", "startUninstall", "storeNotice",
+  "showProjectStart", "startApiKey", "clearApiKey", "startAppHost", "startBrainFlow", "startInstall", "startSignIn", "startUninstall", "storeNotice",
   // Apps & Tools rail: manual order, the visible cap, edit mode, and the chat-side connect gate.
   "appOrderKey", "savedAppOrder", "saveAppOrder", "orderApps", "renderApps", "appRow", "wireAppDrag", "toggleAppsEdit",
   "openAppChat", "openConnectDialog", "appConnectRoutes", "connectAppApi",
   "appGateActive", "renderAppGate", "clearAppGate", "syncAppConn", "renderCtxChip",
   "appGlyph", "mountAppLogo", "openAppSettings", "appSettingsBody",
-  "stripFrontmatter", "switchRight", "switchToProject", "wireAppBridge", "wysiInline", "wysiToMd",
+  "stripFrontmatter", "switchRight", "switchToProject", "syncDotState", "wireAppBridge", "wysiInline", "wysiToMd",
+  // Brain rail (right panel) + Documents zones + the media guard.
+  "rBrain", "renderBrainPanel", "renderBrainSection", "renderBrainSectionBody", "brainScope", "setBrainScope",
+  "scopeVerbs", "brainSectionOpen", "rDocs", "externalDrives", "renderExternalDrives", "connectDrive", "classifyDrop",
+  // Agent Context viewer ("what my agent sees").
+  "openAgentContextTab", "loadAgentContext", "renderAgentContext", "regenAgentContext", "actxGroup", "actxRow", "actxSelectFile",
 ];
 const SHIM = ";globalThis.__c = { " + EXPOSE.join(", ") + " };";
 

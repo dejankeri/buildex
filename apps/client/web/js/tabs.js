@@ -44,7 +44,7 @@ function renderTabbar() {
       t.type === "chat"
         ? '<span class="st ' + (t.status || "idle") + '"></span>'
         : '<span class="ti">' +
-          ({ doc: "▤", browser: "◉", map: "◇", brain: "❋", skill: "✦", skilledit: "✎", mdedit: "✎", automation: "↻", mcp: "⚡", conn: "⇄", app: "◈", store: "◈" }[t.type] || "◈") +
+          ({ doc: "▤", browser: "◉", map: "◇", brain: "❋", agentctx: "◎", skill: "✦", skilledit: "✎", mdedit: "✎", automation: "↻", mcp: "⚡", conn: "⇄", app: "◈", store: "◈" }[t.type] || "◈") +
           "</span>";
     el.innerHTML = icon + '<span class="tt">' + esc(t.title) + '</span><span class="x">×</span>';
     el.onclick = (e) => {

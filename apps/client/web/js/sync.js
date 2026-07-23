@@ -12,23 +12,35 @@ let syncBusy = 0;
 
 /**
  * Paint the sync dot for a given state and set its tooltip.
- * @param {"ok"|"busy"|"off"|"queued"|"help"|"local"} state - dot state (unknown values fall back to "Synced" text).
+ * @param {"ok"|"busy"|"off"|"queued"|"help"|"local"|"unsaved"|"reconnect"} state - dot state (unknown values fall back to "Synced" text).
  */
 function setSync(state) {
   const dot = $("#sync");
   if (!dot) return;
-  dot.classList.remove("ok", "busy", "off", "queued", "help", "local");
+  dot.classList.remove("ok", "busy", "off", "queued", "help", "local", "unsaved", "reconnect");
   dot.classList.add(state);
   const label =
     {
       ok: "Synced",
       busy: "Syncing…",
       off: "Offline - will retry",
-      queued: "Saved - will sync when back online",
+      // The offline retry is bounded (a handful of attempts with backoff) - once it gives up,
+      // coming back online does nothing on its own. Never promise an automatic retry here; say
+      // only what stays true either way: the work is safe on this machine, waiting to be sent.
+      queued: "Saved on this machine - click Save again to send it",
       help: "Needs attention - a change couldn't sync automatically",
-      local: "Local workspace - everything stays on your machine (team sync accounts are coming)",
+      // "local" only ever paints once syncDotState (projects.js) has decided there's no connected
+      // account - so this copy retires on its own the moment the operator connects one; it must never
+      // claim accounts are still "coming", since that's exactly what this state means. Its click opens
+      // the standalone connect modal (see account.js / boot.js), so the copy invites that click.
+      local: "Local workspace - stays on this machine · click to connect an account",
+      unsaved: "You have unsaved work · click to save",
+      reconnect: "Your account can’t sync right now - click to reconnect",
     }[state] || "Synced";
-  dot.title = label + " · click for recent changes";
+  // "unsaved" already tells the operator what the click does (save) and "local" what it does (connect);
+  // "reconnect" likewise invites the click, so none of the three get the generic suffix - otherwise
+  // the tooltip would say both.
+  dot.title = state === "unsaved" || state === "local" || state === "reconnect" ? label : label + " · click for recent changes";
   // a11y: #sync is a role="status" live region, so a state change is announced (the dot itself
   // carries no text). Keep the accessible name in step with the state.
   dot.setAttribute("aria-label", "Sync status: " + label);

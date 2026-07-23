@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { writeCoreContent, writeAcmeContent, writePrivateContent, writeWorkspaceExtras, installDemoPacks } from "../apps/client/src/demo/acme-seed.js";
+import { createKeychain } from "../apps/client/src/keychain/keychain.js";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CORE_PACK = join(REPO, "packs", "core");
@@ -43,7 +44,15 @@ function pushSeed(name: string, seed: string) {
   git(["push", "origin", "HEAD:main"], seed);
 }
 
-if (reset && existsSync(DEMO)) rmSync(DEMO, { recursive: true, force: true });
+if (reset && existsSync(DEMO)) {
+  rmSync(DEMO, { recursive: true, force: true });
+  // The demo's secrets live in the OS keychain (demo.ts runs keychainMode "auto"), NOT under DEMO - so
+  // the rmSync above cannot reach them. The keychain service id is sha256(workspace) and this demo dir
+  // is deliberately stable, so without this a NEW demo company at the same path would inherit the old
+  // one's connector tokens (invariant 6). Clear that namespace on every reset. Best-effort: clear()
+  // never throws, and if no OS keychain is available the in-memory fallback is a harmless no-op.
+  createKeychain({ mode: "auto", workspace: join(DEMO, "workspace") }).clear();
+}
 if (existsSync(join(DEMO, "workspace"))) {
   console.log(`Demo already set up at ${DEMO}. Re-run with --reset to rebuild.`);
   process.exit(0);

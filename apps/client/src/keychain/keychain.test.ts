@@ -16,8 +16,18 @@ function fakeSecurity() {
         const v = store.get(keyOf(args));
         return v === undefined ? { status: 44, stdout: "" } : { status: 0, stdout: v + "\n" };
       }
-      case "delete-generic-password":
+      case "delete-generic-password": {
+        // `-s <service>` alone (no `-a`): remove ONE item under that service - the real CLI's
+        // by-service delete, which `clear()` loops until 44. With `-a` present, an exact-key delete.
+        if (!args.includes("-a")) {
+          const service = argOf(args, "-s");
+          const hit = [...store.keys()].find((k) => k.startsWith(`${service} / `));
+          if (hit === undefined) return { status: 44, stdout: "" };
+          store.delete(hit);
+          return { status: 0, stdout: "" };
+        }
         return { status: store.delete(keyOf(args)) ? 0 : 44, stdout: "" };
+      }
       default:
         return { status: 1, stdout: "" };
     }
@@ -68,6 +78,49 @@ describe("SystemKeychain - macOS security-backed persistence", () => {
     createKeychain({ mode: "system", workspace: "/ws/alpha", run, platform: "darwin" }).set("connector:gmail", "a");
     createKeychain({ mode: "system", workspace: "/ws/beta", run, platform: "darwin" }).set("connector:gmail", "b");
     expect(store.size).toBe(2); // two distinct service entries
+  });
+
+  it("clear() wipes every key under this workspace's service - whoever wrote it", () => {
+    const { run, store } = fakeSecurity();
+    const kc = new SystemKeychain("buildex-shared", run);
+    kc.set("git:token", "T");
+    kc.set("connector:gmail:oauth:tokens", "G");
+    kc.set("connector:slack:oauth:tokens", "S");
+    kc.clear();
+    expect(kc.get("git:token")).toBeUndefined();
+    expect(kc.get("connector:gmail:oauth:tokens")).toBeUndefined();
+    expect(store.size).toBe(0);
+  });
+
+  it("clear() touches only THIS service - another workspace's secrets survive (invariant 6)", () => {
+    const { run } = fakeSecurity();
+    const a = createKeychain({ mode: "system", workspace: "/ws/alpha", run, platform: "darwin" });
+    const b = createKeychain({ mode: "system", workspace: "/ws/beta", run, platform: "darwin" });
+    a.set("connector:gmail", "a");
+    b.set("connector:gmail", "b");
+    a.clear();
+    expect(a.get("connector:gmail")).toBeUndefined();
+    expect(b.get("connector:gmail")).toBe("b"); // the other tenant is untouched
+  });
+
+  it("path-reuse bleed is closed: a NEW keychain at a reused path reads nothing after the old one is cleared", () => {
+    const { run } = fakeSecurity();
+    const oldCompany = createKeychain({ mode: "system", workspace: "/orgs/demo/workspace", run, platform: "darwin" });
+    oldCompany.set("connector:gmail:oauth:tokens", "OLD-COMPANY-SECRET");
+    oldCompany.clear(); // the provisioning purge, run before the path is reused
+    const newCompany = createKeychain({ mode: "system", workspace: "/orgs/demo/workspace", run, platform: "darwin" });
+    expect(newCompany.get("connector:gmail:oauth:tokens")).toBeUndefined();
+  });
+});
+
+describe("InMemoryKeychain", () => {
+  it("clear() empties the store", () => {
+    const kc = new InMemoryKeychain();
+    kc.set("a", "1");
+    kc.set("b", "2");
+    kc.clear();
+    expect(kc.get("a")).toBeUndefined();
+    expect(kc.get("b")).toBeUndefined();
   });
 });
 

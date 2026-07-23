@@ -15,8 +15,8 @@ packaged app persistent with no other wiring change.
 
 ## Design
 
-Same `Keychain` contract as everywhere else — `get` / `set` / `delete`, nothing more (macOS has no
-`deleteAll`/`getMany`, so neither does this; see *Deferred*). Storage is the **Windows Credential
+Same `Keychain` contract as everywhere else — `get` / `set` / `delete`, plus `clear()` (a by-service
+bulk wipe; `getMany` is still deferred — see below). Storage is the **Windows Credential
 Manager** (Generic credentials, `Persist = LOCAL_MACHINE`, DPAPI-encrypted by the OS), reached by
 shelling to Windows PowerShell running an embedded `advapi32` P/Invoke (`CredReadW`/`CredWriteW`/
 `CredDeleteW`).
@@ -30,6 +30,12 @@ shelling to Windows PowerShell running an embedded `advapi32` P/Invoke (`CredRea
   command line (a hardening over the macOS `security -w <argv>` path).
 - **Per-workspace isolation.** The credential target is `` `${keychainService(workspace)}:${key}` `` —
   the same `sha256(workspace)` service prefix macOS uses (invariant 6).
+- **Bulk clear (`clear()`).** Wipes every credential under this workspace's service in one call, scoped
+  to `` `${service}:*` ``. Windows enumerates via a new `CredEnumerateW` runner action and deletes each
+  match (chunk headers + siblings included); macOS loops `security delete-generic-password -s <service>`
+  until "not found". It is the primitive behind the path-reuse purge on fresh provisioning and the
+  in-app "remove all data" action. Best-effort by contract: an empty service or a backend that can't
+  enumerate is a no-op, never a throw, so a purge can't block the provision that triggered it.
 - **Same-user readability (accepted risk).** Credential Manager entries are DPAPI-encrypted **at rest**,
   but carry no per-application ACL: any process running as the operator's own user can read every
   stored token silently (`cmdkey /list` plus a trivial `CredRead`). This is a weaker boundary than the
@@ -111,19 +117,30 @@ the secret on stdin).
   measured need yet. Build + wire it in the connector OAuth sweep, where the reconnect loop is touched
   and boot time can be measured.
 
-## Known limitations (shared with macOS — documented, not fixed here)
+## Path-reuse and orphaned secrets (both platforms)
 
-Because secrets live in the OS vault (not in any BuildEx file), two edges exist **on both macOS and
-Windows**, and neither platform handles them today:
+Because secrets live in the OS vault (not in any BuildEx file), deleting a workspace directory can never
+reach them. Two edges follow from that; the first is now closed, the second is bounded.
 
-1. **Orphaned on uninstall.** Deleting the app / workspace does not remove its vault entries; neither
-   platform has an uninstall hook. The Windows NSIS installer wires no vault cleanup, so uninstalling
-   leaves every stored credential behind - see
-   [Uninstall](guides/package-windows.md#uninstall) for what a Windows removal does and does not
-   reclaim. macOS is worse here: removal is dragging the `.app` to the Trash, so no code runs at all.
-2. **Path-reuse bleed.** The service id is `sha256(workspace path)`; a *new* company created at a
-   deleted company's path inherits the old credentials — an invariant-6 edge.
+1. **Path-reuse bleed — closed.** The service id is `sha256(workspace path)`, so a *new* company created
+   at a prior company's path (the deliberately-stable demo dir on `demo:setup --reset`, or a real org
+   re-provisioned at a freed path) would inherit the old credentials — an invariant-6 edge. It is now
+   fixed at the source: `OrgManager` calls `keychain.clear()` on a workspace **immediately before it is
+   freshly seeded** (`ensureDemo` / `create`), and `demo:setup --reset` clears the demo workspace's
+   namespace after wiping the dir. A fresh provision therefore always starts from an empty namespace,
+   whoever last held that path. Note this was never a live cross-tenant leak: distinct real orgs are
+   keyed by a random id (`randomUUID().slice(0,8)`) and never share a path — the exposure was secret
+   *remanence* past a tenant's deletion, which the purge removes.
 
-A future cross-platform cleanup effort (a `deleteAll(servicePrefix)` primitive wired to company
-teardown / uninstall, plus a defensive purge on fresh provisioning) would close both. It is out of scope
-here because building it Windows-only would be asymmetric, and no teardown/uninstall caller exists yet.
+2. **Orphaned on uninstall — bounded, remediated in-app.** macOS runs no code when a `.app` is dragged
+   to the Trash, so there is no uninstall hook to clear the vault; the Windows NSIS uninstaller likewise
+   wires no vault cleanup (see [Uninstall](guides/package-windows.md#uninstall) for what a Windows
+   removal does and does not reclaim). The honest answer is an in-app **"remove all data"** action
+   (built on the same `clear()` primitive) the operator runs *before* uninstalling. Pre-fix installs may
+   also carry orphaned entries from earlier reused paths; those are inert (unreachable,
+   DPAPI/partition-encrypted at rest) and a one-time run of the in-app action clears them for the active
+   org.
+
+On Windows, the NSIS installer additionally caches a copy of itself under `%LOCALAPPDATA%\<name>-updater`
+(the electron-updater download cache); the uninstaller removes it via a `customUnInstall` include so an
+uninstall doesn't strand ~95 MB.

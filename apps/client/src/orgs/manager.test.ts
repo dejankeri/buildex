@@ -22,14 +22,23 @@ const seedReal = (workspace: string): Root[] => {
 };
 
 let ids: number;
+let purges: string[];
 const make = () =>
-  new OrgManager({ orgsRoot: root, seedDemo, seedReal, idFactory: () => `org${++ids}`, now: () => 1000 + ids });
+  new OrgManager({
+    orgsRoot: root,
+    seedDemo,
+    seedReal,
+    idFactory: () => `org${++ids}`,
+    now: () => 1000 + ids,
+    purge: (workspace) => void purges.push(workspace),
+  });
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "buildex-orgs-"));
   demoSeeds = 0;
   realSeeds = 0;
   ids = 0;
+  purges = [];
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
@@ -126,6 +135,48 @@ describe("OrgManager", () => {
     mgr.ensureDemo();
     expect(() => mgr.setActive("nope")).toThrow();
     expect(mgr.get("nope")).toBeNull();
+  });
+
+  // Path-reuse purge (invariant 6): a workspace path can be reused by a NEW company (the stable demo
+  // dir on `demo:setup --reset`, or a real org re-provisioned at a freed path). The keychain service id
+  // is sha256(path), so without a purge the new company would inherit the old one's OS-vault namespace.
+  // The manager clears that namespace at every FRESH seed - and only then.
+  describe("fresh-provision keychain purge", () => {
+    it("purges the workspace before seeding a fresh demo org", () => {
+      const demo = make().ensureDemo();
+      expect(purges).toEqual([demo.workspace]);
+    });
+
+    it("purges the workspace before seeding a fresh real org", () => {
+      const real = make().create({ name: "My Startup" });
+      expect(purges).toContain(real.workspace);
+    });
+
+    it("does NOT purge on an idempotent ensureDemo (an existing org is never re-seeded or re-purged)", () => {
+      const mgr = make();
+      mgr.ensureDemo();
+      mgr.ensureDemo();
+      expect(purges).toHaveLength(1); // seeded + purged once, not twice
+    });
+
+    it("does NOT purge when a later boot merely resolves an existing active org", () => {
+      const mgr = make();
+      mgr.bootstrap(); // first run: seeds demo + real (their purges)
+      const afterFirstRun = purges.length;
+      mgr.bootstrap(); // reboot: resolves the persisted active org, seeds nothing
+      expect(purges).toHaveLength(afterFirstRun); // no new purge on a normal boot
+    });
+
+    it("forgetAllSecrets() clears every org's namespace - the in-app 'remove all data' teardown", () => {
+      const mgr = make();
+      mgr.bootstrap(); // real + demo
+      mgr.create({ name: "Second" }); // a third org
+      purges.length = 0; // ignore the provision-time purges; we're testing the explicit teardown
+      const n = mgr.forgetAllSecrets();
+      const workspaces = mgr.list().map((o) => o.workspace);
+      expect(purges.sort()).toEqual([...workspaces].sort()); // one purge per org, nothing missed
+      expect(n).toBe(workspaces.length);
+    });
   });
 
   it("list() skips a corrupt org.json instead of crashing", () => {

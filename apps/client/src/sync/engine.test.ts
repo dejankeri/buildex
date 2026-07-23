@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { SyncEngine } from "./engine.js";
+import type { AuthRotation } from "./engine.js";
 
 const ENV = {
   ...process.env,
@@ -45,11 +46,11 @@ function engine(now = () => 1_700_000_000_000) {
   return new SyncEngine({ now, actor: "operator" });
 }
 
-describe("syncWritable - clean path", () => {
+describe("publish - clean path", () => {
   it("commits local changes and pushes them; a fresh clone sees them", async () => {
     const op = clone("op1");
     writeFileSync(join(op, "conventions.md"), "# conventions\n");
-    expect(await engine().syncWritable(op)).toBe("ok");
+    expect(await engine().publish(op)).toBe("ok");
 
     const verify = clone("verify");
     expect(readFileSync(join(verify, "conventions.md"), "utf8")).toContain("conventions");
@@ -58,7 +59,7 @@ describe("syncWritable - clean path", () => {
   it("writes a human-readable commit message (actor + changed files)", async () => {
     const op = clone("op1");
     writeFileSync(join(op, "notes.md"), "hi\n");
-    await engine().syncWritable(op);
+    await engine().publish(op);
     const msg = git(["log", "-1", "--pretty=%s"], op);
     expect(msg).toContain("operator");
     expect(msg).toContain("notes.md");
@@ -66,7 +67,7 @@ describe("syncWritable - clean path", () => {
 
   it("returns no-change when there is nothing to sync", async () => {
     const op = clone("op1");
-    expect(await engine().syncWritable(op)).toBe("no-change");
+    expect(await engine().publish(op)).toBe("no-change");
   });
 });
 
@@ -75,7 +76,7 @@ describe("git runs off the event loop (B6)", () => {
     const op = clone("op1");
     writeFileSync(join(op, "x.md"), "hi\n");
     let interleaved = false;
-    const syncP = engine().syncWritable(op);
+    const syncP = engine().publish(op);
     // With synchronous git this call would block to completion before returning; because git is now
     // async, control returns to the event loop and this setImmediate fires WHILE the sync runs.
     await new Promise<void>((r) =>
@@ -98,7 +99,7 @@ describe("first sync to a freshly-provisioned (empty) remote", () => {
     git(["clone", `file://${emptyBare}`, op], root);
 
     writeFileSync(join(op, "conventions.md"), "# conventions\n");
-    expect(await engine().syncWritable(op)).toBe("ok");
+    expect(await engine().publish(op)).toBe("ok");
 
     const verify = join(root, "fresh-verify");
     git(["clone", "--branch", "main", `file://${emptyBare}`, verify], root);
@@ -123,13 +124,13 @@ describe("SYNC-SAFETY INVARIANT [release-gate:sync-safety]: a conflict never los
 
     // op1 changes doc.md and pushes first
     writeFileSync(join(op1, "doc.md"), "op1 version\n");
-    expect(await engine().syncWritable(op1)).toBe("ok");
+    expect(await engine().publish(op1)).toBe("ok");
 
     // op2, from the same base, makes a *different* change to the same file
     const localContent = "op2 precious edit\n";
     writeFileSync(join(op2, "doc.md"), localContent);
 
-    const result = await engine(() => 1_700_000_000_000).syncWritable(op2);
+    const result = await engine(() => 1_700_000_000_000).publish(op2);
     expect(result).toBe("needs-help");
 
     // the operator's version is preserved byte-for-byte under .conflicts/<ts>/
@@ -158,12 +159,12 @@ describe("SYNC-SAFETY INVARIANT [release-gate:sync-safety]: a conflict never los
     git(["config", "core.autocrlf", "true"], op2);
 
     writeFileSync(join(op1, "doc.md"), "op1 version\n");
-    expect(await engine().syncWritable(op1)).toBe("ok");
+    expect(await engine().publish(op1)).toBe("ok");
 
     const localContent = "op2 precious edit\n";
     writeFileSync(join(op2, "doc.md"), localContent);
 
-    expect(await engine(() => 1_700_000_000_000).syncWritable(op2)).toBe("needs-help");
+    expect(await engine(() => 1_700_000_000_000).publish(op2)).toBe("needs-help");
 
     // byte-for-byte: no CRLF crept into the backup...
     const backup = readFileSync(join(op2, ".conflicts", "1700000000000", "doc.md"), "utf8");
@@ -175,6 +176,34 @@ describe("SYNC-SAFETY INVARIANT [release-gate:sync-safety]: a conflict never los
     expect(reset).toBe("op1 version\n");
     expect(reset).not.toContain("\r");
   });
+
+  it("receive() on a DIRTY tree keeps the operator's uncommitted edit - it is never reset away", async () => {
+    // WHY THIS EXISTS: `git rebase` refuses to start on a dirty working tree, so receive()'s catch
+    // runs backupAndReset - which used to back up only what the REMOTE changed (HEAD..origin/main).
+    // An edit the operator (or a mid-run agent) had not checkpointed yet was in neither list, so
+    // `reset --hard` destroyed it with no backup. That is a direct breach of invariant 8.
+    const op1 = clone("op1");
+    const op2 = clone("op2");
+
+    // A teammate changes a DIFFERENT file and sends it. This is the case that used to lose work:
+    // the remote-changed list is ["theirs.md"], so the operator's dirty doc.md is not in it.
+    writeFileSync(join(op1, "theirs.md"), "teammate version\n");
+    expect(await engine().publish(op1)).toBe("ok");
+
+    // The operator has an uncommitted edit in flight (never checkpointed) when the tick fires.
+    const precious = "operator work in flight\n";
+    writeFileSync(join(op2, "doc.md"), precious);
+    git(["fetch", "origin"], op2); // the remote ref exists locally; the tree is still dirty
+
+    await engine(() => 1_700_000_000_000).receive(op2);
+
+    // Byte for byte, the operator's content still exists - in the tree or under .conflicts/.
+    const backup = join(op2, ".conflicts", "1700000000000", "doc.md");
+    const survived =
+      readFileSync(join(op2, "doc.md"), "utf8") === precious ||
+      (existsSync(backup) && readFileSync(backup, "utf8") === precious);
+    expect(survived).toBe(true);
+  });
 });
 
 describe("local-only stub repo (no remote): work is committed but there is nothing to sync", () => {
@@ -183,7 +212,7 @@ describe("local-only stub repo (no remote): work is committed but there is nothi
     git(["init", "--initial-branch=main", stub], root);
     writeFileSync(join(stub, "notes.md"), "played locally\n");
 
-    expect(await engine().syncWritable(stub)).toBe("local");
+    expect(await engine().publish(stub)).toBe("local");
     // git is the database: the operator's work is captured in local history, not lost
     expect(git(["log", "-1", "--pretty=%s"], stub)).toContain("notes.md");
   });
@@ -196,7 +225,7 @@ describe("local-only stub repo (no remote): work is committed but there is nothi
     git(["commit", "-m", "seed"], stub);
 
     // no changes, no remote - a pull-tick sync must report the neutral local state, not queued
-    expect(await engine().syncWritable(stub)).toBe("local");
+    expect(await engine().publish(stub)).toBe("local");
   });
 
   it("still returns 'queued' when a remote IS configured but unreachable (offline, not local)", async () => {
@@ -204,7 +233,7 @@ describe("local-only stub repo (no remote): work is committed but there is nothi
     const op = clone("op-offline");
     writeFileSync(join(op, "q.md"), "offline\n");
     git(["remote", "set-url", "origin", `file://${join(root, "gone.git")}`], op);
-    expect(await engine().syncWritable(op)).toBe("queued");
+    expect(await engine().publish(op)).toBe("queued");
   });
 });
 
@@ -212,7 +241,7 @@ describe("cloud-guard: refuse to operate inside a cloud-synced folder", () => {
   it("throws for a path under a known cloud provider dir", async () => {
     const dropbox = join(root, "Dropbox", "ws");
     mkdirSync(dropbox, { recursive: true });
-    await expect(engine().syncWritable(dropbox)).rejects.toThrow(/cloud/i);
+    await expect(engine().publish(dropbox)).rejects.toThrow(/cloud/i);
   });
 });
 
@@ -222,14 +251,199 @@ describe("offline queue: unpushed commits survive and a later sync pushes them",
     writeFileSync(join(op, "queued.md"), "made offline\n");
     // simulate offline by pointing origin at a nonexistent remote
     git(["remote", "set-url", "origin", `file://${join(root, "gone.git")}`], op);
-    expect(await engine().syncWritable(op)).toBe("queued");
+    expect(await engine().publish(op)).toBe("queued");
     // the commit is retained locally (not lost)
     expect(git(["log", "-1", "--pretty=%s"], op)).toContain("queued.md");
 
     // reconnect + a NEW engine instance (restart) pushes the queued commit
     git(["remote", "set-url", "origin", `file://${remote}`], op);
-    expect(await engine().syncWritable(op)).toBe("ok");
+    expect(await engine().publish(op)).toBe("ok");
     const verify = clone("verify2");
     expect(existsSync(join(verify, "queued.md"))).toBe(true);
+  });
+});
+
+describe("checkpoint", () => {
+  it("commits local work and reports that it did", async () => {
+    const dir = clone("cp");
+    writeFileSync(join(dir, "doc.md"), "mine\n");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.checkpoint(dir)).toBe("committed");
+    expect(git(["status", "--porcelain"], dir).trim()).toBe("");
+  });
+
+  it("reports no-change when there is nothing to record", async () => {
+    const dir = clone("cp2");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.checkpoint(dir)).toBe("no-change");
+  });
+
+  it("reports no-change when only workspace-internal paths changed", async () => {
+    const dir = clone("cp3");
+    mkdirSync(join(dir, ".conflicts", "1"), { recursive: true });
+    writeFileSync(join(dir, ".conflicts", "1", "doc.md"), "backup\n");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.checkpoint(dir)).toBe("no-change");
+  });
+});
+
+describe("receive", () => {
+  it("brings a teammate's work in without sending ours", async () => {
+    const mine = clone("mine");
+    const theirs = clone("theirs");
+    writeFileSync(join(theirs, "theirs.md"), "from them\n");
+    git(["add", "-A"], theirs);
+    git(["commit", "-m", "theirs"], theirs);
+    git(["push", "origin", "HEAD:main"], theirs);
+
+    writeFileSync(join(mine, "mine.md"), "from me\n");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    await engine.checkpoint(mine);
+    expect(await engine.receive(mine)).toBe("ok");
+
+    expect(existsSync(join(mine, "theirs.md"))).toBe(true);
+    // Ours stayed home: the bare remote has no knowledge of mine.md.
+    expect(git(["ls-tree", "-r", "--name-only", "main"], remote)).not.toContain("mine.md");
+  });
+
+  it("reports local when there is no account yet", async () => {
+    const dir = join(root, "noremote");
+    mkdirSync(dir, { recursive: true });
+    git(["init", "--initial-branch=main", "."], dir);
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.receive(dir)).toBe("local");
+  });
+
+  it("reports offline when the remote cannot be reached", async () => {
+    const dir = clone("gone");
+    git(["remote", "set-url", "origin", `file://${join(root, "does-not-exist.git")}`], dir);
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.receive(dir)).toBe("offline");
+  });
+});
+
+describe("publish", () => {
+  it("sends local work to the remote", async () => {
+    const dir = clone("pub");
+    writeFileSync(join(dir, "doc.md"), "mine\n");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.publish(dir)).toBe("ok");
+    expect(git(["show", "main:doc.md"], remote)).toContain("mine");
+  });
+
+  it("records work and reports queued when the remote is unreachable", async () => {
+    const dir = clone("pubq");
+    git(["remote", "set-url", "origin", `file://${join(root, "does-not-exist.git")}`], dir);
+    writeFileSync(join(dir, "doc.md"), "mine\n");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.publish(dir)).toBe("queued");
+    // The work is safe locally even though it could not be sent (invariant 8).
+    expect(git(["log", "--format=%s", "-1"], dir)).toContain("op: update");
+  });
+
+  it("reports local when there is no account yet, having still recorded the work", async () => {
+    const dir = join(root, "pubnoremote");
+    mkdirSync(dir, { recursive: true });
+    git(["init", "--initial-branch=main", "."], dir);
+    writeFileSync(join(dir, "doc.md"), "mine\n");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.publish(dir)).toBe("local");
+    expect(git(["log", "--format=%s", "-1"], dir)).toContain("op: update");
+  });
+
+  it("reports no-change when there is nothing to send", async () => {
+    const dir = clone("pubclean");
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.publish(dir)).toBe("no-change");
+  });
+});
+
+describe("SYNC-SAFETY INVARIANT [release-gate:sync-safety]: recording work never sends it", () => {
+  it("checkpoint leaves the remote untouched", async () => {
+    const dir = clone("never-sends");
+    const before = git(["rev-parse", "main"], remote).trim();
+
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    for (let i = 0; i < 5; i++) {
+      writeFileSync(join(dir, `doc${i}.md`), `edit ${i}\n`);
+      expect(await engine.checkpoint(dir)).toBe("committed");
+    }
+
+    expect(git(["rev-parse", "main"], remote).trim()).toBe(before);
+  });
+
+  it("checkpoint succeeds even when the remote is unreachable, proving it never touches the network", async () => {
+    const dir = clone("no-network");
+    git(["remote", "set-url", "origin", `file://${join(root, "does-not-exist.git")}`], dir);
+    writeFileSync(join(dir, "doc.md"), "mine\n");
+
+    const engine = new SyncEngine({ now: () => 1, actor: "op" });
+    expect(await engine.checkpoint(dir)).toBe("committed");
+  });
+});
+
+// A repo with a remote that git can NEVER reach, so every fetch/push fails - lets us drive the
+// engine's auth-classification branch without a network. classifyAuthError:()=>true treats that
+// failure as an auth rejection, so onAuthError() is consulted and its outcome decides the result.
+function repoWithUnreachableRemote(root: string, name: string): string {
+  const dir = join(root, name);
+  mkdirSync(dir, { recursive: true });
+  execFileSync("git", ["init", "--initial-branch=main", "."], { cwd: dir, env: ENV });
+  writeFileSync(join(dir, "doc.md"), "x\n");
+  execFileSync("git", ["add", "-A"], { cwd: dir, env: ENV });
+  execFileSync("git", ["commit", "-m", "seed"], { cwd: dir, env: ENV });
+  execFileSync("git", ["remote", "add", "origin", "file://" + join(root, "does-not-exist.git")], { cwd: dir, env: ENV });
+  return dir;
+}
+function engineWithAuth(outcome: AuthRotation): SyncEngine {
+  return new SyncEngine({
+    now: Date.now,
+    actor: "t",
+    classifyAuthError: () => true,
+    auth: { headerEnv: () => undefined, onAuthError: async () => outcome },
+  });
+}
+
+describe("engine auth: revoked vs transient", () => {
+  it("receive() reports reconnect when the account is revoked, not offline", async () => {
+    const dir = repoWithUnreachableRemote(root, "revk");
+    expect(await engineWithAuth("revoked").receive(dir)).toBe("reconnect");
+  });
+  it("receive() stays offline (retryable) when the failure is transient", async () => {
+    const dir = repoWithUnreachableRemote(root, "trans");
+    expect(await engineWithAuth("offline").receive(dir)).toBe("offline");
+  });
+  it("publish() reports reconnect for a revoked account instead of queued", async () => {
+    const dir = repoWithUnreachableRemote(root, "pubrevk");
+    expect(await engineWithAuth("revoked").publish(dir)).toBe("reconnect");
+  });
+  it("publish() stays queued (work safe locally, retryable) when the failure is transient", async () => {
+    const dir = repoWithUnreachableRemote(root, "pubtrans");
+    expect(await engineWithAuth("offline").publish(dir)).toBe("queued");
+  });
+});
+
+describe("removeRemote - local disconnect (invariant 8: history untouched)", () => {
+  it("removes an existing origin remote but keeps every commit in git log", async () => {
+    const op = clone("op1");
+    const before = git(["log", "--pretty=%H"], op).trim();
+    expect(await engine().hasRemote(op)).toBe(true);
+
+    await engine().removeRemote(op);
+
+    expect(await engine().hasRemote(op)).toBe(false);
+    expect(git(["log", "--pretty=%H"], op).trim()).toBe(before); // history untouched
+  });
+
+  it("is a no-op (never throws) on a repo with no remote", async () => {
+    const dir = join(root, "no-remote");
+    mkdirSync(dir, { recursive: true });
+    git(["init", "--initial-branch=main", "."], dir);
+    writeFileSync(join(dir, "doc.md"), "x\n");
+    git(["add", "-A"], dir);
+    git(["commit", "-m", "seed"], dir);
+
+    await expect(engine().removeRemote(dir)).resolves.toBeUndefined();
+    expect(await engine().hasRemote(dir)).toBe(false);
   });
 });

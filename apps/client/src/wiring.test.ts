@@ -47,6 +47,26 @@ describe("buildClientHandler - the client composition root", () => {
     expect(doc.content).toContain("ship weekly");
   });
 
+  it("lists rules from each root's CLAUDE.md, named by the doc's own H1, openable via the doc reader", async () => {
+    writeFileSync(join(ws, "team", "CLAUDE.md"), "# Operating rules\n\nWork on the company's files directly.\n");
+    const app = handler();
+    const { rules } = (await (await app(new Request("http://127.0.0.1/api/rules"))).json()) as {
+      rules: { name: string; description: string; root: string; path: string }[];
+    };
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toMatchObject({ name: "Operating rules", root: "team", path: "team/CLAUDE.md" });
+    expect(rules[0]!.description).toContain("company's files");
+    // the path the card carries actually opens through the same root-confined doc reader
+    const doc = (await (await app(new Request("http://127.0.0.1/api/doc?path=" + encodeURIComponent(rules[0]!.path)))).json()) as { content: string };
+    expect(doc.content).toContain("Operating rules");
+  });
+
+  it("lists no rules when a root has no CLAUDE.md (fresh workspace, not an error)", async () => {
+    const app = handler();
+    const { rules } = (await (await app(new Request("http://127.0.0.1/api/rules"))).json()) as { rules: unknown[] };
+    expect(rules).toEqual([]);
+  });
+
   it("projects: create, add a chat item, list, rename", async () => {
     const app = handler();
     const post = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));

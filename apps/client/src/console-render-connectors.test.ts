@@ -411,3 +411,63 @@ describe("console renderers (jsdom) — the rail's ⚙ (Edit mode) and shared ap
     expect(c.appGlyph({ icon: "<b>", kind: "local" })).not.toContain("<b>"); // escaped, it lands in innerHTML
   });
 });
+
+describe("console renderers (jsdom) — starting an app chat", () => {
+  const APP = { repo: "team", name: "notion", title: "Notion", kind: "local" };
+  // Sessions and project items are created server-side; route both and record what was asked for.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function routeChat(w: any): Array<{ url: string; body: any }> {
+    const seen: Array<{ url: string; body: any }> = [];
+    let n = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    w.fetch = (url: string, o?: any) => {
+      const u = String(url);
+      if (o && o.method === "POST") seen.push({ url: u, body: o.body ? JSON.parse(o.body) : null });
+      let data: unknown = {};
+      const post = !!(o && o.method === "POST");
+      if (u.includes("/api/sessions") && post) data = { id: "s" + ++n };
+      else if (u.includes("/api/sessions")) data = { sessions: [] };
+      else if (u.includes("/api/catalog")) data = { packs: [] };
+      else if (/\/api\/projects\/[^/]+\//.test(u) && post) data = { ok: true }; // items / remove-item
+      else if (u.includes("/api/projects") && post) data = { project: { id: "p1", name: "Work", items: [], createdAt: 0 } };
+      else if (u.includes("/api/projects")) data = { projects: [{ id: "p1", name: "Work", items: [], createdAt: 0 }] };
+      else if (u.includes("/api/apps")) data = { apps: [] };
+      else if (u.includes("/api/sync")) data = { status: "ok" };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) });
+    };
+    return seen;
+  }
+
+  it("starts a SECOND chat for the same app - parallel work in one session is allowed", async () => {
+    const { doc, w, c } = loadConsole();
+    routeChat(w);
+    await c.openAppChat(APP);
+    await c.openAppChat(APP);
+    expect(c.S.tabs).toHaveLength(2);
+    expect(c.S.tabs.map((t: any) => t.sessionId)).toEqual(["s1", "s2"]); // two real sessions
+    // Numbered from the second on, so the operator can tell parallel chats apart.
+    expect(c.S.tabs.map((t: any) => t.title)).toEqual(["Notion", "Notion 2"]);
+    expect(Array.from(doc.querySelectorAll("#tabbar .tab .tt"), (e: any) => e.textContent)).toEqual(["Notion", "Notion 2"]);
+  });
+
+  it("re-focuses instead when the caller is navigating (the app's row in the rail)", async () => {
+    const { w, c } = loadConsole();
+    routeChat(w);
+    await c.openAppChat(APP);
+    const first = c.S.active;
+    await c.openAppChat(APP, true);
+    expect(c.S.tabs).toHaveLength(1); // no duplicate…
+    expect(c.S.active).toBe(first); // …and it took us back to the one already open
+  });
+
+  it("carries the numbered title into the session item, so the rail shows it too", async () => {
+    const { w, c } = loadConsole();
+    const posts = routeChat(w);
+    c.S.activeProject = "p1";
+    await c.openAppChat(APP);
+    await c.openAppChat(APP);
+    const items = posts.filter((x) => x.url.includes("/api/projects/p1/items")).map((x) => x.body.item);
+    expect(items.map((i: any) => i.title)).toEqual(["Notion", "Notion 2"]);
+    expect(items.every((i: any) => i.app === "notion")).toBe(true); // still badged as an app chat
+  });
+});

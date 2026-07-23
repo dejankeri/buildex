@@ -36,7 +36,7 @@ describe("seedAcmeWorkspace - the non-syncable demo sandbox", () => {
     const roots = seedAcmeWorkspace({ workspace: ws, corePackDir: CORE_PACK });
     const engine = new SyncEngine({ now: () => 1_700_000_000_000, actor: "operator" });
     for (const r of roots) {
-      expect(await engine.syncWritable(r.dir)).toBe("local");
+      expect(await engine.publish(r.dir)).toBe("local");
     }
   });
 

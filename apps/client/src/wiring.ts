@@ -9,10 +9,10 @@ import { confinePath } from "./lib/confine-path.js";
 import { createDaemon, type Handler, type VaultReader, type Catalog, type TreeNode, type SkillEditor, type AutomationEngine, type ConnectorControl, type ConnectorGatewayView } from "./daemon/daemon.js";
 import { startGatewayHttp, writeGatewayRegistration, writeMcpEntries } from "@buildex/connectors";
 import { ConnectorGatewayHub } from "./brain/connector-gateway.js";
-import { readSkill, writeSkillFile, composeSkill, validateSkill, skillTemplate } from "./brain/skills.js";
+import { readSkill, writeSkillFile, composeSkill, validateSkill, skillTemplate, originOf } from "./brain/skills.js";
 import { listApps, writeAppManifest, type AppManifest } from "./brain/apps.js";
 import { reconciledPackMcpEntries, composePreset } from "./brain/pack-config.js";
-import { listPacks, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, provisionKeychainKey, provisionBaseKeychainKey, type InstallDeps } from "./brain/catalog.js";
+import { listPacks, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, provisionKeychainKey, provisionBaseKeychainKey, slotOf, type InstallDeps } from "./brain/catalog.js";
 import { ProvisionFlow } from "./brain/provision.js";
 import { emptyCatalogSource, type CatalogSource } from "./brain/catalog-source.js";
 import { buildAgentView } from "./brain/agent-view.js";
@@ -42,10 +42,26 @@ import { buildGraph, type Root } from "./brain/graph.js";
 import { recentChanges } from "./brain/history.js";
 import { fileHistory, fileAtCommit } from "./brain/history.js";
 import { SyncEngine } from "./sync/engine.js";
-import { SyncScheduler, type Clock, type TimerHandle, type SyncStatus } from "./sync/scheduler.js";
+import {
+  SyncScheduler,
+  saveResultStatus,
+  type Clock,
+  type TimerHandle,
+  type SyncStatus,
+} from "./sync/scheduler.js";
+import { unsavedAcross, isStale } from "./sync/unsaved.js";
 import { generateAgentConfig } from "./brain/agent-config.js";
 import { AppBus } from "./miniapp/app-bus.js";
 import { fetchUsage, nodeTokenReader, anthropicUsageCall, type UsageReport } from "./brain/usage.js";
+import { AccountStore } from "./account/account-store.js";
+import { makeTokenProvider } from "./account/token-provider.js";
+import { gitAuthEnv } from "./account/credentials.js";
+import { openAccount as runOpenAccount, persistAndAttach } from "./account/open-account.js";
+import { disconnect as runDisconnect } from "./account/disconnect.js";
+import { signIn as runSignIn } from "./account/sign-in.js";
+import { signUpAnonymous } from "./account/anonymous.js";
+import { postSession } from "./account/session-client.js";
+import { openBrowser, realLoopbackServer, realSupabaseAuthClient, randomState, pkce } from "./account/real-seams.js";
 
 export interface ClientConfig {
   workspace: string;
@@ -99,6 +115,11 @@ export interface ClientConfig {
    *  rebinding the fixed gateway port on the next org (see orgs/router.ts). The promise rejects if the
    *  host fails to bind; the caller catches. Only fires when `connectorsMcp` is set. */
   onGatewayHost?: (host: Promise<{ close: () => Promise<void> }>) => void;
+  /** Lifecycle hook for the approval broker: called (once, synchronously) with the broker the moment
+   *  it's built. The demo runner uses it to seed one real outward-action card in-process - exactly the
+   *  path the connector gateway takes for a gated send - so the flagship human gate (invariant 5) is
+   *  visible the instant the demo opens. Omit everywhere else; nothing in production seeds cards. */
+  onBroker?: (broker: ApprovalBroker) => void;
   /** Per-connector OAuth client credentials for the FILE connectors, runtime-injected from env
    *  (e.g. BUILDEX_GMAIL_CLIENT_ID) and NEVER committed. Absent → that connector stays fixture/apikey. */
   connectorsOAuth?: Record<string, { clientId: string; clientSecret?: string }>;
@@ -107,6 +128,26 @@ export interface ClientConfig {
   keychainMode?: "auto" | "system" | "memory";
   /** Daemon base URL for the file-connector OAuth loopback redirect. Default http://127.0.0.1:4317. */
   connectorsRedirectBase?: string;
+  /** The active org's id. Present together with `orgDir` only once an org exists to hold an account
+   *  (see orgs/router.ts) - both absent means a local-only boot (most tests, the demo), which builds
+   *  the sync engine with no `auth` at all, exactly as before this seam existed. */
+  orgId?: string;
+  /** The active org's own directory (holds `account.json`; see account/account-store.ts). */
+  orgDir?: string;
+  /** Injected fetch for the account seam's provision/refresh calls - defaults to global `fetch` so
+   *  tests can hand in a fake and stay hermetic (no real network in unit lanes). */
+  fetch?: typeof fetch;
+  /** Whether the active org is the local-only demo sandbox - it can never attach an account
+   *  (see account/attach.ts). Populated from `org.sandbox` in orgs/router.ts. */
+  sandbox?: boolean;
+  /** Supabase project config for the browser OAuth sign-in seam (Task 10). Absent is the DEFAULT
+   *  today (the owner hasn't configured Supabase yet) - it keeps `signIn` unwired and
+   *  `POST /api/signin` dormant (501), exactly like an absent `orgId`/`orgDir` keeps `openAccount`
+   *  unwired. `url`/`anonKey` are the Supabase project's OAuth endpoint + public anon key (anon keys
+   *  are public by Supabase's design - RLS enforces access - so this is not a secret); `baseUrl` is
+   *  BuildEx's OWN sync server, the same one `/api/account`'s setup-token flow talks to (its
+   *  `POST /session` trades the Supabase JWT for the machineToken/refreshToken/repos triple). */
+  supabase?: { url: string; anonKey: string; baseUrl: string };
 }
 
 export function buildClientHandler(config: ClientConfig): Handler {
@@ -137,6 +178,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
     setTimer: (fn, ms) => realClock.setTimer(fn, ms),
     clearTimer: (h) => realClock.clearTimer(h as TimerHandle),
   });
+  config.onBroker?.(broker);
   const gate = new Gate(new PolicyEngine(composePreset(config.preset, config.roots)), broker);
   // Allowlist the model aliases the composer can request (the --model security boundary), and pin
   // Sonnet 5 as BuildEx's default so an unspecified model never falls through to the `claude` CLI's
@@ -146,9 +188,8 @@ export function buildClientHandler(config: ClientConfig): Handler {
   let provisionedEnv: () => NodeJS.ProcessEnv = () => ({});
   const driver = new ClaudeCodeDriver({ spawn: nodeSpawnAgent, bin: config.claudeBin, allowedModels: ["opus", "sonnet", "haiku", "fable"], defaultModel: "sonnet", extraEnv: () => provisionedEnv(), ...(config.agentConfigDir ? { configDir: config.agentConfigDir } : {}) });
   const appBus = new AppBus({ idFactory: randomUUID });
-  const sync = new SyncEngine({ now: Date.now, actor });
   // The writable (non-core) repo dirs - the only roots the sync loop may commit to (core is read-only).
-  const writableDirs = (): string[] => config.roots.filter((r) => r.name !== "core").map((r) => r.dir);
+  const writableDirs = (): string[] => config.roots.filter((r) => slotOf(r.name) !== "core").map((r) => r.dir);
   // The background sync loop. Assigned below once regenConfig exists; saveDoc/skillEditor/connectors
   // reference it only at request time (well after assignment), so the forward use is safe.
   let scheduler: SyncScheduler;
@@ -259,7 +300,8 @@ export function buildClientHandler(config: ClientConfig): Handler {
   };
 
   const catalog: Catalog = {
-    skills: () => listSkills(join(config.workspace, ".claude", "skills")),
+    skills: () => listSkills(config.workspace, config.roots),
+    rules: () => listRules(config.roots),
     connectors: () => listConnectors(config.roots),
     routines: () => [], // local routines are a v1 seam - none configured yet
   };
@@ -269,6 +311,114 @@ export function buildClientHandler(config: ClientConfig): Handler {
   // keychainMode:"auto" so a real authorization survives a daemon restart.
   const keychain = createKeychain({ mode: config.keychainMode ?? "memory", workspace: config.workspace });
 
+  // The account seam: an AccountStore only exists once the active org has both an id and a dir (see
+  // orgs/router.ts) - most boots (unit tests, the demo, an org that hasn't opened an account yet)
+  // supply neither, so `account`/`tokenProvider`/`engineAuth` stay undefined and the engine below is
+  // built LOCAL-ONLY, exactly as it was before this seam existed. `fetchImpl` isolates the injected
+  // fetch (tests hand in a fake) from the global one (production).
+  const fetchImpl = config.fetch ?? fetch;
+  const account =
+    config.orgId && config.orgDir ? new AccountStore({ orgId: config.orgId, orgDir: config.orgDir, keychain }) : undefined;
+  const tokenProvider = account ? makeTokenProvider({ store: account, fetch: fetchImpl }) : undefined;
+  const engineAuth = tokenProvider
+    ? {
+        headerEnv: () => {
+          const t = tokenProvider.current();
+          return t ? gitAuthEnv(t) : undefined;
+        },
+        onAuthError: () => tokenProvider.rotate(),
+      }
+    : undefined;
+  // Moved here (was constructed right after appBus, before the keychain existed) so the engine can
+  // carry `auth` from day one instead of being retrofitted after the fact - nothing between the old
+  // and new construction points reads `sync` before this line.
+  const sync = new SyncEngine({ now: Date.now, actor, ...(engineAuth ? { auth: engineAuth } : {}) });
+
+  // Daemon deps for the account seam - assembled here (needs `account`/`sync`/`fetchImpl`, all just
+  // built above) so Task 8's daemon routes have a ready provision→attach flow and state reader to
+  // plug in. NOT yet passed to createDaemon below: DaemonDeps gains `openAccount`/`accountState` in
+  // Task 8 alongside the /api/account routes that consume them - adding the keys here without the
+  // matching DaemonDeps fields would fail the strict object-literal excess-property check against
+  // daemon.ts's current (pre-Task-8) shape. Harmless either way: unused until Task 8 wires them in.
+  const openAccount = account
+    ? (input: { baseUrl: string; setupToken: string }): Promise<{ state: "connected" | "needs-help" }> =>
+        runOpenAccount(
+          { fetch: fetchImpl, account, engine: sync, roots: config.roots, sandbox: config.sandbox ?? false, machineName: hostname() },
+          input,
+        )
+    : undefined;
+  const accountState = (): { state: "local" | "connected"; operatorId?: string; companySlug?: string; remotes?: { core: string; team: string; private: string } } => {
+    const a = account?.load();
+    return a ? { state: "connected", operatorId: a.operatorId, companySlug: a.companySlug, remotes: a.repos } : { state: "local" };
+  };
+  // Local disconnect (Task 2): the reverse of openAccount - detach every root's remote and clear the
+  // account store, reverting to a clean local-only state while keeping git history (invariant 8).
+  // Gated identically to openAccount/accountState (an account store must exist - absent for the
+  // sandbox, which has nothing to disconnect), reusing the SAME `sync` engine and `account` store
+  // those closures already read from above. Absent, `logout` stays undefined and `POST /api/logout`
+  // is simply unwired (falls through to the daemon's terminal 404) - a normal boot is unaffected.
+  const logout = account
+    ? (): Promise<{ state: "local" }> => runDisconnect({ engine: sync, account, roots: config.roots })
+    : undefined;
+  // The browser sign-in→attach chain (Task 10): system-browser OAuth via Supabase (sign-in.ts), then
+  // the SAME postSession→persistAndAttach tail the setup-token flow above ends in. Gated on BOTH an
+  // account seam (org id+dir - openAccount's own precondition) and a Supabase project config -
+  // absent either, `signIn` stays undefined and `/api/signin` stays dormant (501). This is the
+  // DEFAULT today (the owner hasn't configured Supabase), so a normal boot is unaffected. Captured
+  // into local consts (`acc`/`supabaseCfg`) once, here, rather than re-checked inside the closure -
+  // this is the one narrowing TypeScript can't carry through a later-called async closure.
+  const signIn: (() => Promise<{ state: "connected" | "needs-help" }>) | undefined = (() => {
+    if (!account || !config.supabase) return undefined;
+    const acc = account;
+    const supabaseCfg = config.supabase;
+    return async (): Promise<{ state: "connected" | "needs-help" }> => {
+      // Refuse a sandbox org BEFORE ever opening the OAuth browser. persistAndAttach below also
+      // self-guards, but only after a real browser round-trip and a spent authorization code; failing
+      // here is cheaper and a sandbox org never even sees a browser window launch (see open-account.ts
+      // for why persist-then-attach itself guards this early too - belt and suspenders).
+      if (config.sandbox) throw new Error("the sandbox org is local-only and cannot attach an account");
+      const { jwt } = await runSignIn(
+        {
+          openBrowser,
+          loopback: realLoopbackServer(),
+          supabase: realSupabaseAuthClient({ supabaseUrl: supabaseCfg.url, anonKey: supabaseCfg.anonKey, fetch: fetchImpl }),
+          now: Date.now,
+          randomState,
+          pkce,
+        },
+        {},
+      );
+      const result = await postSession({ fetch: fetchImpl, baseUrl: supabaseCfg.baseUrl }, { jwt, machineName: hostname() });
+      return persistAndAttach(
+        { account: acc, engine: sync, roots: config.roots, sandbox: config.sandbox ?? false },
+        supabaseCfg.baseUrl,
+        result,
+      );
+    };
+  })();
+  // Anonymous onboarding (Task 4): the operator never leaves the app - an anonymous Supabase user is
+  // minted no-browser (signUpAnonymous), then handed to the SAME postSession→persistAndAttach tail as
+  // `signIn` above. Gated identically (account seam + Supabase project config); absent either,
+  // `onboard` stays undefined and `/api/onboard` stays dormant (501) - the default today.
+  const onboard: ((input: { companyName: string }) => Promise<{ state: "connected" | "needs-help" }>) | undefined = (() => {
+    if (!account || !config.supabase) return undefined;
+    const acc = account;
+    const supabaseCfg = config.supabase;
+    return (input: { companyName: string }): Promise<{ state: "connected" | "needs-help" }> =>
+      signUpAnonymous(
+        {
+          supabase: realSupabaseAuthClient({ supabaseUrl: supabaseCfg.url, anonKey: supabaseCfg.anonKey, fetch: fetchImpl }),
+          account: acc,
+          engine: sync,
+          roots: config.roots,
+          sandbox: config.sandbox ?? false,
+          fetch: fetchImpl,
+          baseUrl: supabaseCfg.baseUrl,
+          machineName: hostname(),
+        },
+        input,
+      );
+  })();
   // Regenerate the native agent config, threading the (optional) gate-hook command. Used after a
   // skill is authored and by the sync route, so the workspace's .claude stays consistent.
   const regenConfig = () => {
@@ -296,6 +446,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
   scheduler = new SyncScheduler({
     engine: sync,
     writableRoots: writableDirs,
+    readonlyRoots: () => config.roots.filter((r) => slotOf(r.name) === "core").map((r) => r.dir),
     regenConfig,
     clock: realClock,
     onStatus: (s) => { lastSyncStatus = s; },
@@ -734,7 +885,14 @@ export function buildClientHandler(config: ClientConfig): Handler {
   const agentView = () => {
     const packSkills = new Set<string>();
     for (const p of listPacks(catalogSource, config.roots)) if (p.installed && p.skills) for (const s of p.skills) packSkills.add(s);
-    return buildAgentView(config.workspace, packSkills);
+    return buildAgentView(config.workspace, packSkills, config.roots);
+  };
+  // Force a config rebuild (re-link skills, re-assemble CLAUDE.md, re-pin MCP) then return the fresh
+  // view - the "Regenerate & re-verify" action in the Agent Context viewer, so an operator can PROVE a
+  // just-authored verb landed rather than wait for the next sync.
+  const agentViewRegen = () => {
+    regenConfig();
+    return agentView();
   };
 
   // Bottom status strip - the real Claude subscription usage (opt-in; a documented bright-line
@@ -773,6 +931,11 @@ export function buildClientHandler(config: ClientConfig): Handler {
     appServe: (urlPath) => serveApp(config.roots, urlPath),
     appData: (r) => brokerData(config.roots, r),
     usageFn,
+    openAccount,
+    accountState,
+    logout,
+    signIn,
+    onboard,
     vault,
     saveDoc,
     fsOps,
@@ -785,6 +948,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
     projects,
     fileTree,
     agentView,
+    agentViewRegen,
     onboarding,
     ...(config.company ? { company: config.company } : {}),
     ...(config.webRoot ? { webRoot: config.webRoot } : {}),
@@ -809,14 +973,33 @@ export function buildClientHandler(config: ClientConfig): Handler {
       const root = config.roots.find((r) => r.name !== "core") ?? config.roots[0];
       return root ? recentChanges(root.dir, 12) : [];
     },
-    // Manual/forced sync (POST /api/sync) - flush the whole loop now (regen + every writable repo).
-    syncFn: async () => {
-      const s = await scheduler.flushNow();
-      return s === "needs-help" ? "needs-help" : s === "queued" ? "queued" : s === "local" ? "local" : "ok";
-    },
+    // "Save now" (POST /api/sync) - the operator's explicit decision to send everything.
+    syncFn: async () => saveResultStatus(await scheduler.publishAll()),
     // The dot's live status (GET /api/sync) - "local" (no account yet) / "queued" (offline) /
-    // "needs-help" (conflict backed up).
+    // "needs-help" (conflict backed up) / "reconnect" (account revoked - reconnect).
     syncStatus: () => lastSyncStatus,
+    // Per-root status of the last publish - lets the console say WHICH root is stuck.
+    perRootStatus: () => scheduler.perRoot(),
+    // What is waiting to be saved, for the pending tray's one card. The staleness comparison
+    // happens here, once, against the real clock - the browser is never handed a comparison to make.
+    // `connected` is derived from the REPOSITORIES, not from the last sync status: that status
+    // initialises to "ok" and only ever moves when the operator publishes, so a fresh install with
+    // no account would otherwise read as connected forever - an amber dot, a card offering to save
+    // work "to your company" when there is no company, and a Save button that can do nothing.
+    // A remote is a local read (`git remote`), so this stays network-free.
+    unsavedFn: async () => {
+      const dirs = writableDirs();
+      const [u, remotes] = await Promise.all([
+        unsavedAcross(dirs),
+        Promise.all(dirs.map((d) => sync.hasRemote(d).catch(() => false))),
+      ]);
+      // Assumption: `some(Boolean)` treats the roots as all-or-nothing - true today because
+      // provisioning gives every writable root a remote at the same moment. If roots ever go mixed
+      // (one writable root with a remote, another without), this reads "connected" while the count
+      // still includes the local-only root's files, and the card would keep reporting changes no
+      // save can clear. Revisit this derivation (e.g. per-root connected/unsaved) if that happens.
+      return { ...u, stale: isStale(u.oldestAt, Date.now()), connected: remotes.some(Boolean) };
+    },
   });
 }
 
@@ -892,16 +1075,41 @@ function treeOf(dir: string, prefix: string): TreeNode[] {
   return nodes.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1));
 }
 
-/** The verbs available in the workspace, read from the generated .claude/skills links. */
-function listSkills(skillsDir: string): { name: string; description: string }[] {
+/** The verbs available in the workspace, read from the generated .claude/skills links. Each verb
+ *  carries `root` - the brain it came from (the origin repo name, precedence-resolved) - so the
+ *  console's Brain rail can filter verbs by Company vs Private without lying about ownership. */
+function listSkills(workspace: string, roots: Root[]): { name: string; description: string; root: string }[] {
+  const skillsDir = join(workspace, ".claude", "skills");
   if (!existsSync(skillsDir)) return [];
-  const out: { name: string; description: string }[] = [];
+  const out: { name: string; description: string; root: string }[] = [];
   for (const name of readdirSync(skillsDir).sort()) {
-    const md = join(skillsDir, name, "SKILL.md");
-    if (!existsSync(md)) continue;
-    const fm = readFileSync(md, "utf8").match(/^---\n([\s\S]*?)\n---/);
+    const dir = join(skillsDir, name);
+    if (!existsSync(join(dir, "SKILL.md"))) continue;
+    const fm = readFileSync(join(dir, "SKILL.md"), "utf8").match(/^---\n([\s\S]*?)\n---/);
     const desc = fm ? (fm[1]!.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? "") : "";
-    out.push({ name, description: desc });
+    out.push({ name, description: desc, root: originOf(workspace, roots, name, dir) });
+  }
+  return out;
+}
+
+/** The always-on operating rules the agent reads every turn: each root's `CLAUDE.md` (core → team →
+ *  private), the source layers the workspace `CLAUDE.md` is assembled from. Unlike a skill (reached
+ *  for on demand), a rule always applies - so the Brain map surfaces both under "Rules & Skills".
+ *  Each carries its `root` (so the rail can scope Company vs Private without lying about ownership)
+ *  and a root-relative `path` the doc reader can open. The name is the doc's own H1, so it reads as
+ *  itself ("Operating rules", "Team rules") rather than a filename. */
+function listRules(roots: Root[]): { name: string; description: string; root: string; path: string }[] {
+  const out: { name: string; description: string; root: string; path: string }[] = [];
+  for (const root of roots) {
+    const src = join(root.dir, "CLAUDE.md");
+    if (!existsSync(src)) continue;
+    const text = readFileSync(src, "utf8");
+    const h1 = text.match(/^#\s+(.+)$/m)?.[1]?.trim();
+    // First real line (past headings and generated-by comments) as a one-line gloss for the card.
+    const desc = text
+      .split("\n")
+      .find((l) => l.trim() && !l.startsWith("#") && !l.trim().startsWith("<!--")) ?? "";
+    out.push({ name: h1 || `${root.name} rules`, description: desc.trim(), root: root.name, path: `${root.name}/CLAUDE.md` });
   }
   return out;
 }

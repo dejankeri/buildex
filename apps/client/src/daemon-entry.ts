@@ -19,6 +19,7 @@ import { augmentedPath } from "./agent/resolve-path.js";
 import { bundleCatalogSource } from "./brain/catalog-source.js";
 import type { Root } from "./brain/graph.js";
 import type { PolicyPreset } from "./gate/policy.js";
+import type { ClientConfig } from "./wiring.js";
 
 export interface PackagedDaemonOpts {
   /** process.resourcesPath in the packaged app (electron-builder extraResources land here). Undefined
@@ -30,6 +31,24 @@ export interface PackagedDaemonOpts {
   /** Fixed loopback port (the gate-hook command embeds it, so it must be known before binding).
    *  Defaults to BUILDEX_PORT or 4319 (clear of the dev demo's 4317/4318). */
   port?: number;
+  /** Keychain backend. "auto" (default, the shipped app) persists to the OS vault when available; a
+   *  smoke test passes "memory" so a fresh-provision purge never shells to the real `security`/Cred
+   *  Manager. */
+  keychainMode?: "auto" | "system" | "memory";
+}
+
+/** Read the client's Supabase config from env, ALL-OR-NOTHING: `supabase` is populated only when
+ *  `BUILDEX_SUPABASE_URL`, `BUILDEX_SUPABASE_ANON_KEY`, and `BUILDEX_SYNC_URL` are ALL present and
+ *  non-empty (trimmed) - any one missing leaves it undefined, the default today (dormant `signIn`/
+ *  `onboard`, see wiring.ts's `supabase` field). `url`/`anonKey` are the Supabase project's PUBLIC
+ *  OAuth endpoint + anon key (anon keys are public by Supabase's design - RLS enforces access, so
+ *  these are safe to bake into env/a build, never a secret); `BUILDEX_SYNC_URL` is BuildEx's OWN
+ *  hosted sync service base URL, where `POST /session` lives. Exported for the focused unit test. */
+export function supabaseFromEnv(env: NodeJS.ProcessEnv): ClientConfig["supabase"] {
+  const url = (env["BUILDEX_SUPABASE_URL"] ?? "").trim();
+  const anonKey = (env["BUILDEX_SUPABASE_ANON_KEY"] ?? "").trim();
+  const baseUrl = (env["BUILDEX_SYNC_URL"] ?? "").trim();
+  return url && anonKey && baseUrl ? { url, anonKey, baseUrl } : undefined;
 }
 
 /** Boot the multi-org daemon for the packaged app. Returns the running daemon (URL/port/close) so the
@@ -62,6 +81,10 @@ export async function startPackagedDaemon(opts: PackagedDaemonOpts = {}): Promis
   // The web console is packed alongside the bundle (web/ is a sibling of build/ under the app root).
   const webRoot = join(__dirname, "..", "web");
 
+  // Anonymous onboarding + sign-in (Task 10/4): dormant unless a build's env sets all three
+  // BUILDEX_SUPABASE_URL / BUILDEX_SUPABASE_ANON_KEY / BUILDEX_SYNC_URL - see supabaseFromEnv above.
+  const supabase = supabaseFromEnv(process.env);
+
   return startOrgDaemon({
     orgsRoot,
     base: {
@@ -72,8 +95,9 @@ export async function startPackagedDaemon(opts: PackagedDaemonOpts = {}): Promis
       usageOAuth: true,
       actor: "operator",
       schedulerIntervalMs: 60000,
-      keychainMode: "auto",
+      keychainMode: opts.keychainMode ?? "auto",
       webRoot,
+      ...(supabase ? { supabase } : {}),
       // Per-org connector gateway: hosts BuildEx's OAuth+MCP gateway on a loopback port so an installed
       // pack's tools (e.g. HeyGen, Linear) surface to the agent and show live Connect/connected status.
       // No founder providers in the shipped build (providers:[]); installed packs auto-register. The

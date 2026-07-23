@@ -29,11 +29,20 @@
   .top .sync{display:flex;align-items:center;height:28px;padding:0 8px;border-radius:7px;cursor:pointer;-webkit-app-region:no-drag;} .top .sync:hover{background:var(--panel-2);} .top .sync .d{width:8px;height:8px;border-radius:50%;background:var(--good);transition:background .2s;}
   .top .sync.ok .d{background:var(--good);} .top .sync.busy .d{background:var(--gate);animation:syncpulse 1.1s infinite;} .top .sync.off .d{background:var(--crit);}
   .top .sync.queued .d{background:var(--gate);} .top .sync.help .d{background:var(--crit);animation:synchelp 1.4s infinite;}
+  /* reconnect = the account was revoked: same "act now" treatment as help, but a distinct state so the
+     click routes to the connect modal instead of the change log (boot.js). */
+  .top .sync.reconnect .d{background:var(--crit);animation:synchelp 1.4s infinite;}
   /* local = no account yet: neutral grey, not an error - an invitation to connect & sync */
   .top .sync.local .d{background:var(--faint);}
+  /* unsaved = work is waiting on the operator to save - the same amber as queued, but no pulse: it
+     isn't a problem, just a nudge, and click routes to the pending tray's save card (boot.js). */
+  .sync.unsaved .d{background:var(--gate);}
   @keyframes syncpulse{0%,100%{box-shadow:0 0 0 0 rgba(240,169,75,.55);}70%{box-shadow:0 0 0 5px rgba(240,169,75,0);}}
   @keyframes synchelp{0%,100%{box-shadow:0 0 0 0 rgba(224,115,107,.6);}70%{box-shadow:0 0 0 5px rgba(224,115,107,0);}}
   .top .ico{width:28px;height:28px;border:1px solid var(--line);border-radius:7px;background:var(--panel-2);color:var(--muted);font-size:13px;display:grid;place-items:center;flex:none;-webkit-app-region:no-drag;} .top .ico:hover{color:var(--ink);border-color:var(--line-2);}
+  .top .ico svg{width:16px;height:16px;}
+  /* Profile menu (js/profile.js): "Connected to <company>" reads as a header, not a clickable row. */
+  .profile-menu .mhd{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);font-weight:700;padding:6px 9px 8px;}
   .dropdown{position:absolute;top:36px;left:0;background:var(--elevate);border:1px solid var(--line-2);border-radius:9px;padding:5px;min-width:180px;box-shadow:0 10px 30px rgba(0,0,0,.4);z-index:50;}
   .dropdown button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;background:none;border:0;font-size:13px;padding:7px 9px;border-radius:6px;color:var(--ink);} .dropdown button:hover{background:var(--brand-tint);}
   .dropdown .k{color:var(--faint);width:15px;text-align:center;}

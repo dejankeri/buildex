@@ -12,14 +12,16 @@ const SERVICE_KEY = "svc-secret-key";
 let dir: string;
 let store: ControlPlaneStore;
 let schedules: ScheduleStore;
+let git: EmbeddedGitService;
+let provisioning: ProvisioningService;
 let app: (req: Request) => Promise<Response>;
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), "buildex-app-"));
   store = new ControlPlaneStore(join(dir, "control.db"));
-  const git = new EmbeddedGitService({ reposRoot: join(dir, "repos") });
+  git = new EmbeddedGitService({ reposRoot: join(dir, "repos") });
   let n = 0;
-  const provisioning = new ProvisioningService({ store, git, idFactory: () => `m${++n}` });
+  provisioning = new ProvisioningService({ store, git, idFactory: () => `m${++n}` });
   await provisioning.ensureCoreRepo();
   schedules = new ScheduleStore(join(dir, "schedules.db"));
   app = createApp({ store, provisioning, git, schedules, serviceKey: SERVICE_KEY, publicBaseUrl: "https://sync.test" });
@@ -157,5 +159,118 @@ describe("token refresh", () => {
       }),
     );
     expect(old.status).toBe(401);
+  });
+});
+
+describe("POST /session (Supabase sign-in, dormant-safe)", () => {
+  it("501s when verifySession is not configured (dormant default) and provisions nothing", async () => {
+    const res = await app(json("/session", { jwt: "whatever" }));
+    expect(res.status).toBe(501);
+    expect(await res.json()).toEqual({ error: "sign-in not configured" });
+  });
+
+  it("501s (not 400) on a dormant /session with an empty body - the dormant check runs before jwt validation", async () => {
+    const res = await app(json("/session", {}));
+    expect(res.status).toBe(501);
+    expect(await res.json()).toEqual({ error: "sign-in not configured" });
+  });
+
+  it("verifies the session and provisions a company-of-one, same shape as /provision", async () => {
+    const sessionApp = createApp({
+      store,
+      provisioning,
+      git,
+      schedules,
+      serviceKey: SERVICE_KEY,
+      publicBaseUrl: "https://sync.test",
+      verifySession: async () => ({ sub: "s1", email: "a@acme.io" }),
+    });
+    const res = await sessionApp(json("/session", { jwt: "good-jwt" }));
+    expect(res.status).toBe(200);
+    const creds = (await res.json()) as { machineToken: string; refreshToken: string; repos: Record<string, string> };
+    expect(creds.machineToken.startsWith("xmachine_")).toBe(true);
+    expect(creds.refreshToken.startsWith("xrefresh_")).toBe(true);
+    expect(creds.repos).toEqual({
+      core: "https://sync.test/git/core.git",
+      team: expect.stringMatching(/^https:\/\/sync\.test\/git\/team-.+\.git$/) as unknown as string,
+      private: expect.stringMatching(/^https:\/\/sync\.test\/git\/private-.+\.git$/) as unknown as string,
+    });
+
+    // idempotent: the same sub resolves to the same operator/company on a second sign-in
+    const again = await sessionApp(json("/session", { jwt: "good-jwt-2" }));
+    expect(again.status).toBe(200);
+    expect(store.findOperatorBySupabaseSub("s1")).not.toBeNull();
+  });
+
+  it("accepts an optional companyName and slugs the team repo from it", async () => {
+    const sessionApp = createApp({
+      store,
+      provisioning,
+      git,
+      schedules,
+      serviceKey: SERVICE_KEY,
+      publicBaseUrl: "https://sync.test",
+      verifySession: async () => ({ sub: "s-named" }),
+    });
+    const res = await sessionApp(json("/session", { jwt: "good-jwt", companyName: "Acme" }));
+    expect(res.status).toBe(200);
+    const creds = (await res.json()) as { repos: Record<string, string> };
+    expect(creds.repos.team).toBe("https://sync.test/git/team-acme.git");
+  });
+
+  it("a companyName does not change dormancy - a dormant /session still 501s", async () => {
+    const res = await app(json("/session", { jwt: "whatever", companyName: "Acme" }));
+    expect(res.status).toBe(501);
+    expect(await res.json()).toEqual({ error: "sign-in not configured" });
+  });
+
+  it("401s on a rejected JWT and NEVER provisions - a rejected session must not create a company", async () => {
+    let provisionCalls = 0;
+    const spiedProvisioning = new Proxy(provisioning, {
+      get(target, prop, receiver) {
+        if (prop === "provisionBySession") {
+          return async (...args: Parameters<ProvisioningService["provisionBySession"]>) => {
+            provisionCalls++;
+            return target.provisionBySession(...args);
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    const sessionApp = createApp({
+      store,
+      provisioning: spiedProvisioning,
+      git,
+      schedules,
+      serviceKey: SERVICE_KEY,
+      publicBaseUrl: "https://sync.test",
+      verifySession: async () => {
+        throw new Error("bad signature");
+      },
+    });
+    const res = await sessionApp(json("/session", { jwt: "bad-jwt" }));
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "sign-in failed" });
+    expect(provisionCalls).toBe(0);
+    expect(store.findOperatorBySupabaseSub("s1")).toBeNull();
+  });
+
+  it("400s on a missing/empty jwt in the body", async () => {
+    const sessionApp = createApp({
+      store,
+      provisioning,
+      git,
+      schedules,
+      serviceKey: SERVICE_KEY,
+      publicBaseUrl: "https://sync.test",
+      verifySession: async () => ({ sub: "s1" }),
+    });
+    expect((await sessionApp(json("/session", {}))).status).toBe(400);
+    expect((await sessionApp(json("/session", { jwt: "" }))).status).toBe(400);
+  });
+
+  it("404s on GET /session, matching /provision's convention for the wrong method", async () => {
+    const res = await app(new Request("https://sync.test/session"));
+    expect(res.status).toBe(404);
   });
 });

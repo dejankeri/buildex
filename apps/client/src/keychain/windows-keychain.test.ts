@@ -30,6 +30,13 @@ function fakeCredManager() {
       case "delete":
         store.delete(op.target);
         return { status: 0, stdout: "" };
+      case "enumerate": {
+        // Mirrors CredEnumerateW with a `<prefix>*` filter: every target under the service prefix,
+        // newline-joined. ERROR_NOT_FOUND (→ WIN_NOT_FOUND) when nothing matches, like the real API.
+        const prefix = op.filter.replace(/\*$/, "");
+        const hits = [...store.keys()].filter((t) => t.startsWith(prefix));
+        return hits.length ? { status: 0, stdout: hits.join("\n") } : { status: WIN_NOT_FOUND, stdout: "" };
+      }
     }
   };
   return { run, store };
@@ -89,6 +96,35 @@ describe("WindowsKeychain - Credential Manager persistence", () => {
     new WindowsKeychain("buildex-alpha", run).set("connector:gmail", "a");
     new WindowsKeychain("buildex-beta", run).set("connector:gmail", "b");
     expect(store.size).toBe(2);
+  });
+
+  it("clear() removes every credential under this service - raw values AND chunk siblings", () => {
+    const { run, store } = fakeCredManager();
+    const kc = new WindowsKeychain("buildex-svc", run);
+    kc.set("git:token", "T");
+    kc.set("connector:gmail", "G");
+    kc.set("big", "x".repeat(9000)); // chunked: a header credential plus #0..#n siblings
+    expect(store.size).toBeGreaterThan(3);
+    kc.clear();
+    expect(store.size).toBe(0);
+    expect(kc.get("git:token")).toBeUndefined();
+    expect(kc.get("big")).toBeUndefined();
+  });
+
+  it("clear() touches only THIS service - another workspace's namespace survives (invariant 6)", () => {
+    const { run } = fakeCredManager();
+    const a = new WindowsKeychain("buildex-alpha", run);
+    const b = new WindowsKeychain("buildex-beta", run);
+    a.set("connector:gmail", "a");
+    b.set("connector:gmail", "b");
+    a.clear();
+    expect(a.get("connector:gmail")).toBeUndefined();
+    expect(b.get("connector:gmail")).toBe("b");
+  });
+
+  it("clear() on an empty service is a no-op that never throws", () => {
+    const { run } = fakeCredManager();
+    expect(() => new WindowsKeychain("buildex-empty", run).clear()).not.toThrow();
   });
 
   it("throws when a write fails (non-zero, non-not-found exit)", () => {
@@ -427,7 +463,7 @@ function crashableCredManager() {
   let budget = Number.POSITIVE_INFINITY;
   const run: WinCredRunner = (op) => {
     if (ops.length >= budget) throw new Error("simulated crash: the process died mid-operation");
-    ops.push(`${op.action} ${op.target}`);
+    ops.push(`${op.action} ${op.action === "enumerate" ? op.filter : op.target}`);
     switch (op.action) {
       case "write":
         store.set(op.target, op.value);
@@ -439,6 +475,11 @@ function crashableCredManager() {
       case "delete":
         store.delete(op.target);
         return { status: 0, stdout: "" };
+      case "enumerate": {
+        const prefix = op.filter.replace(/\*$/, "");
+        const hits = [...store.keys()].filter((t) => t.startsWith(prefix));
+        return hits.length ? { status: 0, stdout: hits.join("\n") } : { status: WIN_NOT_FOUND, stdout: "" };
+      }
     }
   };
   return {

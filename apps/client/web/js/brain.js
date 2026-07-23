@@ -5,27 +5,31 @@
 // <script src>, sharing one global scope. NOT an ES module.
 //
 // Builds the "brain" tab: an animated SVG map of the company system — the loop (Sensor ·
-// Policy · Tools · Gate · Learning) drawn around ONE BRAIN — with a side rail that drills
+// Rules & Skills · Tools · Gate · Learning) drawn around ONE BRAIN — with a side rail that drills
 // into each stage's live data. Reads everything over the local console API and renders on demand.
 // State it reads on the shared global `S`: `S.tabs` (open tabs, to find/focus the brain tab) and
 // `S.config` (company name + repo roots, used as fallback labels and to build doc links).
 /* ---------- Brain view: the company system, live ----------
-   Click the "BuildEx" brand → a center tab showing the loop (Sensor · Policy · Tools ·
+   Click the "BuildEx" brand → a center tab showing the loop (Sensor · Rules & Skills · Tools ·
    Gate · Learning) around ONE BRAIN. Each node carries a live count; tap it to zoom
-   into that component's real data - connectors & their status, the verbs you've decided,
+   into that component's real data - connectors & their status, the rules + skills you've decided,
    the agent's live tools, the Pending gate, and the decisions accruing in git. */
 
-/** Open the brain tab (focusing it if already open), then kick off a data load. */
-function openBrainTab() {
+/** Open the brain tab (focusing it if already open), then kick off a data load. An optional
+ *  `focusKey` (a loop-stage key from the rail's star) lands the poster already zoomed into that
+ *  stage; the brand button passes nothing and lands on the overview. */
+function openBrainTab(focusKey) {
+  const foc = focusKey || "";
   const ex = S.tabs.find((t) => t.type === "brain");
   if (ex) {
+    ex.focusKey = foc;
     activateTab(ex.id);
     loadBrain(ex);
     return;
   }
   const tab = addTab({ type: "brain", title: "Brain" });
   tab.pane.className = "pane brainpane on";
-  tab.focusKey = "";
+  tab.focusKey = foc;
   tab.pane.innerHTML = '<div class="bloading">Reading your brain…</div>';
   loadBrain(tab);
 }
@@ -36,20 +40,24 @@ function openBrainTab() {
  * @param {object} tab - the brain tab; gains a `tab.brain` snapshot as a side effect.
  */
 async function loadBrain(tab) {
-  const [conn, gw, pend, skills, changes, cfg] = await Promise.all([
+  const [conn, gw, pend, skills, rules, changes, cfg] = await Promise.all([
     getJSON("/api/connectors").catch(() => ({ connectors: [] })),
     getJSON("/api/connectors/gateway").catch(() => ({ status: [], tools: [] })),
     getJSON("/api/pending").catch(() => ({ cards: [] })),
     getJSON("/api/skills").catch(() => ({ skills: [] })),
+    getJSON("/api/rules").catch(() => ({ rules: [] })),
     getJSON("/api/changes").catch(() => ({ changes: [] })),
     getJSON("/api/config").catch(() => ({})),
   ]);
-  tab.brain = { conn: conn.connectors || [], gw: gw || { status: [], tools: [] }, pend: pend.cards || [], skills: skills.skills || [], changes: changes.changes || [], cfg: cfg || {} };
+  tab.brain = { conn: conn.connectors || [], gw: gw || { status: [], tools: [] }, pend: pend.cards || [], skills: skills.skills || [], rules: rules.rules || [], changes: changes.changes || [], cfg: cfg || {} };
   renderBrain(tab);
 }
 
 /**
- * Derive the five loop nodes (Sensor · Policy · Tools · Gate · Learning) with live counts + labels.
+ * Derive the five loop nodes (Sensor · Rules & Skills · Tools · Gate · Learning) with live counts.
+ * The second stage carries BOTH the always-on rules (each root's CLAUDE.md) and the on-demand skills,
+ * because both shape how the agent decides - rules always, skills when reached for. Internal key stays
+ * `policy` (the focus/scope plumbing keys off it); only the operator-facing label changed.
  * @param {object} d - the `tab.brain` snapshot.
  * @returns {Array<{key:string,label:string,accent:string,count:number,sub:string}>} node descriptors.
  */
@@ -57,9 +65,11 @@ function brainNodes(d) {
   const st = d.gw.status || [],
     tools = (d.gw.tools || []).filter((t) => t.kind !== "hidden"); // agent-visible only (hidden are managed in the MCP editor)
   const sensLive = d.conn.filter((c) => c.connected).length + st.filter((s) => s.connected).length;
+  const rules = (d.rules || []).length,
+    skills = d.skills.length;
   return [
     { key: "sensor", label: "Sensor", accent: "brand", count: sensLive, sub: sensLive + " live" },
-    { key: "policy", label: "Policy", accent: "brand", count: d.skills.length, sub: d.skills.length + " verb" + (d.skills.length === 1 ? "" : "s") },
+    { key: "policy", label: "Rules & Skills", accent: "brand", count: rules + skills, sub: rules + " rule" + (rules === 1 ? "" : "s") + " · " + skills + " skill" + (skills === 1 ? "" : "s") },
     { key: "tools", label: "Tools", accent: "brand", count: tools.length, sub: tools.length + " tool" + (tools.length === 1 ? "" : "s") },
     { key: "gate", label: "Gate", accent: "gate", count: d.pend.length, sub: d.pend.length ? d.pend.length + " pending" : "clear" },
     { key: "learning", label: "Learning", accent: "brand", count: d.changes.length, sub: d.changes.length ? "+" + d.changes.length : "-" },
@@ -171,6 +181,7 @@ function startBrainFlow(tab) {
   if (!svg) return;
   const edges = $$(".bedge", svg);
   if (!edges.length) return;
+  if (typeof edges[0].getTotalLength !== "function") return; // no SVG path geometry (headless/jsdom) → skip the flow
   const lens = edges.map((e) => e.getTotalLength());
   const maxOp = tab.focusKey ? .26 : .95, // dim the flow when a node is focused
     perSeg = 2,
@@ -270,7 +281,10 @@ function renderBrainRail(tab, host, nodes) {
     return;
   }
   const gate = foc === "gate";
-  let html = '<button class="bback">← Overview</button><div class="beyebrow' + (gate ? " gate" : "") + '">' + esc(foc) + '</div>';
+  // The eyebrow shows the stage's operator-facing LABEL, not its internal key — the "policy" key
+  // must never surface as "POLICY" now that the stage is "Rules & Skills".
+  const focLabel = (nodes.find((n) => n.key === foc) || {}).label || foc;
+  let html = '<button class="bback">← Overview</button><div class="beyebrow' + (gate ? " gate" : "") + '">' + esc(focLabel) + '</div>';
   if (foc === "sensor") {
     // Legacy connector/MCP-source cards hidden here (Task 7 - the Store is now the one path in);
     // backend + openConnectorEditor/openMcpEditor are left intact, just unreached from this view.
@@ -283,11 +297,26 @@ function renderBrainRail(tab, host, nodes) {
     return;
   }
   if (foc === "policy") {
-    // ----- Policy: the operator's verbs (skills); each card opens that skill's tab -----
-    html += '<h3 class="bh">What you decided</h3><p class="bp">Your verbs - how this company handles a kind of thing, written once. The agent follows them by reading them.</p><div class="bmap" id="bm"></div><div class="bstat">plain markdown · versioned in git · one source of truth</div>';
+    // ----- Rules & Skills: two groups. RULES always apply (each root's CLAUDE.md, read every turn);
+    // SKILLS are reached for per task. Both shape how the agent decides, so both live here - rules on
+    // top because they're the standing contract. A rule card opens its CLAUDE.md layer; a skill card
+    // opens that skill's tab. -----
+    const rules = d.rules || [];
+    html += '<h3 class="bh">How the company runs</h3><p class="bp">Two kinds of instruction the agent follows by reading them: <b>rules</b> apply every turn; <b>skills</b> it reaches for when a task needs one.</p>' +
+      '<div class="bsub">Always-on rules</div><div class="bmap" id="bmr"></div>' +
+      '<div class="bsub">Skills</div><div class="bmap" id="bm"></div>' +
+      '<div class="bstat">plain markdown · versioned in git · one source of truth</div>';
     host.innerHTML = html;
+    const bmr = $("#bmr", host);
+    if (!rules.length) bmr.innerHTML = '<div class="bempty">No rules yet - the agent runs on defaults alone.</div>';
+    rules.forEach((r) => {
+      const card = elt("div", "bcard");
+      card.innerHTML = '<div class="bct"><span class="bcn">§ ' + esc(r.name) + '</span></div><div class="bcd">' + esc(r.description || "") + '</div>';
+      card.onclick = () => openDocTab(r.path);
+      bmr.appendChild(card);
+    });
     const bm = $("#bm", host);
-    if (!d.skills.length) bm.innerHTML = '<div class="bempty">No verbs yet - teach your agent one repeatable task.</div>';
+    if (!d.skills.length) bm.innerHTML = '<div class="bempty">No skills yet - teach your agent one repeatable task.</div>';
     d.skills.forEach((s) => {
       const card = elt("div", "bcard");
       card.innerHTML = '<div class="bct"><span class="bcn">✦ ' + esc(s.name) + '</span></div><div class="bcd">' + esc(s.description || "") + '</div>';

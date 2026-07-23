@@ -51,7 +51,10 @@ export interface VaultReader {
 
 /** The workspace catalog - the verbs, connectors, and routines the operator surfaces render. */
 export interface Catalog {
-  skills(): { name: string; description: string }[];
+  skills(): { name: string; description: string; root: string }[];
+  /** The always-on operating rules (each root's CLAUDE.md layer). Optional so lightweight catalog
+   *  mocks predating the Rules & Skills stage still satisfy the interface. */
+  rules?(): { name: string; description: string; root: string; path: string }[];
   connectors(): { name: string; status: string; lastSync?: string }[];
   routines(): { name: string; cadence: string }[];
 }
@@ -131,8 +134,22 @@ export interface DaemonDeps {
   /** Recent repo-wide commits (newest first) - powers the Brain view's "Learning" surface. Read-only. */
   recentChanges?: () => ChangeEntry[];
   syncFn: () => Promise<string>;
-  /** Current background-sync status for the header dot: "ok" | "busy" | "queued" | "needs-help". */
+  /** Current background-sync status for the header dot: "ok" | "busy" | "queued" | "needs-help" |
+   *  "reconnect" (account revoked - reconnect). */
   syncStatus?: () => string;
+  /** Per-root sync status, keyed by root dir - lets the console say WHICH root is stuck, alongside
+   *  the collapsed `syncStatus`. Optional: `perRoot` is omitted from `GET /api/sync` entirely when
+   *  this is not wired, so existing callers see no shape change. */
+  perRootStatus?: () => Record<string, string>;
+  /** What is waiting to be saved, for the pending tray's one card. `connected` says whether there is
+   *  anywhere to save TO yet (any writable root with a remote): with no account, work waiting is not
+   *  a nudge to act, it is a fact to state. Optional, and a throwing implementation degrades to
+   *  "nothing waiting" - counting must never be the reason the status poll fails. */
+  unsavedFn?: () => Promise<{ files: number; oldestAt: number | null; stale: boolean; connected: boolean; incomplete?: boolean }>;
+  /** Clock for the unsaved-count cache TTL. Injected ONLY so the cache's expiry is deterministically
+   *  testable; production leaves it unset and it falls back to Date.now. Nothing else in the daemon
+   *  needs an injected clock, so this stays scoped to the one place a test must control time. */
+  now?: () => number;
   /** Directory of the built operator console (index.html + assets). Served at `/` when set. */
   webRoot?: string;
   /** The read-only vault surface (documents + per-file history). */
@@ -197,10 +214,31 @@ export interface DaemonDeps {
   fileTree?: () => TreeNode[];
   /** The derived agent surface (.claude/skills, .mcp.json, policy, assembled CLAUDE.md) - a health
    *  summary + tree fragment revealed by the Files panel's "Show agent files" toggle. Zero LLM. */
-  agentView?: () => { summary: unknown; tree: TreeNode[] };
+  agentView?: () => { summary: unknown; tree: TreeNode[]; discrepancies?: unknown };
+  /** Force a config rebuild (re-link skills, re-assemble CLAUDE.md, re-pin MCP) then return the fresh
+   *  agent view - powers the Agent Context viewer's "Regenerate & re-verify" action. */
+  agentViewRegen?: () => { summary: unknown; tree: TreeNode[]; discrepancies?: unknown };
   /** Live Claude subscription usage for the bottom status strip. `force` bypasses the cache
    *  (the manual-refresh affordance). */
   usageFn?: (force?: boolean) => Promise<UsageReport> | UsageReport;
+  /** Open an account: provision with the pasted token, attach remotes, publish once. */
+  openAccount?: (input: { baseUrl: string; setupToken: string }) => Promise<{ state: "connected" | "needs-help" }>;
+  /** Current account state for the console. */
+  accountState?: () => { state: "local" | "connected"; operatorId?: string; companySlug?: string; remotes?: { core: string; team: string; private: string } };
+  /** Run the browser sign-in→attach chain (system browser + PKCE, then session→persist→attach).
+   *  Optional: absent whenever no Supabase client config is wired (the default today), so
+   *  `POST /api/signin` stays dormant (501) rather than half-working. */
+  signIn?: () => Promise<{ state: "connected" | "needs-help" }>;
+  /** Anonymous onboarding: mint an anonymous account no-browser and attach it under the given company
+   *  name. Optional: absent whenever no Supabase client config is wired (the same gate as `signIn`),
+   *  so `POST /api/onboard` stays dormant (501) rather than half-working. */
+  onboard?: (input: { companyName: string }) => Promise<{ state: "connected" | "needs-help" }>;
+  /** Local disconnect of the active org (Task 1's disconnect.ts): detach every root's remote and
+   *  clear the account store, reverting to a clean local-only state - git history is kept
+   *  (invariant 8). Optional and gated exactly like `openAccount`/`accountState` (an account store
+   *  must exist - e.g. absent for the sandbox), so `POST /api/logout` simply isn't wired for an org
+   *  with nothing to disconnect and the request falls through to the daemon's terminal 404. */
+  logout?: () => Promise<{ state: "local" }>;
 }
 
 export interface TreeNode {
@@ -224,8 +262,46 @@ export interface OnboardingControl {
 
 export type Handler = (req: Request) => Promise<Response>;
 
+/** How long an unsaved count is reused before it is recomputed. Two console pollers (the tray, 4s;
+ *  the left rail, 5s) hit GET /api/sync, and counting runs several git processes PER ROOT - roughly
+ *  ten short-lived processes every couple of seconds on the operator's laptop, forever. A short TTL
+ *  collapses that to one count per window without the number ever looking stale to a human. */
+const UNSAVED_TTL_MS = 2000;
+const NOTHING_UNSAVED = { files: 0, oldestAt: null, stale: false, connected: false } as const;
+
 export function createDaemon(deps: DaemonDeps): Handler {
   const appSubs = new Map<string, () => void>(); // token → unsubscribe (mini-app host registration)
+  const now = deps.now ?? Date.now;
+  // The wire shape the poll returns: the freshly-counted `incomplete` flag is a decision input for the
+  // cache, never part of what the console sees.
+  type UnsavedWire = Omit<Awaited<ReturnType<NonNullable<DaemonDeps["unsavedFn"]>>>, "incomplete">;
+  let unsavedAt = -Infinity;
+  let unsavedValue: UnsavedWire = { ...NOTHING_UNSAVED };
+  let unsavedInFlight: Promise<UnsavedWire> | null = null;
+  /** The cached count. Concurrent pollers collapse onto one in-flight count; a throw degrades to
+   *  "nothing waiting" (the dep's documented contract) rather than 500-ing the status poll. */
+  const unsavedCached = async (): Promise<UnsavedWire> => {
+    if (!deps.unsavedFn) return { ...NOTHING_UNSAVED };
+    if (now() - unsavedAt < UNSAVED_TTL_MS) return unsavedValue;
+    if (unsavedInFlight) return unsavedInFlight;
+    unsavedInFlight = deps
+      .unsavedFn()
+      .then(({ incomplete, ...wire }) => {
+        // A count that could not be fully taken (a transient git index.lock race on one root) must
+        // never blank a real number into "nothing waiting" (invariant 8). Keep the last good count
+        // and leave the TTL expired, so the very next poll re-attempts a clean count. The one
+        // exception is the first-ever count, where there is no prior value to keep.
+        if (incomplete && unsavedAt !== -Infinity) return unsavedValue;
+        unsavedValue = wire;
+        unsavedAt = now();
+        return wire;
+      })
+      .catch(() => ({ ...NOTHING_UNSAVED }))
+      .finally(() => {
+        unsavedInFlight = null;
+      });
+    return unsavedInFlight;
+  };
   const handle = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -314,10 +390,21 @@ export function createDaemon(deps: DaemonDeps): Handler {
     }
     if (method === "GET" && deps.fileTree && path === "/api/tree") return json({ tree: deps.fileTree() });
     if (method === "GET" && deps.agentView && path === "/api/agent-view") return json(deps.agentView());
+    if (method === "POST" && deps.agentViewRegen && path === "/api/agent-view/regen") {
+      // regenConfig() mutates disk (re-links skills, rewrites CLAUDE.md/.mcp.json, reads the keychain)
+      // and CAN throw - keep the "never a raw 500 for a user-triggered mutation" contract the rest of
+      // the API holds: surface a terse, showable error the viewer already handles (it checks r.error).
+      try {
+        return json(deps.agentViewRegen());
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "regenerate failed" }, 400);
+      }
+    }
     if (method === "GET" && deps.usageFn && path === "/api/usage")
       return json(await deps.usageFn(url.searchParams.get("refresh") === "1"));
 
     if (method === "GET" && deps.catalog && path === "/api/skills") return json({ skills: deps.catalog.skills() });
+    if (method === "GET" && deps.catalog && path === "/api/rules") return json({ rules: deps.catalog.rules ? deps.catalog.rules() : [] });
     if (deps.skillEditor) {
       if (method === "GET" && path === "/api/skill") {
         const name = url.searchParams.get("name");
@@ -616,11 +703,76 @@ export function createDaemon(deps: DaemonDeps): Handler {
       });
       return json({ ok: deps.broker.resolve(id, verdict) });
     }
+    // "Save now" - the operator's explicit decision to send everything. The only path that pushes.
     if (method === "POST" && path === "/api/sync") {
       return json({ result: await deps.syncFn() });
     }
     if (method === "GET" && path === "/api/sync") {
-      return json({ status: deps.syncStatus?.() ?? "ok" });
+      return json({
+        status: deps.syncStatus?.() ?? "ok",
+        unsaved: await unsavedCached(),
+        // Whether `/api/signin` is anything more than a 501 - the console's sign-in CTAs (the
+        // left-rail pill, the pending tray's not-connected card) must not dead-end at a dormant
+        // route, so they gate on this rather than inferring availability from `unsaved.connected`.
+        signInAvailable: !!deps.signIn,
+        ...(deps.perRootStatus ? { perRoot: deps.perRootStatus() } : {}),
+      });
+    }
+    if (method === "POST" && deps.openAccount && path === "/api/account") {
+      const b = await body<{ baseUrl: string; setupToken: string }>(req, { baseUrl: "string!", setupToken: "string!" });
+      try {
+        return json(await deps.openAccount({ baseUrl: b.baseUrl, setupToken: b.setupToken }));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "could not open account";
+        // A sandbox refusal is a 409 (conflict with the org's local-only nature); everything else the
+        // operator can act on - a bad token, an unreachable server - is a terse 400. Never a raw 500.
+        const status = /sandbox/i.test(msg) ? 409 : 400;
+        return json({ error: msg }, status);
+      }
+    }
+    if (method === "GET" && deps.accountState && path === "/api/account") {
+      return json(deps.accountState());
+    }
+    // Local disconnect of the active org - the reverse of /api/account: detach every root's remote
+    // and clear the account store, keeping git history (invariant 8). Gated exactly like
+    // openAccount/accountState (absent whenever there is no account store to clear, e.g. the
+    // sandbox), so an unwired org's request simply falls through to the terminal 404 below rather
+    // than a dedicated dormant response. Any throw maps to a terse 400, never a raw 500.
+    if (method === "POST" && deps.logout && path === "/api/logout") {
+      try {
+        return json(await deps.logout());
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "could not log out" }, 400);
+      }
+    }
+    // The browser sign-in→attach chain. Dormant (501) whenever `signIn` isn't wired - the default
+    // today, with no Supabase config - so the console can treat "not configured" and "failed" as
+    // distinct outcomes. Errors map exactly like /api/account above: sandbox → 409, else 400, never 500.
+    if (method === "POST" && path === "/api/signin") {
+      if (!deps.signIn) return json({ error: "sign-in not configured" }, 501);
+      try {
+        return json(await deps.signIn());
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "could not sign in";
+        const status = /sandbox/i.test(msg) ? 409 : 400;
+        return json({ error: msg }, status);
+      }
+    }
+    // Anonymous onboarding: the operator names their company and gets an anonymous account with no
+    // browser round-trip. Dormant (501) whenever `onboard` isn't wired - the same gate as `/api/signin`
+    // - so the console can treat "not configured" and "failed" as distinct outcomes. Errors map
+    // exactly like /api/signin above: sandbox → 409, else 400, never a raw 500.
+    if (method === "POST" && path === "/api/onboard") {
+      if (!deps.onboard) return json({ error: "sign-in not configured" }, 501);
+      const { companyName } = await body<{ companyName?: string }>(req, { companyName: "string" });
+      if (!companyName || !companyName.trim()) return json({ error: "companyName is required" }, 400);
+      try {
+        return json(await deps.onboard({ companyName }));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "could not onboard";
+        const status = /sandbox/i.test(msg) ? 409 : 400;
+        return json({ error: msg }, status);
+      }
     }
 
     // Mini-app bridge: the agent's app-driver MCP posts commands here; the mini-app window

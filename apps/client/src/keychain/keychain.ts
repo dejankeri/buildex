@@ -12,6 +12,12 @@ export interface Keychain {
   get(key: string): string | undefined;
   set(key: string, value: string): void;
   delete(key: string): void;
+  /** Remove EVERY secret under this keychain's workspace service in one call. The seam for closing the
+   *  path-reuse edge (invariant 6): a workspace path reused by a new company must never inherit the old
+   *  one's OS-vault namespace, and the OS vault lives outside the workspace dir, so deleting the dir can
+   *  never reach it. Also the primitive behind an in-app "remove all data". Best-effort by contract - it
+   *  swallows backend failures rather than throw, because a purge must not block a fresh provision. */
+  clear(): void;
 }
 
 /** Process-memory keychain for tests and ephemeral runs. Values never touch disk. */
@@ -25,6 +31,9 @@ export class InMemoryKeychain implements Keychain {
   }
   delete(key: string): void {
     this.store.delete(key);
+  }
+  clear(): void {
+    this.store.clear();
   }
 }
 
@@ -77,7 +86,21 @@ export class SystemKeychain implements Keychain {
   delete(key: string): void {
     this.run(["delete-generic-password", "-s", this.service, "-a", key]); // 44 (not found) is fine
   }
+
+  /** `security delete-generic-password -s <service>` (no account) removes ONE generic item under this
+   *  workspace's service; looping until a non-zero exit (44 = none left) clears the whole namespace.
+   *  Bounded so a misbehaving runner that never reports "not found" can't spin the daemon forever, and
+   *  never throws - a purge is best-effort and must not block the provision that triggered it. */
+  clear(): void {
+    for (let i = 0; i < KEYCHAIN_CLEAR_MAX; i++) {
+      if (this.run(["delete-generic-password", "-s", this.service]).status !== 0) return;
+    }
+  }
 }
+
+/** Upper bound on the by-service delete loop. Far above any realistic per-workspace key count (a handful
+ *  of connectors + a git token), so it only ever caps a runner that never returns "not found". */
+export const KEYCHAIN_CLEAR_MAX = 10_000;
 
 /** A stable per-workspace keychain service id, so companies/workspaces never collide (invariant 6). */
 export function keychainService(workspace: string): string {
