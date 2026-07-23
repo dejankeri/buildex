@@ -380,6 +380,17 @@ async function sendPrompt(tab, prompt) {
     else turn.fail((e && e.message) || String(e), () => retryLast(tab));
   }
   turn.done(); // stream closed - freeze the working-trace summary to its final step count
+  // An agent turn is not a chat message - it can run for minutes while the operator does something
+  // else. Tell them it landed, but only if they actually left: notifyOperator says nothing while
+  // BuildEx has focus, because the answer is already on their screen.
+  if (typeof notifyOperator === "function") {
+    notifyOperator("chat", {
+      title: tab.title && tab.title !== "New chat" ? tab.title : "BuildEx",
+      body: "Your answer is ready.",
+      tag: "chat-" + tab.sessionId,
+      onClick: () => activateTab(tab.id),
+    });
+  }
   tab.abort = null;
   syncBusy = Math.max(0, syncBusy - 1);
   if (!syncBusy) setSync("ok");

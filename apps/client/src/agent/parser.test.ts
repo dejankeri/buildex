@@ -54,6 +54,24 @@ describe("ClaudeStreamParser", () => {
     expect(events.at(-1)).toEqual({ kind: "done", sessionId: "s1" });
   });
 
+  // The result line is the ONLY place the agent prices its own work. Dropping it (as this parser
+  // used to) is what made a loop's spend unknowable and a spending limit unenforceable.
+  it("carries the cost and duration the agent reported for the turn", () => {
+    const priced = JSON.stringify({ type: "result", subtype: "success", session_id: "s1", total_cost_usd: 0.0412, duration_ms: 8321 });
+    expect(drain([initLine, priced]).at(-1)).toEqual({ kind: "done", sessionId: "s1", costUsd: 0.0412, ms: 8321 });
+  });
+
+  it("omits a price the agent did not report rather than inventing a zero", () => {
+    expect(drain([initLine, doneLine]).at(-1)).toEqual({ kind: "done", sessionId: "s1" });
+  });
+
+  it("ignores a cost that is not a usable number, so no limit is measured on junk", () => {
+    for (const bad of ['"0.04"', "null", "-1", "1e999"]) {
+      const line = `{"type":"result","subtype":"success","session_id":"s1","total_cost_usd":${bad}}`;
+      expect(drain([line]).at(-1)).toEqual({ kind: "done", sessionId: "s1" });
+    }
+  });
+
   it("reassembles a frame split across two push() calls", () => {
     const p = new ClaudeStreamParser({ workspace: WS });
     const out: UiEvent[] = [];

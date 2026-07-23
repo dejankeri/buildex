@@ -1,7 +1,7 @@
 // The /api/loops surface. The console is a thin renderer over this: every string it shows (the
 // schedule sentence, the status) is computed here, so these tests are where that contract is pinned.
 import { describe, it, expect, beforeEach } from "vitest";
-import { createDaemon, type LoopRecord, type LoopInput, type LoopsEngineControl } from "./daemon.js";
+import { createDaemon, type LoopRecord, type LoopInput, type LoopsEngineControl, type LoopSpendRecord } from "./daemon.js";
 import { Gate } from "../gate/gate.js";
 import { PolicyEngine } from "../gate/policy.js";
 import { ApprovalBroker } from "../gate/approval.js";
@@ -27,6 +27,13 @@ function base() {
 function fakeLoops() {
   const rows = new Map<string, LoopRecord>();
   const runs: string[] = [];
+  let capUsd: number | undefined;
+  const spend = (): LoopSpendRecord => ({
+    today: { runs: 2, costUsd: 0.08 },
+    month: { runs: 40, costUsd: 1.6 },
+    ...(capUsd !== undefined ? { capUsd } : {}),
+    overCap: capUsd !== undefined && 0.08 >= capUsd,
+  });
   const control: LoopsEngineControl = {
     list: () => [...rows.values()],
     add: (b: LoopInput) => {
@@ -42,6 +49,7 @@ function fakeLoops() {
         enabled: b.enabled ?? true,
         activeHere: true, // created here
         nextRun: 1_000,
+        runs: [],
       };
       rows.set(name, rec);
       return rec;
@@ -75,8 +83,13 @@ function fakeLoops() {
       runs.push(name);
       return { sessionId: `s-${name}` };
     },
+    spend,
+    setCap: (usd) => {
+      capUsd = usd;
+      return spend();
+    },
   };
-  return { control, runs, rows };
+  return { control, runs, rows, cap: () => capUsd };
 }
 
 let loops: ReturnType<typeof fakeLoops>;
@@ -109,7 +122,7 @@ const get = (path: string) => daemon(new Request(`http://127.0.0.1${path}`));
 
 describe("/api/loops", () => {
   it("starts empty", async () => {
-    expect(await (await get("/api/loops")).json()).toEqual({ loops: [] });
+    expect(await (await get("/api/loops")).json()).toMatchObject({ loops: [] });
   });
 
   it("creates a loop and lists it with its schedule already in words", async () => {
@@ -152,7 +165,7 @@ describe("/api/loops", () => {
     expect(loops.runs).toEqual(["sweep"]);
 
     expect((await (await post("/api/loops/sweep/remove")).json())).toEqual({ ok: true });
-    expect(await (await get("/api/loops")).json()).toEqual({ loops: [] });
+    expect(await (await get("/api/loops")).json()).toMatchObject({ loops: [] });
   });
 
   it("adopts and drops a loop on this machine, separately from the company-wide switch", async () => {
@@ -174,6 +187,35 @@ describe("/api/loops", () => {
     expect((await post("/api/loops/ghost/toggle")).status).toBe(400);
     expect((await post("/api/loops/ghost/here", { active: true })).status).toBe(400);
     expect((await patch("/api/loops/ghost", { title: "x" })).status).toBe(400);
+  });
+
+  it("ships the spend line with the list, so one request paints the panel", async () => {
+    const listed = (await (await get("/api/loops")).json()) as { spend: LoopSpendRecord };
+    expect(listed.spend).toMatchObject({ today: { runs: 2, costUsd: 0.08 }, month: { costUsd: 1.6 }, overCap: false });
+  });
+
+  it("sets and clears the daily ceiling", async () => {
+    expect((await (await post("/api/loops-budget", { capUsd: 5 })).json()) as LoopSpendRecord).toMatchObject({ capUsd: 5 });
+    expect(loops.cap()).toBe(5);
+
+    const cleared = (await (await post("/api/loops-budget", {})).json()) as LoopSpendRecord;
+    expect(cleared.capUsd).toBeUndefined();
+    expect(loops.cap()).toBeUndefined();
+  });
+
+  it("reads a zero or negative ceiling as NO ceiling, never as a limit of nothing", async () => {
+    for (const capUsd of [0, -1]) {
+      await post("/api/loops-budget", { capUsd: 5 });
+      await post("/api/loops-budget", { capUsd });
+      expect(loops.cap()).toBeUndefined();
+    }
+  });
+
+  it("keeps the budget path clear of a loop that happens to be called Budget", async () => {
+    await post("/api/loops", { title: "Budget", prompt: "p", every: "1h" });
+    // The loop owns /api/loops/budget; the ceiling lives on its own path and is unaffected.
+    expect((await (await post("/api/loops/budget/run")).json())).toEqual({ sessionId: "s-budget" });
+    expect((await (await post("/api/loops-budget", { capUsd: 3 })).json()) as LoopSpendRecord).toMatchObject({ capUsd: 3 });
   });
 
   it("does not answer loop routes at all when no engine is wired", async () => {

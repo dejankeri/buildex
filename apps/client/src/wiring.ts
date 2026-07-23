@@ -18,7 +18,8 @@ import { emptyCatalogSource, type CatalogSource } from "./brain/catalog-source.j
 import { buildAgentView } from "./brain/agent-view.js";
 import { serveApp, brokerData } from "./server/app-serve.js";
 import { LoopDefStore, LoopStateFile, migrateAutomationsYaml, parseScheduleInput, type LoopDef, type LoopSchedule } from "./brain/loops.js";
-import { LoopsEngine, type StartedRun } from "./brain/loops-engine.js";
+import { LoopsEngine, type StartedRun, type RunOutcome } from "./brain/loops-engine.js";
+import { LoopRunsFile } from "./brain/loops-runs.js";
 import { ConnectorHub } from "./brain/connectors.js";
 import { createKeychain } from "./keychain/keychain.js";
 import { FileSessionStore } from "./daemon/sessions.js";
@@ -773,6 +774,9 @@ export function buildClientHandler(config: ClientConfig): Handler {
   migrateAutomationsYaml(join(loopsRoot ? loopsRoot.dir : config.workspace, "automations.yaml"), loopsYaml);
   const loopDefs = new LoopDefStore(loopsYaml);
   const loopState = new LoopStateFile(join(config.workspace, ".loops-state.json"));
+  // What each loop actually did and what it cost. Local and uncommitted like the stamps: one
+  // machine's spend is not another's, and it is this machine's agent budget the ceiling protects.
+  const loopRuns = new LoopRunsFile(join(config.workspace, ".loops-runs.json"));
 
   /** Start a loop's agent run. Returns as soon as the session exists so "Run now" answers the
    *  operator immediately; the run itself finishes behind the returned `done`.
@@ -802,11 +806,22 @@ export function buildClientHandler(config: ClientConfig): Handler {
       if (card && ev.reason === "timeout") blockedOn ??= describeTool(card.tool);
     });
 
-    const done = (async (): Promise<{ blockedOn?: string }> => {
+    // What the agent said the turn cost. It reports this once, on its final `result` line, which the
+    // parser now carries onto `done` - that is the whole source of loop spend. A run that never
+    // reaches a result line (crash, abort) simply has no price, and is counted as a run at zero.
+    let priced: { costUsd?: number; ms?: number } = {};
+
+    const done = (async (): Promise<RunOutcome> => {
       broker.pushOrigin(origin);
       try {
         for await (const e of driver.runPrompt({ prompt, workspace: config.workspace, systemPromptAppend: workspaceHint() })) {
-          if (e.kind === "done" && e.sessionId) sessions.setClaudeSessionId(sessionId, e.sessionId);
+          if (e.kind === "done") {
+            if (e.sessionId) sessions.setClaudeSessionId(sessionId, e.sessionId);
+            priced = {
+              ...(e.costUsd !== undefined ? { costUsd: e.costUsd } : {}),
+              ...(e.ms !== undefined ? { ms: e.ms } : {}),
+            };
+          }
           sessions.append(sessionId, e);
         }
         sessions.setStatus(sessionId, "idle");
@@ -818,13 +833,13 @@ export function buildClientHandler(config: ClientConfig): Handler {
         broker.popOrigin(origin);
         unsubscribe();
       }
-      return blockedOn === undefined ? {} : { blockedOn };
+      return { ...priced, ...(blockedOn === undefined ? {} : { blockedOn }) };
     })();
 
     return { sessionId, done };
   };
 
-  const loopsEngine = new LoopsEngine({ defs: loopDefs, state: loopState, now: Date.now, run: runLoop });
+  const loopsEngine = new LoopsEngine({ defs: loopDefs, state: loopState, runs: loopRuns, now: Date.now, run: runLoop });
   // The clock. One timer, opt-in via config so tests never leak one; the demo and the packaged
   // daemon set it. Loops run while the app is open - there is no cloud half.
   if (config.schedulerIntervalMs && config.schedulerIntervalMs > 0) {
@@ -870,6 +885,8 @@ export function buildClientHandler(config: ClientConfig): Handler {
     setActiveHere: (name, active) => loopsEngine.setActiveHere(name, active),
     remove: (name) => loopsEngine.remove(name),
     runNow: (name) => loopsEngine.runNow(name),
+    spend: () => loopsEngine.spend(),
+    setCap: (usd) => loopsEngine.setCap(usd),
   };
   const fileTree = (): TreeNode[] => config.roots.map((r) => ({ name: r.name, path: r.name, type: "dir" as const, children: treeOf(r.dir, r.name) }));
 

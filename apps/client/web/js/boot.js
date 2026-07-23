@@ -95,6 +95,11 @@ async function boot() {
   setInterval(refreshApps, 8000);
   setInterval(refreshPending, 4000);
   setInterval(() => refreshUsage(), 15 * 60000);
+  // Loops fire whether or not their panel is open, so poll them from here rather than from the
+  // panel: it is what keeps the tab badge honest and what lets a blocked loop reach the operator
+  // through a notification while they are somewhere else entirely.
+  refreshLoops();
+  setInterval(refreshLoops, 30000);
   // load the active project's context (its tabs), or show the start screen if it's empty
   if (S.activeProject) switchToProject(S.activeProject);
   // First run: ask for the company name (and, when available, whether to back up to the cloud)

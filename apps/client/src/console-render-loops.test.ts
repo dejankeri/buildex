@@ -88,7 +88,7 @@ describe("console renderers (jsdom) — the Loops panel", () => {
     const card = doc.querySelector("#looplist .loopcard") as any;
     (card.querySelector(".loopmore") as any).click();
     const items = Array.from(doc.querySelectorAll("[data-menu] button") as any, (n: any) => n.textContent);
-    expect(items).toEqual(["✎Edit loop", "⏸Pause for everyone", "⌫Delete loop"]);
+    expect(items).toEqual(["✎Edit loop", "⌛Run history", "⏸Pause for everyone", "⌫Delete loop"]);
   });
 
   it("renders a status chip per outcome, and none at all before the first run", () => {
@@ -253,5 +253,136 @@ describe("console renderers (jsdom) — the loop composer", () => {
     expect((doc.querySelector("#loopcomposer h5") as any).textContent).toBe("Edit loop");
     expect((doc.querySelector("#loopcomposer .f-title") as any).value).toBe("Weekly review");
     expect((doc.querySelector("#loopcomposer .save") as any).textContent).toBe("Save");
+  });
+});
+
+// The history strip, the spend line, and the two dialogs behind them. What is pinned here is that
+// the panel never re-derives the daemon's numbers, and that the strip stays a timeline (oldest
+// first) rather than the last-run chip it replaced.
+function run(over: Record<string, unknown> = {}) {
+  return { at: Date.now() - HOUR, status: "ok", sessionId: "s1", ...over };
+}
+
+describe("console renderers (jsdom) — a loop's run history", () => {
+  it("paints one mark per run, oldest first, so a pattern is visible at a glance", () => {
+    const { doc } = withLoops([
+      loop({ runs: [run({ at: 3, status: "failed" }), run({ at: 2, status: "ok" }), run({ at: 1, status: "needs-approval" })] }),
+    ]);
+    const marks = Array.from(doc.querySelectorAll("#looplist .loopstrip .lrun") as any, (n: any) => n.className);
+    expect(marks).toEqual(["lrun warn", "lrun ok", "lrun bad"]);
+  });
+
+  it("shows no strip at all for a loop that has never run", () => {
+    const { doc } = withLoops([loop({ runs: [] })]);
+    expect(doc.querySelector("#looplist .loopstrip")).toBeNull();
+  });
+
+  it("puts what a run cost on the last-run chip, and omits it when the agent did not price it", () => {
+    const priced = withLoops([loop({ status: "ok", lastRun: Date.now() - HOUR, runs: [run({ costUsd: 0.0412 })] })]);
+    expect(priced.doc.querySelector("#looplist .pill")!.textContent).toContain("$0.04");
+
+    const unpriced = withLoops([loop({ status: "ok", lastRun: Date.now() - HOUR, runs: [run()] })]);
+    expect(unpriced.doc.querySelector("#looplist .pill")!.textContent).not.toContain("$");
+  });
+
+  it("says 'under $0.01' rather than rounding real spending down to nothing", () => {
+    const { c } = loadConsole();
+    expect(c.usd(0.0004)).toBe("under $0.01");
+    expect(c.usd(0)).toBe("$0.00");
+    expect(c.usd(1.239)).toBe("$1.24");
+  });
+
+  it("describes a run in one sentence, carrying what a blocked one wanted", () => {
+    const { c } = loadConsole();
+    expect(c.runSentence({ at: Date.now(), status: "needs-approval", blockedOn: "send an email to ops@acme.com" })).toContain(
+      "wanted to send an email to ops@acme.com",
+    );
+    expect(c.runSentence({ at: Date.now(), status: "missed" })).toContain("Missed");
+  });
+
+  it("drops the relative time for a history row, which already carries the exact time beside it", () => {
+    const { c } = loadConsole();
+    const r = { at: Date.now() - HOUR, status: "ok", costUsd: 0.17 };
+    expect(c.runSentence(r)).toBe("Ran 1h · about $0.17");
+    expect(c.runSentence(r, { absolute: true })).toBe("Ran · about $0.17");
+  });
+
+  it("keeps what a blocked run wanted in the history row - it is the point of the row", () => {
+    const { doc, c } = loadConsole();
+    c.openLoopHistory(loop({ runs: [run({ status: "needs-approval", costUsd: 0.24, blockedOn: "send an email to team@acme.com" })] }));
+    expect((doc.querySelector(".loophist .lh-what") as any).textContent).toBe(
+      "Needed you · about $0.24 · wanted to send an email to team@acme.com",
+    );
+  });
+
+  it("lists every remembered run in the history dialog, ESCAPING what the agent wrote", () => {
+    const { doc, c } = loadConsole();
+    c.openLoopHistory(loop({ title: XSS, runs: [run({ status: "needs-approval", blockedOn: XSS }), run()] }));
+    const card = doc.querySelector(".loophist") as any;
+    expect(card.querySelector("img, script, iframe")).toBeNull();
+    expect(card.querySelectorAll(".lh-row")).toHaveLength(2);
+    expect(card.querySelector(".ovh").textContent).toBe(XSS);
+  });
+
+  it("says so plainly when a loop has never run here", () => {
+    const { doc, c } = loadConsole();
+    c.openLoopHistory(loop({ runs: [] }));
+    expect((doc.querySelector(".loophist .ovp") as any).textContent).toContain("not run on this machine yet");
+  });
+});
+
+describe("console renderers (jsdom) — the daily spending limit", () => {
+  /** Load the console with the spend host present and `S.loopSpend` seeded, then paint it. */
+  function withSpend(spend: unknown) {
+    const handle = loadConsole();
+    const host = handle.doc.createElement("div");
+    host.id = "loopspend";
+    (handle.doc.querySelector("#rpanel") as unknown as { append(n: unknown): void }).append(host);
+    handle.c.S.loopSpend = spend;
+    handle.c.renderLoopSpend();
+    return handle;
+  }
+
+  it("says nothing before anything has run - an empty panel needs no spend line", () => {
+    const { doc } = withSpend({ today: { runs: 0, costUsd: 0 }, month: { runs: 0, costUsd: 0 }, overCap: false });
+    expect(doc.querySelector("#loopspend .loopcap")).toBeNull();
+  });
+
+  it("shows today and the month when there is no ceiling, and offers to set one", () => {
+    const { doc } = withSpend({ today: { runs: 4, costUsd: 0.42 }, month: { runs: 90, costUsd: 6.1 }, overCap: false });
+    expect((doc.querySelector("#loopspend .lc-tx") as any).textContent).toBe("About $0.42 today · $6.10 this month");
+    expect((doc.querySelector("#loopspend .lc-edit") as any).textContent).toBe("Set a limit");
+  });
+
+  it("shows today against the ceiling once one is set", () => {
+    const { doc } = withSpend({ today: { runs: 4, costUsd: 0.42 }, month: { runs: 90, costUsd: 6.1 }, capUsd: 5, overCap: false });
+    expect((doc.querySelector("#loopspend .lc-tx") as any).textContent).toBe("About $0.42 of $5.00 today");
+  });
+
+  it("says the scheduler is holding off - and when it resumes - rather than looking broken", () => {
+    const { doc } = withSpend({ today: { runs: 40, costUsd: 5.2 }, month: { runs: 90, costUsd: 6.1 }, capUsd: 5, overCap: true });
+    const line = doc.querySelector("#loopspend .loopcap.over") as any;
+    expect(line.textContent).toContain("spent its $5.00 for today");
+    expect(line.textContent).toContain("after midnight");
+    expect(line.querySelector(".lc-edit").textContent).toBe("Change limit");
+  });
+
+  it("opens the limit editor pre-filled, and blank when there is no limit", () => {
+    const { doc, c } = loadConsole();
+    c.S.loopSpend = { today: { costUsd: 0.4 }, month: { costUsd: 2 }, capUsd: 5, overCap: false };
+    c.openLoopBudget();
+    expect((doc.querySelector(".loopbudget .lb-cap") as any).value).toBe("5");
+    (doc.querySelector(".ovbackdrop") as any).remove();
+
+    c.S.loopSpend = { today: { costUsd: 0.4 }, month: { costUsd: 2 }, overCap: false };
+    c.openLoopBudget();
+    expect((doc.querySelector(".loopbudget .lb-cap") as any).value).toBe("");
+  });
+
+  it("tells the operator running a loop by hand is never blocked - the limit is about UNattended work", () => {
+    const { doc, c } = loadConsole();
+    c.S.loopSpend = { today: { costUsd: 0 }, month: { costUsd: 0 }, overCap: false };
+    c.openLoopBudget();
+    expect((doc.querySelector(".loopbudget .ovp") as any).textContent).toContain("never blocked");
   });
 });

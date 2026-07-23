@@ -6,17 +6,20 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LoopsEngine } from "./loops-engine.js";
+import { LoopsEngine, type RunOutcome } from "./loops-engine.js";
+import { LoopRunsFile } from "./loops-runs.js";
 import { LoopDefStore, LoopStateFile, type LoopDef } from "./loops.js";
 
 let dir: string;
 let defs: LoopDefStore;
 let state: LoopStateFile;
+let runs: LoopRunsFile;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "loops-engine-"));
   defs = new LoopDefStore(join(dir, "loops.yaml"));
   state = new LoopStateFile(join(dir, "state.json"));
+  runs = new LoopRunsFile(join(dir, "runs.json"));
 });
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
@@ -28,14 +31,14 @@ const T0 = new Date(2026, 6, 23, 9, 0, 0).getTime(); // a Thursday, 9am local
 /** A run recorder standing in for the agent: records each spawn, resolves when the test says so. */
 function recorder() {
   const started: string[] = [];
-  const pending: Array<{ name: string; finish: (r?: { blockedOn?: string }) => void; fail: (e: Error) => void }> = [];
+  const pending: Array<{ name: string; finish: (r?: RunOutcome) => void; fail: (e: Error) => void }> = [];
   let seq = 0;
   const run = (loop: LoopDef) => {
     started.push(loop.name);
     const sessionId = `s${++seq}`;
-    let finish!: (r?: { blockedOn?: string }) => void;
+    let finish!: (r?: RunOutcome) => void;
     let fail!: (e: Error) => void;
-    const done = new Promise<{ blockedOn?: string }>((res, rej) => {
+    const done = new Promise<RunOutcome>((res, rej) => {
       finish = (r) => res(r ?? {});
       fail = rej;
     });
@@ -51,7 +54,7 @@ function recorder() {
 }
 
 function engineWith(rec: ReturnType<typeof recorder>, now: () => number, maxConcurrent?: number) {
-  return new LoopsEngine({ defs, state, now, run: rec.run, ...(maxConcurrent ? { maxConcurrent } : {}) });
+  return new LoopsEngine({ defs, state, runs, now, run: rec.run, ...(maxConcurrent ? { maxConcurrent } : {}) });
 }
 
 /** Define a loop AND adopt it on this machine - what creating one through the console does. Tests
@@ -389,5 +392,155 @@ describe("LoopsEngine — the view the console renders", () => {
     expect(engine.toggle("sweep").enabled).toBe(false);
     expect(engine.list()[0]!.status).toBe("ok");
     expect(engine.toggle("sweep").enabled).toBe(true);
+  });
+});
+
+// Only the last run was ever remembered, so three failed mornings showed as one Failed chip. The
+// history is what makes a pattern visible - and it is the same ledger the spending limit reads, so
+// these tests also pin that a run is never counted in one place and missed in the other.
+describe("LoopsEngine — run history", () => {
+  it("records each finished run, newest first, with its session and price", async () => {
+    const rec = recorder();
+    let now = T0;
+    const engine = engineWith(rec, () => now);
+    seed(engine, { title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+
+    await engine.runNow("sweep");
+    rec.pending.splice(0)[0]!.finish({ costUsd: 0.02, ms: 4000 });
+    await engine.settled();
+
+    now = T0 + HOUR;
+    await engine.runNow("sweep");
+    rec.pending.splice(0)[0]!.finish({ costUsd: 0.03, ms: 5000 });
+    await engine.settled();
+
+    const history = runs.history("sweep");
+    expect(history.map((r) => r.at)).toEqual([T0 + HOUR, T0]);
+    expect(history[0]).toMatchObject({ status: "ok", sessionId: "s2", costUsd: 0.03, ms: 5000 });
+  });
+
+  it("ships the history inline on list(), so the panel needs no request per card", async () => {
+    const rec = recorder();
+    const engine = engineWith(rec, () => T0);
+    seed(engine, { title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    await engine.runNow("sweep");
+    await rec.finishAll();
+    await engine.settled();
+    expect(engine.list()[0]!.runs.map((r) => r.status)).toEqual(["ok"]);
+  });
+
+  it("records a failed run and a blocked one, with what the blocked one wanted", async () => {
+    const rec = recorder();
+    const engine = engineWith(rec, () => T0);
+    seed(engine, { title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+
+    await engine.runNow("sweep");
+    rec.pending.splice(0)[0]!.fail(new Error("spawn failed"));
+    await engine.settled();
+
+    await engine.runNow("sweep");
+    rec.pending.splice(0)[0]!.finish({ blockedOn: "send an email to ops@acme.com" });
+    await engine.settled();
+
+    const history = runs.history("sweep");
+    expect(history[0]).toMatchObject({ status: "needs-approval", blockedOn: "send an email to ops@acme.com" });
+    expect(history[1]).toMatchObject({ status: "failed" });
+  });
+
+  it("records a window that went cold, so a missed morning is in the history too", async () => {
+    const rec = recorder();
+    // Switched on at 10am Thursday, so today's 9am window predates the loop and owes nothing.
+    let now = new Date(2026, 6, 23, 10, 0, 0).getTime();
+    const engine = engineWith(rec, () => now);
+    seed(engine, { title: "Standup", prompt: "p", schedule: { kind: "at", hour: 9, minute: 0, days: [] } });
+    await engine.tick();
+    expect(runs.history("standup")).toEqual([]);
+
+    now = new Date(2026, 6, 24, 20, 0, 0).getTime(); // Friday evening: the 9am window is long cold
+    await engine.tick();
+    expect(runs.history("standup").map((r) => r.status)).toEqual(["missed"]);
+    expect(rec.started).toEqual([]);
+  });
+
+  it("forgets a deleted loop's history on the next tick", async () => {
+    const rec = recorder();
+    const engine = engineWith(rec, () => T0);
+    seed(engine, { title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    await engine.runNow("sweep");
+    await rec.finishAll();
+    await engine.settled();
+
+    engine.remove("sweep");
+    await engine.tick();
+    expect(runs.history("sweep")).toEqual([]);
+  });
+});
+
+// A loop firing unattended spends the operator's agent budget - the money dimension of invariant 5,
+// which just never looked like money because it is compute. The ceiling is the gate.
+describe("LoopsEngine — the daily spending limit", () => {
+  /** A loop that is due right now, with `spent` already on today's ledger. */
+  function overspent(rec: ReturnType<typeof recorder>, spent: number, cap: number) {
+    const engine = engineWith(rec, () => T0 + 2 * HOUR);
+    const def = defs.add({ title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    state.set(def.name, { activeHere: true, firstSeen: T0 });
+    runs.setCap(cap);
+    runs.record(def.name, { at: T0, status: "ok", costUsd: spent });
+    return engine;
+  }
+
+  it("fires as usual while the day is under its ceiling", async () => {
+    const rec = recorder();
+    expect(await overspent(rec, 0.2, 1).tick()).toEqual(["sweep"]);
+  });
+
+  it("stops the clock once the day's ceiling is reached", async () => {
+    const rec = recorder();
+    expect(await overspent(rec, 1.5, 1).tick()).toEqual([]);
+    expect(rec.started).toEqual([]);
+  });
+
+  it("stamps nothing while held back, so a held window is judged tomorrow on its own terms", async () => {
+    const rec = recorder();
+    const engine = overspent(rec, 1.5, 1);
+    await engine.tick();
+    expect(state.get("sweep")!.status).toBeUndefined();
+    expect(state.get("sweep")!.lastRun).toBeUndefined();
+  });
+
+  it("still runs on demand over the ceiling - the operator is present, which is the distinction", async () => {
+    const rec = recorder();
+    const engine = overspent(rec, 1.5, 1);
+    await engine.runNow("sweep");
+    expect(rec.started).toEqual(["sweep"]);
+  });
+
+  it("fires again after midnight, when the day's ledger resets", async () => {
+    const rec = recorder();
+    let now = T0 + 2 * HOUR;
+    const engine = new LoopsEngine({ defs, state, runs, now: () => now, run: rec.run });
+    const def = defs.add({ title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    state.set(def.name, { activeHere: true, firstSeen: T0 });
+    runs.setCap(1);
+    runs.record(def.name, { at: T0, status: "ok", costUsd: 1.5 });
+
+    expect(await engine.tick()).toEqual([]);
+    now = new Date(2026, 6, 24, 9, 0, 0).getTime(); // the next local day
+    expect(await engine.tick()).toEqual(["sweep"]);
+  });
+
+  it("reports today and the month against the ceiling", () => {
+    const rec = recorder();
+    const engine = engineWith(rec, () => T0);
+    runs.setCap(2);
+    runs.record("sweep", { at: T0, status: "ok", costUsd: 0.25 });
+    expect(engine.spend()).toMatchObject({ today: { runs: 1, costUsd: 0.25 }, capUsd: 2, overCap: false });
+  });
+
+  it("sets and clears the ceiling", () => {
+    const rec = recorder();
+    const engine = engineWith(rec, () => T0);
+    expect(engine.setCap(5).capUsd).toBe(5);
+    expect(engine.setCap(undefined).capUsd).toBeUndefined();
   });
 });

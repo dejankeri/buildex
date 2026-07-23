@@ -311,6 +311,30 @@ describe("buildClientHandler - the client composition root", () => {
     expect(list.loops).toHaveLength(0);
   });
 
+  it("keeps the daily spending limit on THIS machine, out of the shared loops.yaml", async () => {
+    const app = handler();
+    const post = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
+    await post("/api/loops", { title: "Sweep", prompt: "p", every: "2h" });
+
+    const set = (await (await post("/api/loops-budget", { capUsd: 5 })).json()) as { capUsd?: number };
+    expect(set.capUsd).toBe(5);
+
+    // Read back through the ordinary list request - one fetch paints the whole panel.
+    const listed = (await (await app(new Request("http://127.0.0.1/api/loops"))).json()) as {
+      loops: { runs: unknown[] }[];
+      spend: { capUsd?: number; overCap: boolean; today: { costUsd: number } };
+    };
+    expect(listed.spend).toMatchObject({ capUsd: 5, overCap: false, today: { runs: 0, costUsd: 0 } });
+    expect(listed.loops[0]!.runs).toEqual([]); // never run, so nothing to show on the strip
+
+    // The company's file is untouched: a limit is one operator's budget, not a company decision.
+    expect(readFileSync(join(ws, "team", "loops.yaml"), "utf8")).not.toContain("cap");
+    expect(existsSync(join(ws, ".loops-runs.json"))).toBe(true);
+
+    const cleared = (await (await post("/api/loops-budget", {})).json()) as { capUsd?: number };
+    expect(cleared.capUsd).toBeUndefined();
+  });
+
   it("rejects a junk project item (400, nothing persisted)", async () => {
     const app = handler();
     const post = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));

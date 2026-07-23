@@ -109,6 +109,14 @@ async function openProfile() {
     };
     m.appendChild(code);
   }
+  // Notifications are a property of THIS machine, not of the account, so they sit below the account
+  // actions rather than inside them - and they are reachable whether or not anyone is signed in.
+  const notifs = elt("button", null, "Notifications");
+  notifs.onclick = () => {
+    closeMenus();
+    openNotifySettings();
+  };
+  m.appendChild(notifs);
   document.body.appendChild(m);
   m.dataset.menu = "1";
   const r = anchor.getBoundingClientRect();

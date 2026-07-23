@@ -23,6 +23,10 @@ interface StreamLine {
   subtype?: string;
   session_id?: string;
   message?: { content?: StreamContentBlock[] };
+  /** On the final `result` line: what the turn cost and how long it took. Both optional - an older
+   *  CLI, or one that ended badly, may report neither. */
+  total_cost_usd?: unknown;
+  duration_ms?: unknown;
 }
 
 export class ClaudeStreamParser {
@@ -74,7 +78,16 @@ export class ClaudeStreamParser {
         if (obj.subtype && obj.subtype !== "success") {
           return [{ kind: "error", message: `agent result: ${obj.subtype}` }];
         }
-        return [{ kind: "done", ...(this.sessionId ? { sessionId: this.sessionId } : {}) }];
+        // The `result` line is the only place the agent prices its own work. Carrying it on `done`
+        // is what lets a loop record what a run cost - and a spending limit mean anything.
+        return [
+          {
+            kind: "done",
+            ...(this.sessionId ? { sessionId: this.sessionId } : {}),
+            ...num(obj.total_cost_usd, (v) => ({ costUsd: v })),
+            ...num(obj.duration_ms, (v) => ({ ms: v })),
+          },
+        ];
       default:
         return [];
     }
@@ -133,6 +146,12 @@ export class ClaudeStreamParser {
     }
     return raw;
   }
+}
+
+/** Emit `shape(v)` only for a finite, non-negative number. A stream field is whatever the CLI put
+ *  there; a string or a NaN must not become a cost the operator is shown or a limit is measured on. */
+function num<T>(raw: unknown, shape: (v: number) => T): T | Record<string, never> {
+  return typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? shape(raw) : {};
 }
 
 function stringifyContent(content: unknown): string | undefined {

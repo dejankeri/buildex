@@ -14,6 +14,7 @@ import {
   type LoopSchedule,
 } from "./loops.js";
 import { dueness, nextFire, scheduleSentence } from "./loops-schedule.js";
+import { LoopRunsFile, type LoopRun, type SpendSummary } from "./loops-runs.js";
 
 /** A loop as the console renders it: the definition, its schedule in words, and how it last went. */
 export interface LoopView extends LoopDef {
@@ -25,18 +26,31 @@ export interface LoopView extends LoopDef {
   status?: LoopStatus;
   sessionId?: string;
   blockedOn?: string;
+  /** The last runs, newest first - the history strip on the card and the ⋯ → history list. Small
+   *  enough (RUNS_KEPT) to ship inline, so the panel needs no second request per card. */
+  runs: LoopRun[];
+}
+
+/** How a run ended. `blockedOn` is set only when the gate TTL-denied with nobody there to tap; the
+ *  price is whatever the agent reported, which on a subscription plan is a notional API-rate figure. */
+export interface RunOutcome {
+  blockedOn?: string;
+  costUsd?: number;
+  ms?: number;
 }
 
 /** A started run: the session exists immediately, the work finishes later. Splitting the two is what
  *  lets "Run now" answer the operator at once instead of holding the request open for the whole run. */
 export interface StartedRun {
   sessionId: string;
-  done: Promise<{ blockedOn?: string }>;
+  done: Promise<RunOutcome>;
 }
 
 export interface LoopsEngineDeps {
   defs: LoopDefStore;
   state: LoopStateFile;
+  /** What each loop did and what it cost - the history strip, and the ledger the daily limit reads. */
+  runs: LoopRunsFile;
   now: () => number;
   run: (loop: LoopDef) => Promise<StartedRun>;
   /** How many loop runs may be in flight at once. Two is enough to keep a slow loop from blocking
@@ -56,6 +70,7 @@ export class LoopsEngine {
   list(): LoopView[] {
     const now = this.deps.now();
     const stamps = this.deps.state.all();
+    const history = this.deps.runs.all();
     return this.deps.defs.list().map((def) => {
       const st = stamps[def.name] ?? {};
       const firstSeen = st.firstSeen ?? now;
@@ -68,8 +83,21 @@ export class LoopsEngine {
         ...(this.running.has(def.name) ? { status: "running" as const } : st.status ? { status: st.status } : {}),
         ...(st.sessionId ? { sessionId: st.sessionId } : {}),
         ...(st.blockedOn ? { blockedOn: st.blockedOn } : {}),
+        runs: history[def.name] ?? [],
       };
     });
+  }
+
+  /** Today's unattended spend against its ceiling, and the month so far. */
+  spend(): SpendSummary {
+    return this.deps.runs.summary(this.deps.now());
+  }
+
+  /** Set (or clear, with undefined) the ceiling on what loops may spend per local day on THIS
+   *  machine. Local, because the money is the operator's own agent usage, not the company's file. */
+  setCap(usd: number | undefined): SpendSummary {
+    this.deps.runs.setCap(usd);
+    return this.spend();
   }
 
   add(input: NewLoop): LoopView {
@@ -119,7 +147,16 @@ export class LoopsEngine {
   async tick(): Promise<string[]> {
     const now = this.deps.now();
     const defs = this.deps.defs.list();
-    this.deps.state.prune(new Set(defs.map((d) => d.name)));
+    const names = new Set(defs.map((d) => d.name));
+    this.deps.state.prune(names);
+    this.deps.runs.prune(names, now);
+
+    // Money is one of the three things invariant 5 gates, and a loop spending the operator's agent
+    // budget while nobody is watching is exactly that - it just never looked like money because it is
+    // compute. Over the ceiling we stop the CLOCK, and stamp nothing: a window that goes cold while
+    // held back is recorded missed tomorrow, on its own terms, rather than being written off now.
+    // "Run now" is untouched, because the operator is present - that is the whole distinction.
+    if (this.deps.runs.overCap(now)) return [];
 
     const due: LoopDef[] = [];
     for (const def of defs) {
@@ -137,6 +174,7 @@ export class LoopsEngine {
       if (verdict.missed !== undefined) {
         // Move the stamp past the cold window so it is recorded once, not reconsidered every tick.
         this.deps.state.set(def.name, { lastRun: verdict.missed, status: "missed", blockedOn: undefined });
+        this.deps.runs.record(def.name, { at: verdict.missed, status: "missed" });
         continue;
       }
       if (verdict.due) due.push(def);
@@ -166,26 +204,19 @@ export class LoopsEngine {
     } catch (err) {
       this.running.delete(def.name);
       this.deps.state.set(def.name, { lastRun: this.deps.now(), status: "failed", blockedOn: undefined });
+      // A run that never got a session still happened, and still counts: recorded with no session id
+      // (there is no transcript to open) so the history does not quietly skip the failure.
+      this.deps.runs.record(def.name, { at: this.deps.now(), status: "failed" });
       throw err;
     }
     const record = started.done
       .then((r) => {
-        this.deps.state.set(def.name, {
-          lastRun: this.deps.now(),
-          status: r.blockedOn ? "needs-approval" : "ok",
-          sessionId: started.sessionId,
-          blockedOn: r.blockedOn,
-        });
+        this.finish(def.name, started.sessionId, r.blockedOn ? "needs-approval" : "ok", r);
       })
       .catch(() => {
         // A failed run is still stamped: without it a broken loop would be due again next tick and
         // would spawn an agent every 30 seconds.
-        this.deps.state.set(def.name, {
-          lastRun: this.deps.now(),
-          status: "failed",
-          sessionId: started.sessionId,
-          blockedOn: undefined,
-        });
+        this.finish(def.name, started.sessionId, "failed", {});
       })
       .finally(() => {
         this.running.delete(def.name);
@@ -193,6 +224,21 @@ export class LoopsEngine {
       });
     this.inflight.add(record);
     return started.sessionId;
+  }
+
+  /** Stamp the loop's current state AND append to its history in one place, so the chip on the card
+   *  and the newest row of the strip can never disagree about the same run. */
+  private finish(name: string, sessionId: string, status: "ok" | "failed" | "needs-approval", r: RunOutcome): void {
+    const at = this.deps.now();
+    this.deps.state.set(name, { lastRun: at, status, sessionId, blockedOn: r.blockedOn });
+    this.deps.runs.record(name, {
+      at,
+      status,
+      sessionId,
+      ...(r.ms !== undefined ? { ms: r.ms } : {}),
+      ...(r.costUsd !== undefined ? { costUsd: r.costUsd } : {}),
+      ...(r.blockedOn !== undefined ? { blockedOn: r.blockedOn } : {}),
+    });
   }
 
   private view(name: string): LoopView {

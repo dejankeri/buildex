@@ -30,6 +30,7 @@ async function rLoops() {
       el("h4", { text: "Loops" }),
       el("button", { class: "radd", id: "newLoop", text: "+ New loop", onClick: () => openLoopComposer() }),
     ),
+    el("div", { id: "loopspend" }),
     el("div", { id: "loopcomposer" }),
     el("div", { id: "looplist" }),
   );
@@ -38,13 +39,111 @@ async function rLoops() {
 
 /** Fetch loops into `S.loops` and repaint the list (and the tab badge). */
 async function refreshLoops() {
+  const before = S.loops;
   try {
-    S.loops = (await getJSON("/api/loops")).loops || [];
+    const r = await getJSON("/api/loops");
+    S.loops = r.loops || [];
+    S.loopSpend = r.spend || null;
   } catch (e) {
     S.loops = [];
   }
+  noticeLoopChanges(before, S.loops);
   renderLoopBadge();
-  if (S.rightTab === "loops") renderLoopList();
+  if (S.rightTab === "loops") {
+    renderLoopSpend();
+    renderLoopList();
+  }
+}
+
+/**
+ * Tell the operator about a run that ended needing them, or failed — the whole point of polling this
+ * when the panel is closed. Only TRANSITIONS count: a loop that was already blocked when we last
+ * looked is old news, and re-announcing it on every poll is how an app earns a permanent mute.
+ * A loop seen for the first time is skipped too, so a page reload does not replay yesterday.
+ * @param {Array|undefined} before - the previous /api/loops rows (undefined on the first fetch).
+ * @param {Array} after - the rows just fetched.
+ */
+function noticeLoopChanges(before, after) {
+  if (!before || typeof notifyOperator !== "function") return;
+  const prev = new Map(before.map((l) => [l.name, l]));
+  for (const loop of after || []) {
+    const was = prev.get(loop.name);
+    if (!was || (was.status === loop.status && was.lastRun === loop.lastRun)) continue;
+    const open = () => {
+      switchRight("loops");
+      if (loop.sessionId) openChatTab({ id: loop.sessionId, title: loop.title, status: "idle" });
+    };
+    if (loop.status === "needs-approval") {
+      notifyOperator("loops", {
+        title: loop.title + " needs you",
+        body: loop.blockedOn ? "It tried to " + loop.blockedOn + "." : "It stopped for your approval.",
+        tag: "loop-" + loop.name,
+        onClick: open,
+        whenFocused: "toast",
+      });
+    } else if (loop.status === "failed") {
+      notifyOperator("loops", {
+        title: loop.title + " failed",
+        body: "The run did not finish. Open it to see how far it got.",
+        tag: "loop-" + loop.name,
+        onClick: open,
+        whenFocused: "toast",
+      });
+    }
+  }
+}
+
+/** The spend line above the list: what loops have cost on this machine, and their daily ceiling. */
+function renderLoopSpend() {
+  const host = $("#loopspend");
+  if (!host) return;
+  host.innerHTML = "";
+  const spend = S.loopSpend;
+  if (!spend || (!spend.month.runs && spend.capUsd === undefined)) return; // nothing has run, nothing to say
+
+  if (spend.overCap) {
+    // Not a footnote: the scheduler is deliberately not firing, and an operator who is not told that
+    // will read it as broken. Says what happens next, and offers the one control that changes it.
+    host.append(
+      el(
+        "div",
+        { class: "loopcap over" },
+        el("span", { class: "lc-tx", text: "Loops are paused — this machine has spent its " + usd(spend.capUsd) + " for today. They start again after midnight." }),
+        el("button", { class: "mini ghost lc-edit", text: "Change limit", onClick: () => openLoopBudget() }),
+      ),
+    );
+    return;
+  }
+  host.append(
+    el(
+      "div",
+      { class: "loopcap" },
+      el("span", {
+        class: "lc-tx",
+        text:
+          spend.capUsd === undefined
+            ? "About " + usd(spend.today.costUsd) + " today · " + usd(spend.month.costUsd) + " this month"
+            : "About " + usd(spend.today.costUsd) + " of " + usd(spend.capUsd) + " today",
+      }),
+      el("button", {
+        class: "mini ghost lc-edit",
+        text: spend.capUsd === undefined ? "Set a limit" : "Change",
+        onClick: () => openLoopBudget(),
+      }),
+    ),
+  );
+}
+
+/**
+ * Money, the way the operator reads it. Loop runs are routinely fractions of a cent, so a bare
+ * round-to-cents would show "$0.00" for real spending — say "under $0.01" instead of lying.
+ * @param {number} n - USD.
+ * @returns {string}
+ */
+function usd(n) {
+  const v = Number(n) || 0;
+  if (v > 0 && v < 0.01) return "under $0.01";
+  return "$" + v.toFixed(2);
 }
 
 /** Paint the list of loop cards, or the empty state when there are none. */
@@ -57,6 +156,9 @@ function renderLoopList() {
     host.append(loopEmptyState());
     return;
   }
+  // Offered here, where the lack is felt, and only until the operator answers one way or the other.
+  const nudge = typeof notifyNudge === "function" ? notifyNudge() : null;
+  if (nudge) host.append(nudge);
   for (const loop of loops) host.append(loopCard(loop));
 }
 
@@ -102,6 +204,7 @@ function loopCard(loop) {
       el("span", { class: "loopsep", "aria-hidden": "true", text: "·" }),
       el("span", { class: "loopnext", text: loopWhenText(loop) }),
     ),
+    loopRunStrip(loop),
     loop.blockedOn
       // The chip already says WHY it stopped ("Needed you"); this line says WHAT it wanted to do,
       // so the two are not the same sentence twice.
@@ -141,6 +244,168 @@ function loopCard(loop) {
   return card;
 }
 
+/**
+ * The run strip: one mark per past run, oldest on the left. The card used to carry a single chip for
+ * the last run, which meant three failed mornings and one bad night looked identical. A strip makes
+ * the PATTERN the thing you see. Each mark opens that run's transcript.
+ * @param {object} loop - a row from /api/loops, carrying `runs` newest-first.
+ * @returns {HTMLElement|null} null when the loop has never run.
+ */
+function loopRunStrip(loop) {
+  const runs = (loop.runs || []).slice().reverse(); // oldest → newest reads as a timeline
+  if (!runs.length) return null;
+  return el(
+    "div",
+    { class: "loopstrip", role: "list", "aria-label": "Recent runs of " + loop.title },
+    runs.map((r) =>
+      el("span", {
+        class: "lrun " + runMarkClass(r.status),
+        role: "listitem",
+        tabindex: r.sessionId ? "0" : undefined,
+        title: runSentence(r),
+        "aria-label": runSentence(r),
+        onClick: r.sessionId ? () => openChatTab({ id: r.sessionId, title: loop.title, status: "idle" }) : undefined,
+      }),
+    ),
+  );
+}
+
+/**
+ * One past run in a sentence — the strip's tooltip and the history row's label.
+ * @param {object} r - a run entry.
+ * @param {{absolute?:boolean}} [opts] - `absolute` drops "7d ago", for the history rows, which
+ *   already carry the exact time beside them; saying both is the same fact twice.
+ */
+function runSentence(r, opts) {
+  const words = { ok: "Ran", failed: "Failed", "needs-approval": "Needed you", missed: "Missed" };
+  const parts = [(words[r.status] || "Ran") + (opts && opts.absolute ? "" : " " + ago(r.at))];
+  if (r.costUsd) parts.push("about " + usd(r.costUsd));
+  if (r.blockedOn) parts.push("wanted to " + r.blockedOn);
+  return parts.join(" · ");
+}
+
+function runMarkClass(status) {
+  return { ok: "ok", failed: "bad", "needs-approval": "warn", missed: "cold" }[status] || "cold";
+}
+
+/** Every run this machine still remembers, with what each cost and what a blocked one wanted. */
+function openLoopHistory(loop) {
+  const runs = loop.runs || [];
+  const bd = elt("div", "ovbackdrop");
+  const card = el(
+    "div",
+    { class: "ovcard loophist" },
+    el("h3", { class: "ovh", text: loop.title }),
+    el("p", { class: "ovp", text: runs.length ? "The last " + runs.length + " runs on this machine." : "This loop has not run on this machine yet." }),
+    el(
+      "div",
+      { class: "lh-list" },
+      runs.map((r) =>
+        el(
+          "div",
+          {
+            class: "lh-row" + (r.sessionId ? " open" : ""),
+            ...(r.sessionId
+              ? {
+                  role: "button",
+                  tabindex: "0",
+                  onClick: () => {
+                    bd.remove();
+                    openChatTab({ id: r.sessionId, title: loop.title, status: "idle" });
+                  },
+                }
+              : {}),
+          },
+          el("span", { class: "lrun " + runMarkClass(r.status) }),
+          el("span", { class: "lh-when", text: runWhen(r.at) }),
+          el("span", { class: "lh-what", text: runSentence(r, { absolute: true }) }),
+        ),
+      ),
+    ),
+    el("div", { class: "ovrow" }, el("button", { class: "mini ghost", text: "Done", onClick: () => bd.remove() })),
+  );
+  bd.append(card);
+  document.body.appendChild(bd);
+  bd.onclick = (e) => {
+    if (e.target === bd) bd.remove();
+  };
+}
+
+/** A run's timestamp as a person writes it down. */
+function runWhen(at) {
+  const d = new Date(at);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/**
+ * The daily spending limit. A loop firing unattended spends the operator's own agent budget, and
+ * this is the one control that bounds it. Per machine, because that is whose budget it is; per DAY,
+ * because "$5 a day, resetting at midnight" is a sentence an operator can predict, which a rolling
+ * window is not.
+ */
+function openLoopBudget() {
+  const spend = S.loopSpend || { today: { costUsd: 0 }, month: { costUsd: 0 } };
+  const bd = elt("div", "ovbackdrop");
+  const input = el("input", {
+    class: "ovinput lb-cap",
+    type: "number",
+    min: "0",
+    step: "0.5",
+    placeholder: "No limit",
+    value: spend.capUsd === undefined ? "" : String(spend.capUsd),
+  });
+  const msg = el("span", { class: "emsg" });
+  const save = async () => {
+    const raw = input.value.trim();
+    const capUsd = raw === "" ? 0 : Number(raw);
+    if (Number.isNaN(capUsd) || capUsd < 0) {
+      msg.className = "emsg bad";
+      msg.textContent = "Enter an amount, or leave it blank for no limit.";
+      return;
+    }
+    msg.className = "emsg";
+    msg.textContent = "Saving…";
+    try {
+      S.loopSpend = await postJSON("/api/loops-budget", { capUsd });
+    } catch (e) {
+      msg.className = "emsg bad";
+      msg.textContent = "Could not save the limit.";
+      return;
+    }
+    bd.remove();
+    renderLoopSpend();
+  };
+  bd.append(
+    el(
+      "div",
+      { class: "ovcard loopbudget" },
+      el("h3", { class: "ovh", text: "Daily limit for loops" }),
+      el("p", {
+        class: "ovp",
+        text:
+          "Loops run without you, and each run costs agent usage. Above this much in a day, scheduled runs stop " +
+          "until midnight. Running a loop yourself is never blocked — you are there.",
+      }),
+      el("label", { class: "ovlabel" }, "Stop scheduled runs after (US$ per day)", input),
+      el("div", { class: "lb-now", text: "Spent today: about " + usd(spend.today.costUsd) + " · this month: " + usd(spend.month.costUsd) }),
+      el("div", { class: "ovrow" },
+        el("button", { class: "mini ghost", text: "Cancel", onClick: () => bd.remove() }),
+        el("button", { class: "mini lb-save", text: "Save", onClick: save }),
+        msg),
+      el("div", { class: "ns-note", text: "Costs are what your agent reported. On a subscription plan that is the equivalent API price, not a charge." }),
+    ),
+  );
+  document.body.appendChild(bd);
+  bd.onclick = (e) => {
+    if (e.target === bd) bd.remove();
+  };
+  input.onkeydown = (e) => {
+    if (e.key === "Enter") save();
+    if (e.key === "Escape") bd.remove();
+  };
+  input.focus();
+}
+
 /** Edit + Delete live behind the card's ⋯ - the row stays one line, and the destructive action is
  *  never a stray tap away from "Run now". Anchored with the shared dropAt()/closeMenus() machinery
  *  the tree menus use, so it escapes the panel's overflow container like they do. */
@@ -150,6 +415,7 @@ function openLoopMenu(anchor, loop) {
     "div",
     { class: "dropdown" },
     el("button", { onClick: () => { closeMenus(); openLoopComposer(loop); } }, el("span", { class: "k", text: "✎" }), "Edit loop"),
+    el("button", { onClick: () => { closeMenus(); openLoopHistory(loop); } }, el("span", { class: "k", text: "⌛" }), "Run history"),
     el(
       "button",
       { onClick: () => { closeMenus(); toggleLoop(loop); } },
@@ -174,10 +440,13 @@ function loopWhenText(loop) {
   return "next " + fmtNext(loop.nextRun);
 }
 
-/** The last-run chip. Clicking one that has a session opens that run's transcript. */
+/** The last-run chip. Clicking one that has a session opens that run's transcript. A successful run
+ *  carries its price: "Ran 2h" says nothing about what a loop is costing to leave switched on. */
 function loopStatusChip(loop) {
+  const last = (loop.runs || [])[0];
+  const cost = last && last.costUsd ? " · " + usd(last.costUsd) : "";
   const chips = {
-    ok: { text: "Ran " + ago(loop.lastRun), cls: "ok" },
+    ok: { text: "Ran " + ago(loop.lastRun) + cost, cls: "ok" },
     running: { text: "Running", cls: "live" },
     failed: { text: "Failed", cls: "bad" },
     "needs-approval": { text: "Needed you", cls: "warn" },
