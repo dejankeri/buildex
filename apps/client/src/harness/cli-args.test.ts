@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseArgs } from "./cli-args.js";
+import { parseArgs, parseProofArgs } from "./cli-args.js";
 
 describe("parseArgs - runDeterministic's CLI contract", () => {
   it("parses the sandbox-lane defaults", () => {
@@ -81,6 +81,93 @@ describe("parseArgs - runDeterministic's CLI contract", () => {
     it("rejects combining --mcp-url with --no-sandbox - the local lane already skips the sandbox", () => {
       expect(() => parseArgs(["--pack", "acme", "--mcp-url", "http://localhost:3010/mcp", "--no-sandbox"])).toThrow(/--no-sandbox/);
       expect(() => parseArgs(["--pack", "acme", "--no-sandbox", "--mcp-url", "http://localhost:3010/mcp"])).toThrow(/--no-sandbox/);
+    });
+  });
+});
+
+describe("parseProofArgs - the proof CLI's argument contract", () => {
+  it("parses the happy path with an explicit --cases and --baseline", () => {
+    expect(parseProofArgs(["--pack", "acme", "--cases", "3", "--baseline", "prev/surface.json"]))
+      .toEqual({ pack: "acme", mcpUrl: undefined, cases: 3, baseline: "prev/surface.json" });
+  });
+
+  it("defaults cases to 5 and leaves mcpUrl/baseline undefined", () => {
+    expect(parseProofArgs(["--pack", "acme"])).toEqual({ pack: "acme", mcpUrl: undefined, cases: 5, baseline: undefined });
+  });
+
+  it("rejects a missing --pack", () => {
+    expect(() => parseProofArgs([])).toThrow(/--pack/);
+  });
+
+  it("rejects an unknown flag, listing the valid ones", () => {
+    expect(() => parseProofArgs(["--pack", "acme", "--frobnicate"])).toThrow(/unknown flag/i);
+    expect(() => parseProofArgs(["--pack", "acme", "--no-sandbox"])).toThrow(/unknown flag/i);
+  });
+
+  it("accepts an mcp-url and reuses the same https-or-loopback validation", () => {
+    expect(parseProofArgs(["--pack", "acme", "--mcp-url", "http://localhost:3010/mcp"]).mcpUrl)
+      .toBe("http://localhost:3010/mcp");
+    expect(() => parseProofArgs(["--pack", "acme", "--mcp-url", "http://api.example.com/mcp"])).toThrow(/https/i);
+  });
+
+  describe("--cases (integer 1..20, default 5)", () => {
+    it("accepts the boundaries 1 and 20", () => {
+      expect(parseProofArgs(["--pack", "acme", "--cases", "1"]).cases).toBe(1);
+      expect(parseProofArgs(["--pack", "acme", "--cases", "20"]).cases).toBe(20);
+    });
+
+    it("rejects 0", () => {
+      expect(() => parseProofArgs(["--pack", "acme", "--cases", "0"])).toThrow(/--cases/);
+    });
+
+    it("rejects 21 (above the range)", () => {
+      expect(() => parseProofArgs(["--pack", "acme", "--cases", "21"])).toThrow(/--cases/);
+    });
+
+    it("rejects a negative value", () => {
+      expect(() => parseProofArgs(["--pack", "acme", "--cases", "-1"])).toThrow(/--cases/);
+    });
+
+    it("rejects a non-integer", () => {
+      expect(() => parseProofArgs(["--pack", "acme", "--cases", "2.5"])).toThrow(/--cases/);
+    });
+
+    it("rejects a non-numeric value", () => {
+      expect(() => parseProofArgs(["--pack", "acme", "--cases", "abc"])).toThrow(/--cases/);
+    });
+
+    it("rejects trailing garbage after a number (Number not parseInt)", () => {
+      expect(() => parseProofArgs(["--pack", "acme", "--cases", "5abc"])).toThrow(/--cases/);
+    });
+
+    it("rejects --cases at the end of argv (missing value) and a flag-shaped value", () => {
+      expect(() => parseProofArgs(["--pack", "acme", "--cases"])).toThrow(/--cases/);
+      expect(() => parseProofArgs(["--pack", "acme", "--cases", "--baseline"])).toThrow(/--cases/);
+    });
+  });
+
+  describe("--baseline (a path string, no existence check here - parse stays pure)", () => {
+    it("passes the path through untouched", () => {
+      expect(parseProofArgs(["--pack", "acme", "--baseline", "does/not/exist.md"]).baseline)
+        .toBe("does/not/exist.md");
+    });
+
+    it("rejects an empty --baseline", () => {
+      expect(() => parseProofArgs(["--pack", "acme", "--baseline", ""])).toThrow(/--baseline/i);
+    });
+
+    it("rejects --baseline followed by a flag-shaped value", () => {
+      expect(() => parseProofArgs(["--pack", "acme", "--baseline", "--cases"])).toThrow(/--baseline/);
+    });
+  });
+
+  describe("flag-shaped / missing values reuse flagValue's forgotten-value trap", () => {
+    it("rejects --pack followed by another flag", () => {
+      expect(() => parseProofArgs(["--pack", "--mcp-url"])).toThrow(/--pack/);
+    });
+
+    it("rejects a missing --pack value at the end of argv", () => {
+      expect(() => parseProofArgs(["--pack"])).toThrow(/--pack/);
     });
   });
 });
