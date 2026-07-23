@@ -174,9 +174,18 @@ function renderBrainSectionBody(body, key, d) {
   if (key === "gate") {
     if (!d.pend.length) { body.appendChild(elt("div", "bempty", "✓ All caught up — nothing waiting.")); return; }
     d.pend.forEach((c) => {
+      // The card reads as a sentence the operator can judge, never as JSON: humanizeCard()
+      // (js/pending.js) is the one phrasing rule for the gate, wherever the gate is rendered. The raw
+      // request stays one disclosure click away for anyone who wants to see exactly what was asked.
       const name = (c.tool && c.tool.name) || "action",
-        input = c.tool && c.tool.input ? JSON.stringify(c.tool.input) : "";
-      const card = elt("div", "bpend", '<div class="bpt">' + esc(name) + "</div>" + (input ? '<div class="bpd">' + esc(input) + "</div>" : "") + '<div class="bpa"><button class="approve">Approve</button><button class="dny">Deny</button></div>');
+        rawInput = (c.tool && c.tool.input) || null,
+        { line, command } = humanizeCard(name, rawInput || {}),
+        raw = rawInput ? JSON.stringify(rawInput, null, 2) : "";
+      const card = elt("div", "bpend", '<div class="bpt">' + esc(name) + "</div>" +
+        '<div class="bpw">' + esc(line) + "</div>" +
+        (command ? '<div class="bpd">' + esc(command) + "</div>" : "") +
+        (raw ? '<details class="bpr"><summary>Show request</summary><pre>' + esc(raw) + "</pre></details>" : "") +
+        '<div class="bpa"><button class="approve">Approve</button><button class="dny">Deny</button></div>');
       $(".approve", card).onclick = async () => { await resolveCard(c.id, "approve"); rBrain(); };
       $(".dny", card).onclick = async () => { await resolveCard(c.id, "deny"); rBrain(); };
       body.appendChild(card);

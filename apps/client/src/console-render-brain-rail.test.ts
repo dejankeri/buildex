@@ -88,6 +88,32 @@ describe("console renderers (jsdom) — Brain rail (right panel)", () => {
     expect(gateBody.querySelector(".bpend .dny")).not.toBeNull();
   });
 
+  it("a Gate card reads as a SENTENCE (humanizeCard), with the raw request folded away", () => {
+    const { doc, c } = loadConsole();
+    c.S.brain = {
+      ...snap(),
+      // A connector action carries its own summary — the gate must show that, never the JSON.
+      pend: [{ tool: { name: "gmail.send", input: { connector: "gmail", tool: "send", args: { to: "dana@globex.com" }, summary: "Send email to dana@globex.com - reply on SSO." } } }],
+    };
+    c.renderBrainPanel();
+    const card = doc.querySelector("#rpanel .bpend")!;
+    expect(card.querySelector(".bpw")!.textContent).toBe("Send email to dana@globex.com - reply on SSO.");
+    expect(card.querySelector(".bpw")!.textContent).not.toContain("{"); // no JSON in the body
+    // the raw request is still one disclosure away, collapsed
+    const details = card.querySelector("details.bpr") as any;
+    expect(details.open).toBe(false);
+    expect(details.querySelector("summary")!.textContent).toBe("Show request");
+    expect(details.querySelector("pre")!.textContent).toContain('"connector": "gmail"');
+  });
+
+  it("ESCAPES a hostile summary in a Gate card body", () => {
+    const { doc, c } = loadConsole();
+    c.S.brain = { ...snap(), pend: [{ tool: { name: "send", input: { summary: XSS } } }] };
+    c.renderBrainPanel();
+    expect(doc.querySelector("#rpanel .bpend .bpw")!.textContent).toContain("<img");
+    expect(doc.querySelector("#rpanel .bpend img")).toBeNull();
+  });
+
   it("the Company/Private lens filters BOTH rules and skills by ownership — never hides company-wide stages", () => {
     const { doc, c } = loadConsole();
     c.S.brain = snap();

@@ -42,7 +42,7 @@
   }
 
   /* ── the signature hero: the company loop, alive ──────────────────────── */
-  // Sensor → Policy → Tools → Gate → Learning orbiting ONE BRAIN. Teal particles ride
+  // Sensor → Rules & Skills → Tools → Gate → Learning orbiting ONE BRAIN. Teal particles ride
   // the loop; the Gate node pulses amber - the one place a human taps. Built with raw SVG.
   var host = document.getElementById("loop");
   if (host) buildLoop(host);
@@ -212,7 +212,9 @@
 
     var stops = [
       { l: "Sensor", s: "it arrives" },
-      { l: "Policy", s: "what you decided" },
+      // "Rules & Skills" is too wide for the 400-unit viewBox on the right-hand node, so it wraps
+      // onto a second line (l2) - one stage, two lines, never clipped.
+      { l: "Rules", l2: "& Skills", s: "what you decided" },
       { l: "Tools", s: "the agent works" },
       { l: "Gate", s: "you approve", gate: true },
       { l: "Learning", s: "it accrues" }
@@ -273,6 +275,10 @@
       var anchor = Math.abs(lx - cx) < 26 ? "middle" : (lx > cx ? "start" : "end");
       var lbl = svgEl("text", { x: lx, y: ly, "text-anchor": anchor, fill: gate ? cvar("--gate") : cvar("--ink"), "font-family": "Geist, sans-serif", "font-size": "12.5", "font-weight": "500" });
       lbl.textContent = stops[k].l; svg.appendChild(lbl);
+      if (stops[k].l2) {
+        var lbl2 = svgEl("text", { x: lx, y: ly + 14, "text-anchor": anchor, fill: cvar("--ink"), "font-family": "Geist, sans-serif", "font-size": "12.5", "font-weight": "500" });
+        lbl2.textContent = stops[k].l2; svg.appendChild(lbl2);
+      }
     }
 
     host.appendChild(svg);

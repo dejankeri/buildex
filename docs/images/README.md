@@ -30,14 +30,14 @@ the script exits with a clear message; you can still capture manually after `npm
 
 | File | View |
 |---|---|
-| `console-hero.png` | The whole product in one frame — apps rail, a chat answering with a live table, and the approval card (the site's hero shot) |
-| `console-overview.png` | The whole console — apps & sessions, a brain doc, the file tree |
+| `console-hero.png` | The whole product in one frame — apps rail, a chat answering with a live table, and the live Brain rail with the gate card (the site's hero shot) |
+| `console-overview.png` | The whole console — apps & sessions, a brain doc, the Documents tree |
 | `session-transcript.png` | A chat with the company brain ("draft the Q3 investor update"), its answer a real table |
-| `approval-gate.png` | The Pending tray — an outward email waiting for a human tap, beside the chat that raised it |
+| `approval-gate.png` | The Brain rail's Gate stage — an outward email waiting for a human tap, beside the chat that raised it |
 | `app-store.png` | The App Store with installed apps |
 | `decision-log.png` | The decision log rendered next to the full file tree |
 | `needs-attention.png` | A session flagged for the operator's attention |
-| `skills.png` | The Skills panel — verbs the agent can run |
+| `skills.png` | The Brain rail's Rules & Skills stage — the always-on rules plus the skills the agent reaches for |
 | `workspace-map.png` | The living brain map — the company loop, next to the file tree |
 
 To change *what* the screenshots show (the demo company, its files, sessions, or apps), edit the seed
