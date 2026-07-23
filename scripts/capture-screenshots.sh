@@ -85,6 +85,7 @@ sleep 1
 
 echo "▶ 4/5  Capturing screenshots ..."
 mkdir -p "$STAGE"
+rm -f "$STAGE"/*.png   # step 5 copies the whole staging dir - never let a stray PNG ride along
 "$B" viewport 1440x900 >/dev/null 2>&1
 
 # click the first element whose visible label contains "$1" (dynamic-ref safe), then settle
@@ -103,25 +104,31 @@ shot() { "$B" screenshot "$STAGE/$1" >/dev/null 2>&1 && echo "   ✓ $1"; }
 "$B" storage set buildex.tour.v1 1 >/dev/null 2>&1 || true
 "$B" goto "$BASE" >/dev/null 2>&1; sleep 1
 
-# --- Files-panel shots: the brain's real file tree on the right (docs live there now, not in the
+# The right panel is now two surfaces: the BRAIN rail (default) and DOCUMENTS. The old Pending and
+# Skills panels folded into the Brain rail's Gate / Rules & Skills stages, so those shots are driven
+# by clicking the stage headers, not a panel tab.
+
+# --- Documents-panel shots: the brain's real file tree on the right (docs live there, not in the
 #     session rail). Folders render collapsed, so expand one before opening a file inside it. ---
-click_by "Files"                                                      # right panel → the brain file tree
+click_by "Documents"                                                  # right panel → the brain file tree
 click_by "finance"; click_by "metrics-q3.md";      shot console-overview.png   # a brain doc + the file tree
 click_by "BuildEx";                                shot workspace-map.png       # the brand opens the living brain map (middle), tree still on the right
 click_by "decisions"; click_by "log.md";           shot decision-log.png        # expand decisions/, open the log
 click_by "Draft the Q3 investor update";           shot session-transcript.png  # the chat: its answer renders a real table
 
-# --- Skills + Store ---
-click_by "Skills";                                 shot skills.png    # right panel → the agent's verbs
+# --- Rules & Skills (in the Brain rail) + the Store ---
+click_by "Brain"                                                      # back to the Brain rail
+click_by "Rules & Skills";                         shot skills.png    # the stage that holds the always-on rules + the agent's skills
+click_by "Rules & Skills"                                             # collapse it again (the hero wants the rail at rest)
 click_by "Store";                                  shot app-store.png # the App Store (a middle tab)
 
-# --- Pending-tray shots: the real seeded outward-email approval card (see step 2). ---
-click_by "Pending"                                                    # right panel → the approval tray
+# --- Brain-rail shots. The Gate stage carries the real seeded outward-email card (see step 2) and
+#     auto-opens whenever something is waiting, so it needs no click. ---
 click_by "Reconcile Globex invoices for July";     shot needs-attention.png  # a session flagged for you
 # Hero composite for the website: the whole product in one frame - apps rail (left), an open chat
-# whose answer renders a real table (middle), and the Pending approval card (right).
+# whose answer renders a real table (middle), and the live Brain rail with the gate card (right).
 click_by "Draft the Q3 investor update";           shot console-hero.png
-# The flagship gate on its own: the Pending card, front and center.
+# The flagship gate on its own: the approval card, front and center.
 click_by "Reply to Dana's kickoff email";          shot approval-gate.png
 
 echo "▶ 5/5  Copying into docs/images/ ..."
