@@ -4,13 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { unsavedIn, unsavedAcross, isStale, STALE_AFTER_MS } from "./unsaved.js";
+import { pinnedGit } from "../lib/git-pin.js";
 
 const ENV = {
   ...process.env,
   GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t",
   GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
 } as NodeJS.ProcessEnv;
-const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, env: ENV, encoding: "utf8" });
+// Build fixtures with the SAME line-ending pin the product uses for every working-tree op
+// (`pinnedGit`), so the checked-out tree is LF-canonical on every platform. Without it, a Windows
+// runner's ambient core.autocrlf=true smudges checkouts to CRLF - a state real BuildEx workspaces
+// never reach, since the engine pins - and then `unsavedIn` (which pins) correctly reports those
+// CRLF files as modified, inflating every count by the seed file. Pin here to mirror production.
+const git = (args: string[], cwd: string) => execFileSync("git", pinnedGit(args), { cwd, env: ENV, encoding: "utf8" });
 
 let root: string;
 let remote: string;

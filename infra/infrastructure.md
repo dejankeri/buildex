@@ -39,6 +39,10 @@ Phase 3 self-serve sign-in (`POST /session`) deployed **dormant** the same day -
   default - `LITESTREAM_ENDPOINT`/`LITESTREAM_BUCKET`/credentials have no default value, so a
   developer must opt in via `infra/.env` to exercise replication locally.
 - **Deploy:** `task deploy:plan` (build only) → `task deploy` (prompted).
+- **Client release:** macOS ships a signed + notarized `.dmg` (`docs/guides/package-macos.md`);
+  Windows ships an **unsigned** NSIS installer (`docs/guides/package-windows.md`) - there is no
+  Authenticode certificate, so it trips SmartScreen. Both are hosted alongside a `latest.json`
+  (`infra/latest.json.example` shape). Windows code-signing and auto-update remain fast-follows.
 - **Onboarding:** `task mint-setup-token -- --base-url https://<host> --onboard ...` (S2S admin path).
 - **Self-serve sign-in (Phase 3, DEPLOYED DORMANT):** `POST /session` verifies a Supabase JWT
   (`node:crypto` only, zero-dep) → find-or-create company-of-one → the SAME machine token `/provision`

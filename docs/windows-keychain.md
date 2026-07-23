@@ -133,11 +133,13 @@ reach them. Two edges follow from that; the first is now closed, the second is b
    *remanence* past a tenant's deletion, which the purge removes.
 
 2. **Orphaned on uninstall — bounded, remediated in-app.** macOS runs no code when a `.app` is dragged
-   to the Trash, so there is no uninstall hook to clear the vault; the honest answer is an in-app
-   **"remove all data"** action (built on the same `clear()` primitive) the operator runs *before*
-   uninstalling. Pre-fix installs may also carry orphaned entries from earlier reused paths; those are
-   inert (unreachable, DPAPI/partition-encrypted at rest) and a one-time run of the in-app action clears
-   them for the active org.
+   to the Trash, so there is no uninstall hook to clear the vault; the Windows NSIS uninstaller likewise
+   wires no vault cleanup (see [Uninstall](guides/package-windows.md#uninstall) for what a Windows
+   removal does and does not reclaim). The honest answer is an in-app **"remove all data"** action
+   (built on the same `clear()` primitive) the operator runs *before* uninstalling. Pre-fix installs may
+   also carry orphaned entries from earlier reused paths; those are inert (unreachable,
+   DPAPI/partition-encrypted at rest) and a one-time run of the in-app action clears them for the active
+   org.
 
 On Windows, the NSIS installer additionally caches a copy of itself under `%LOCALAPPDATA%\<name>-updater`
 (the electron-updater download cache); the uninstaller removes it via a `customUnInstall` include so an
