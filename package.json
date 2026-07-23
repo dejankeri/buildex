@@ -20,6 +20,7 @@
     "demo:orgs": "tsx scripts/demo-orgs.ts",
     "demo:here": "tsx scripts/demo-here.ts web",
     "demo:app:here": "tsx scripts/demo-here.ts app",
+    "demo:orgs:here": "tsx scripts/demo-here.ts orgs",
     "demo:agent-login": "tsx scripts/agent-login.ts"
   },
   "devDependencies": {
