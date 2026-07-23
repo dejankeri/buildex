@@ -90,8 +90,10 @@ describe("console renderers (jsdom) — the Loops panel", () => {
   it("spells out what a blocked run needed a human for", () => {
     const { doc } = withLoops([loop({ status: "needs-approval", blockedOn: "send an email to ops@acme.com" })]);
     expect((doc.querySelector("#looplist .loopblocked") as any).textContent).toBe(
-      "Needed you — it tried to send an email to ops@acme.com",
+      "It tried to send an email to ops@acme.com. Run it now to approve.",
     );
+    // ...and the chip carries the state, so the card never says the same sentence twice.
+    expect((doc.querySelector("#looplist .pill") as any).textContent).toBe("Needed you");
   });
 
   it("disables Run now while a run is in flight, so a second tap cannot double-fire it", () => {

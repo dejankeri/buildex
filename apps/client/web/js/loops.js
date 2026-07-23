@@ -103,7 +103,9 @@ function loopCard(loop) {
       el("span", { class: "loopnext", text: loop.enabled ? "next " + fmtNext(loop.nextRun) : "paused" }),
     ),
     loop.blockedOn
-      ? el("div", { class: "loopblocked", text: "Needed you — it tried to " + loop.blockedOn })
+      // The chip already says WHY it stopped ("Needed you"); this line says WHAT it wanted to do,
+      // so the two are not the same sentence twice.
+      ? el("div", { class: "loopblocked", text: "It tried to " + loop.blockedOn + ". Run it now to approve." })
       : null,
     el(
       "div",
