@@ -107,9 +107,22 @@ img, svg, canvas { max-width: 100%; }
 .hdr nav a.nl.gh { display: inline-flex; align-items: center; gap: 6px; }
 .hdr nav a.nl.gh svg { width: 15px; height: 15px; }
 @media (max-width: 720px) {
-  /* Space is tight on mobile, but Proof is the trust page - keep it reachable; hide the rest. */
+  /* Space is tight on mobile, but the two pages that answer "is this real?" - How it works and Proof -
+     stay reachable; the rest fall away. */
   .hdr nav a.nl { display: none; }
-  .hdr nav a.nl[href="/proof.html"] { display: inline-flex; }
+  .hdr nav a.nl[href="/how.html"], .hdr nav a.nl[href="/proof.html"] { display: inline-flex; }
+}
+@media (max-width: 560px) {
+  /* At phone width the bar is brand + ONE link + Download, and all three have to fit on one line
+     (before this they didn't - the Download button was pushed off the right edge). Keep "How it
+     works", the page that explains the product; Proof and GitHub stay reachable from the footer. */
+  .hdr .wrap { padding: 0 16px; }
+  .hdr nav a.nl[href="/proof.html"], .hdr nav a.nl.gh { display: none; }
+  .hdr nav a.nl { white-space: nowrap; font-size: 13px; }
+  .hdr .row { gap: 10px; }
+  .hdr .brand { font-size: 14px; gap: 6px; }
+  .hdr .brand .mk, .hdr .brand .mk svg { width: 19px; height: 19px; }
+  .hdr .btn { padding: 8px 11px; font-size: 12.5px; gap: 5px; }
 }
 
 /* buttons */
@@ -576,3 +589,73 @@ html.js .rv.d1 { transition-delay: .06s; } html.js .rv.d2 { transition-delay: .1
 .appc .flow span { font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; }
 .appc .flow span.g { color: var(--gate); border-color: color-mix(in srgb, var(--gate) 35%, transparent); }
 .appc .flow i { color: var(--faint); font-style: normal; }
+
+/* ══ "How it works" deep dive (how.html) ══════════════════════════════════ */
+
+/* the header is sticky, so an anchored section has to stop clear of it */
+section[id] { scroll-margin-top: 86px; }
+
+/* jump chips: the page is long on purpose, so it opens with its own table of contents */
+.jump { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 30px; }
+.jump a { font-family: var(--mono); font-size: 12px; color: var(--muted); border: 1px solid var(--line);
+  background: var(--bg-1); border-radius: 999px; padding: 7px 13px; transition: color .15s, border-color .15s; }
+.jump a:hover { color: var(--brand); border-color: var(--brand); }
+
+/* one-line glossary aside: the semi-technical reader never has to leave the page to follow a term */
+.gloss { border: 1px solid var(--line); border-left: 2px solid var(--brand); border-radius: 0 12px 12px 0;
+  background: var(--bg-1); padding: 14px 18px; margin: 18px 0; font-size: 14.5px; line-height: 1.55; color: var(--muted); }
+.gloss b { color: var(--brand); font-weight: 550; font-family: var(--mono); font-size: 12.5px;
+  letter-spacing: .04em; text-transform: uppercase; margin-right: 8px; }
+
+/* the end-to-end walk: numbered steps down one spine */
+.walk { margin-top: 34px; position: relative; }
+.walk::before { content: ""; position: absolute; left: 19px; top: 10px; bottom: 10px; width: 1px;
+  background: linear-gradient(180deg, transparent, var(--line-2) 8%, var(--line-2) 92%, transparent); }
+.wstep { position: relative; padding: 0 0 26px 58px; }
+.wstep:last-child { padding-bottom: 0; }
+.wstep .n { position: absolute; left: 0; top: -2px; width: 38px; height: 38px; border-radius: 50%;
+  display: grid; place-items: center; font-family: var(--mono); font-size: 12px; color: var(--brand);
+  background: var(--bg); border: 1px solid color-mix(in srgb, var(--brand) 40%, transparent); }
+.wstep.gate .n { color: var(--gate); border-color: color-mix(in srgb, var(--gate) 55%, transparent);
+  box-shadow: 0 0 16px -4px var(--gate); }
+.wstep h3 { font-size: 17.5px; font-weight: 560; letter-spacing: -.01em; margin-bottom: 5px; }
+.wstep p { font-size: 15px; line-height: 1.6; color: var(--muted); margin: 0; max-width: 68ch; }
+.wstep p b { color: var(--ink); font-weight: 550; }
+.wstep .who { font-family: var(--mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--faint); display: block; margin-bottom: 3px; }
+.wstep.gate .who { color: var(--gate); }
+
+/* text beside a mono panel (brain layout, git ledger) */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: start; margin-top: 26px; }
+/* a grid item defaults to min-width:auto, so a wide .tree inside one would push the whole page
+   sideways on a phone instead of scrolling within its own box. */
+.split > * { min-width: 0; }
+@media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+.split p { font-size: 15.5px; line-height: 1.6; color: var(--muted); margin: 0 0 14px; max-width: 60ch; }
+.split p b { color: var(--ink); font-weight: 550; }
+.split h3 { font-size: 19px; font-weight: 560; letter-spacing: -.01em; margin: 26px 0 8px; }
+.split h3:first-child { margin-top: 0; }
+
+/* a file tree / commit list, rendered as what it is: text */
+.tree { font-family: var(--mono); font-size: 12.5px; line-height: 1.85; color: var(--ink);
+  background: var(--bg-1); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px;
+  overflow-x: auto; white-space: pre; margin: 0; }
+.tree .c { color: var(--faint); }
+.tree .b { color: var(--brand); }
+.tree .g { color: var(--gate); }
+.tree .add { color: var(--good); }
+
+/* legend under the anatomy screenshot */
+.legend { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 22px; }
+@media (max-width: 820px) { .legend { grid-template-columns: 1fr; } }
+.legend .lg { border: 1px solid var(--line); border-radius: 14px; background: var(--bg-1); padding: 18px 20px; }
+.legend .lg .k { font-family: var(--mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--brand); }
+.legend .lg h3 { font-size: 16.5px; font-weight: 560; margin: 7px 0 6px; }
+.legend .lg p { font-size: 14px; line-height: 1.55; color: var(--muted); margin: 0; }
+
+/* shipped / planned honesty badge */
+.state-tag { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+  padding: 3px 10px; border-radius: 999px; border: 1px solid; white-space: nowrap; vertical-align: middle;
+  margin-left: 10px; color: var(--good); border-color: color-mix(in srgb, var(--good) 42%, transparent); }
+.state-tag.soon { color: var(--gate); border-color: color-mix(in srgb, var(--gate) 42%, transparent); }

@@ -1,0 +1,494 @@
+---
+layout: layout.njk
+title: "How it works - the whole machine, end to end | BuildEx"
+---
+<section class="phead">
+    <div class="wrap">
+      <div class="eyebrow rv">Under the hood</div>
+      <h1 class="rv">How it works.</h1>
+      <p class="sub rv d1">BuildEx is an app on your machine that gives an AI agent a company to run: a
+        folder of plain files it reads and writes, real tools it can act through, a gate you hold, and
+        git remembering every move. No magic, no cloud brain. Here's the whole machine, part by part.</p>
+      <div class="jump rv d2">
+        <a href="#walk">One job, end to end</a>
+        <a href="#screen">The screen</a>
+        <a href="#brain">The company brain</a>
+        <a href="#rules">Rules &amp; skills</a>
+        <a href="#agent">Your agent</a>
+        <a href="#connections">Connections &amp; MCP</a>
+        <a href="#store">The App Store</a>
+        <a href="#gate">The gate</a>
+        <a href="#git">Git as the ledger</a>
+        <a href="#team">Your team</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 1. the whole loop as one story ─────────────────────────────────── -->
+  <section class="divide" id="walk">
+    <div class="wrap">
+      <div class="eyebrow rv">Start here</div>
+      <h2 class="rv lead-h">One job, end to end.</h2>
+      <p class="sub rv d1" style="margin-top:14px">A real job, from the email landing to the commit that
+        remembers it. Every part of the product shows up exactly once here. The rest of this page is just
+        those parts, in detail.</p>
+
+      <div class="walk">
+        <div class="wstep rv"><div class="n">01</div>
+          <span class="who">a connector</span>
+          <h3>Something arrives</h3>
+          <p>Dana at Globex emails about SSO. Your Gmail connection pulls that thread onto your machine as
+            a markdown file under <b>sources/gmail/</b>, with a link back to the original. Bringing things
+            in is read-only and involves no AI at all.</p>
+        </div>
+        <div class="wstep rv d1"><div class="n">02</div>
+          <span class="who">you</span>
+          <h3>You ask for something</h3>
+          <p>&ldquo;Reply to Dana about SSO.&rdquo; One line, in plain language. The agent runs when you ask
+            it to, or when an automation <b>you</b> wrote fires on a schedule. It is not sitting there
+            inventing work in the background.</p>
+        </div>
+        <div class="wstep rv d1"><div class="n">03</div>
+          <span class="who">the brain</span>
+          <h3>It reads what your company knows</h3>
+          <p>The agent opens the files that matter: your operating rules, the Globex client file, the
+            decision log where you wrote which SSO commitments you're willing to make. There's no search
+            index and no upload - the knowledge <b>is</b> the files, sitting on the same disk as the agent.</p>
+        </div>
+        <div class="wstep rv d2"><div class="n">04</div>
+          <span class="who">a skill</span>
+          <h3>It follows your way of doing it</h3>
+          <p>Answering a client is a job your company has a way of doing, so that way is written down as a
+            <b>skill</b>: a short markdown file the agent follows like a checklist. Same job, same shape,
+            every time - whoever asks.</p>
+        </div>
+        <div class="wstep rv d2"><div class="n">05</div>
+          <span class="who">the agent</span>
+          <h3>It does the work</h3>
+          <p>It drafts the reply in your voice, updates the Globex file with what was agreed, and notes the
+            interim decision. All of it as edits to real files you can open, read and change yourself.</p>
+        </div>
+        <div class="wstep gate rv d2"><div class="n">06</div>
+          <span class="who">the gate</span>
+          <h3>The outward step stops</h3>
+          <p>Sending mail leaves your company and reaches a real person, so it doesn't just happen. A card
+            appears: <b>&ldquo;Send email to dana@globex.com&rdquo;</b>, with the exact request one click
+            away. Approve, edit, or deny. Nothing has left your machine yet.</p>
+        </div>
+        <div class="wstep rv d3"><div class="n">07</div>
+          <span class="who">you</span>
+          <h3>You tap approve</h3>
+          <p>Only now does the send actually happen, through your own Gmail connection - and it's written
+            to the company's activity log, so &ldquo;what did the AI actually do out there?&rdquo; always
+            has a boring, checkable answer.</p>
+        </div>
+        <div class="wstep rv d3"><div class="n">08</div>
+          <span class="who">git</span>
+          <h3>It's remembered</h3>
+          <p>Every file that changed lands as one commit with a readable message. Next month you can see
+            what changed, when, and why - and undo it. Nothing was overwritten silently, because nothing
+            here ever is.</p>
+        </div>
+      </div>
+
+      <div class="gloss rv" style="margin-top:30px"><b>the punchline</b> Steps 01-08 are the whole product.
+        Sensor, rules &amp; skills, tools, gate, learning - one loop, around one brain. Everything below is
+        a closer look at a piece of it.</div>
+    </div>
+  </section>
+
+  <!-- ── 2. the screen ──────────────────────────────────────────────────── -->
+  <section class="divide" id="screen">
+    <div class="wrap">
+      <div class="eyebrow rv">The screen</div>
+      <h2 class="rv lead-h">Three panes, and you already know two of them.</h2>
+      <figure class="shot rv d1" style="margin-top:26px">
+        <img src="/img/console-hero.png" width="1440" height="900" loading="lazy" decoding="async"
+             alt="The BuildEx console: apps and sessions on the left, a chat in the middle whose answer is a live metrics table, and the brain rail on the right showing sensors, rules and skills, tools, the gate holding an outward email, and learning." />
+        <figcaption>The whole product in one frame. Left: what you work through. Middle: the work. Right:
+          your company's brain, live.</figcaption>
+      </figure>
+      <div class="legend">
+        <div class="lg rv d1"><div class="k">left</div><h3>Apps &amp; sessions</h3>
+          <p>The tools you've connected, and every piece of work you have open. A session is just a
+            conversation about one job, kept for good.</p></div>
+        <div class="lg rv d2"><div class="k">middle</div><h3>The work itself</h3>
+          <p>Chat with your agent, or open any document in your company and edit it directly. Answers come
+            back as tables, drafts and files - not as walls of text.</p></div>
+        <div class="lg rv d3"><div class="k">right</div><h3>The brain rail</h3>
+          <p>Your company's mind as a live map: what's coming in, the rules and skills it runs on, the tools
+            it can reach, what's waiting for your tap, and what it has learned.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 3. the brain ───────────────────────────────────────────────────── -->
+  <section class="divide" id="brain">
+    <div class="wrap">
+      <div class="eyebrow rv">The company brain</div>
+      <h2 class="rv lead-h">It's a folder. That's the whole trick.</h2>
+      <div class="split">
+        <div class="rv d1">
+          <p>Your company's brain is a directory of markdown files on your own disk. Strategy, clients,
+            decisions, numbers, the raw material your connections drag in - all of it plain text, one idea
+            per file, organized in folders named after what your company actually does.</p>
+          <p>It comes in <b>three layers</b>. <b>core</b> is the starter pack we ship (conventions and a
+            handful of skills), <b>your company layer</b> is the shared brain everyone in the company works
+            from, and <b>your private layer</b> is yours alone - it never leaves your machine unless you say
+            so.</p>
+          <h3>How it gets fed</h3>
+          <p>Three ways, all of them ending in a file: <b>you</b> write or drop something in, a
+            <b>connection</b> brings material in under <code class="mono">sources/</code>, or the
+            <b>agent</b> captures something as it works - a decision it just watched you make, a number it
+            just verified.</p>
+          <h3>How the AI actually reads it</h3>
+          <p>It opens the files. That's it. There is no vector database, no embedding step, no ingestion
+            pipeline, and nothing is uploaded to us to be indexed. The agent runs on your machine, in that
+            folder, with a file browser and your rules - which is exactly why it can be trusted with the
+            whole thing at once. The app even has a viewer that shows you, verbatim, what your agent is
+            handed.</p>
+        </div>
+        <div class="rv d2">
+          <pre class="tree"><span class="c">your-company/</span>
+  <span class="b">core/</span>              <span class="c">the starter pack we ship</span>
+    conventions.md   <span class="c">how the brain is organized</span>
+    skills/          <span class="c">capture-decision, weekly-review, ...</span>
+
+  <span class="b">acme-labs/</span>         <span class="c">the shared company brain</span>
+    CLAUDE.md        <span class="c">always-on rules, read every turn</span>
+    strategy/        <span class="c">charter, positioning, plans</span>
+    clients/
+      globex.md      <span class="c">one file per client</span>
+    decisions/
+      log.md         <span class="c">every non-obvious call, dated</span>
+    finance/
+      metrics-q3.md
+    sources/
+      gmail/         <span class="c">raw material, brought in as files</span>
+
+  <span class="g">private-you/</span>       <span class="c">yours alone - never shared</span>
+    CLAUDE.md
+    notes/</pre>
+          <div class="gloss" style="margin-top:18px"><b>why it matters</b> If BuildEx vanished tomorrow, you
+            would still have this folder, and it would still make sense. Open it in any editor. Hand it to
+            any AI. Nothing here is in a format only we can read.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 4. rules & skills ──────────────────────────────────────────────── -->
+  <section class="divide" id="rules">
+    <div class="wrap">
+      <div class="eyebrow rv">Rules &amp; skills</div>
+      <h2 class="rv lead-h">Programming your company, without programming.</h2>
+      <p class="sub rv d1" style="margin-top:14px">Two kinds of instruction, both plain markdown, both
+        versioned like everything else. The difference is only <em>when</em> the agent reads them.</p>
+      <div class="contract" style="margin-top:26px">
+        <div class="col will rv d1">
+          <h3>Rules - always on</h3>
+          <ul>
+            <li>One <b>CLAUDE.md</b> per layer: ours, your company's, yours.</li>
+            <li>Read on <b>every single turn</b>, before anything else happens.</li>
+            <li>The standing contract: how you speak, what you never do, what always gets written down.</li>
+            <li>Layered, not overwritten - your company extends the base, you extend your company.</li>
+          </ul>
+        </div>
+        <div class="col will rv d2">
+          <h3>Skills - on demand</h3>
+          <ul>
+            <li>One folder per repeatable job, with a name and a &ldquo;use this when&hellip;&rdquo; line.</li>
+            <li>The agent picks the right one <b>by that description</b>, then follows the steps.</li>
+            <li>Reply to a client, run the weekly review, capture a decision, draft content.</li>
+            <li>Write one in five minutes. If you can write a checklist, you can write a skill.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="split" style="margin-top:30px">
+        <div class="rv d1">
+          <h3>A real skill, in full</h3>
+          <p>This is <b>capture-decision</b>, one of the skills every workspace starts with. Nothing is
+            hidden behind it - no code, no config, no prompt engineering. It's a page of instructions, and
+            the agent follows it.</p>
+          <p>Because it's a file, it's reviewable, editable, copyable between companies, and its history is
+            in git like everything else. When you change how your company answers clients, you change a
+            paragraph.</p>
+          <p>The agent also <b>offers</b> them: notice it doing the same job the same way twice, and it will
+            suggest saving that as a skill - one line, inline, that you accept or ignore.</p>
+        </div>
+        <div class="rv d2">
+          <pre class="tree"><span class="c">core/skills/capture-decision/SKILL.md</span>
+
+<span class="c">---</span>
+name: capture-decision
+description: Use when a non-obvious call
+  is made about the company - a strategy
+  choice, a policy, a trade-off, a
+  reversal - and it should be remembered
+  so it is never silently decided twice.
+<span class="c">---</span>
+
+<span class="b"># capture-decision</span>
+
+<span class="b">## Steps</span>
+1. Open `decisions/log.md`.
+2. Add a dated entry at the top:
+   Decision, Context, Alternatives,
+   Consequence.
+3. If it changes a prior decision, say
+   so - never edit the old one away.
+
+<span class="b">## Rules</span>
+- One decision per entry; absolute dates.
+- Plain markdown; nothing secret.
+- Superseding is honest: the new entry
+  wins, the old one stays as history.</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 5. the agent ───────────────────────────────────────────────────── -->
+  <section class="divide" id="agent">
+    <div class="wrap">
+      <div class="eyebrow rv">Your agent</div>
+      <h2 class="rv lead-h">You bring the AI. We never touch it.</h2>
+      <p class="sub rv d1" style="margin-top:14px">BuildEx doesn't sell you intelligence. It runs the coding
+        agent you already pay for - today that's Claude Code, and the driver seam is open for others - as a
+        program on your machine, pointed at your company's folder.</p>
+      <div class="contract" style="margin-top:26px">
+        <div class="col will rv d1">
+          <h3>What that buys you</h3>
+          <ul>
+            <li>The agent talks to your model provider with <b>your</b> subscription, directly.</li>
+            <li>Your files never make a detour through us to get to it.</li>
+            <li>You see the model, the effort setting, and the usage, in the window.</li>
+            <li>When your agent gets better, your company gets better - no upgrade to buy from us.</li>
+          </ul>
+        </div>
+        <div class="col wont rv d2">
+          <h3>Bright lines we hold</h3>
+          <ul>
+            <li>We never read your agent's credential store.</li>
+            <li>We never proxy or resell you model tokens.</li>
+            <li>We never set a provider API key on your behalf.</li>
+            <li>We never render a provider sign-in and collect what you type into it.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="gloss rv d2"><b>why it's structural</b> These aren't promises in a policy page - they're
+        invariants with test suites that gate every release. The
+        <a href="/proof.html" style="color:var(--brand)">Proof page</a> links each one to the code.</div>
+    </div>
+  </section>
+
+  <!-- ── 6. connections ─────────────────────────────────────────────────── -->
+  <section class="divide" id="connections">
+    <div class="wrap">
+      <div class="eyebrow rv">Connections</div>
+      <h2 class="rv lead-h">How the outside world gets in - and how it gets out.</h2>
+      <p class="sub rv d1" style="margin-top:14px">A brain that only knows what you typed into it is a
+        notebook. Connections are what make it an operating system: your real inbox, your real CRM, your
+        real invoices.</p>
+
+      <div class="tiles" style="margin-top:30px">
+        <div class="tile wide rv d1"><div class="th"><span class="k">Connectors</span></div>
+          <h3>Products you already use</h3>
+          <p>Sign in once to Gmail, Slack, HubSpot, Notion, Linear, Intercom, Stripe, Asana, Calendly and
+            the rest. Two things happen: material flows in as files under <code
+            class="mono">sources/</code>, and that product's actions become tools the agent can use. The
+            sign-in is a normal OAuth flow, and the tokens live in your machine's keychain.</p></div>
+        <div class="tile wide rv d2"><div class="th"><span class="k">MCP servers</span></div>
+          <h3>Anything else with an API</h3>
+          <p>MCP is the open standard for handing an AI a set of tools. Point BuildEx at any MCP server -
+            one you found, one your vendor ships, one you wrote this afternoon - and its tools show up in
+            the same list, under the same gate, with no special-casing.</p></div>
+      </div>
+
+      <div class="gloss rv"><b>mcp, in one line</b> A small program that says &ldquo;here are the things I can
+        do, and what each one needs&rdquo; in a format every modern AI understands. It's the USB-C port of
+        AI tools.</div>
+
+      <h3 style="font-size:21px;font-weight:560;margin:34px 0 0" class="rv">Every tool passes one gate</h3>
+      <p class="sub rv d1" style="margin-top:10px">However a tool arrives, it goes through a single gateway
+        that decides what it's allowed to do on its own. The classification comes from what the tool is
+        <em>for</em>, plus what its provider says about it - and you can tighten or loosen any of it.</p>
+      <div class="cmp-scroll rv d1">
+        <table class="cmp">
+          <thead><tr><th>The tool wants to&hellip;</th><th>Examples</th><th class="us">What happens</th></tr></thead>
+          <tbody>
+            <tr><th>Look something up</th><td><code class="mono">get_</code>, <code class="mono">list_</code>, <code class="mono">search_</code>, <code class="mono">read_</code></td><td class="us">Runs on its own. Reading is never gated.</td></tr>
+            <tr><th>Create or update inside your tools</th><td>add a CRM note, update a task, file a doc</td><td class="us">Runs on its own. It's your data, and it's reversible.</td></tr>
+            <tr><th>Reach a real person or move money</th><td><code class="mono">send</code>, <code class="mono">post</code>, <code class="mono">publish</code>, <code class="mono">charge</code>, <code class="mono">refund</code>, <code class="mono">invoice</code></td><td class="us">Waits for your tap. Always logged.</td></tr>
+            <tr><th>Destroy something</th><td><code class="mono">delete</code>, <code class="mono">revoke</code>, <code class="mono">cancel</code>, <code class="mono">archive</code></td><td class="us">Waits for your tap. Always logged.</td></tr>
+            <tr><th>Anything you've marked sensitive</th><td>your call, per tool</td><td class="us">Waits for your tap - or is hidden from the agent entirely.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 7. the app store ───────────────────────────────────────────────── -->
+  <section class="divide" id="store">
+    <div class="wrap">
+      <div class="eyebrow rv">The App Store</div>
+      <h2 class="rv lead-h">Installing an app is a commit.</h2>
+      <div class="split">
+        <div class="rv d1">
+          <p>An app in BuildEx isn't code that runs in a sandbox somewhere. It's a bundle of <b>files</b>:
+            the connector that talks to the product, the skills that know how to use it well, the
+            conventions for where its material gets filed, and the docs.</p>
+          <p>Install it and those files land in your company's folder as a commit you can read. Uninstall it
+            and they leave as another commit. There's no hidden state, no phone-home, and nothing installed
+            that you couldn't have written by hand.</p>
+          <p>That's also how a company's know-how travels. A good skill for running a discovery call is a
+            file. It can be shared, forked, improved, and pulled into another company - the same way code
+            has moved between teams for thirty years.</p>
+        </div>
+        <div class="rv d2">
+          <pre class="tree"><span class="c">$ install &ldquo;HubSpot&rdquo;</span>
+
+<span class="add">+ acme-labs/apps/hubspot/README.md</span>
+<span class="add">+ acme-labs/skills/log-a-deal/SKILL.md</span>
+<span class="add">+ acme-labs/skills/pipeline-review/SKILL.md</span>
+<span class="add">+ acme-labs/conventions.md</span>   <span class="c">(deals file under clients/)</span>
+<span class="add">+ .buildex/connectors/hubspot.json</span>
+
+<span class="c">one commit  ·  reversible  ·  readable</span></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 8. the gate ────────────────────────────────────────────────────── -->
+  <section class="divide" id="gate">
+    <div class="wrap">
+      <div class="eyebrow gate rv">The gate</div>
+      <h2 class="rv lead-h">Wide open by default. The sharp edges wait for you.</h2>
+      <div class="split">
+        <div class="rv d1">
+          <p>The fear about an AI running a company isn't that it drafts a bad paragraph. It's that it sends
+            one. So the line isn't drawn around <em>thinking</em> - it's drawn around <b>leaving</b>.</p>
+          <p>Reading, drafting, filing, building, updating your own tools: all of that runs without asking.
+            Money, messages to real people, publishing, and anything you can't undo: those stop and wait,
+            right where you're already working. No separate approvals inbox to babysit.</p>
+          <p>The card shows the action as a sentence you can judge in two seconds, with the exact request
+            one click away if you want it. And it's a dial, not a wall: widen a gate you trust, tighten one
+            you don't.</p>
+          <p>Every outward action that goes through - approved by you, or auto-approved because you widened
+            that gate - is written to the company's activity log.</p>
+        </div>
+        <div class="rv d2">
+          <div class="mock mk-appr" style="min-height:0">
+            <div class="hd"><span class="dot"></span> Pending - needs you</div>
+            <div class="ln">send <b>Q3 review</b> to acme@co</div>
+            <div class="ln">→ 1 email · 2 attachments</div>
+            <div class="ln">draft ready, nothing sent yet</div>
+            <div class="btns"><span class="b1">Approve</span><span class="b2">Edit</span></div>
+          </div>
+          <div class="gloss" style="margin-top:20px"><b>the scarce resource</b> Your attention. A good week is
+            one where the gate asked you five times and every one of them mattered.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 9. git ─────────────────────────────────────────────────────────── -->
+  <section class="divide" id="git">
+    <div class="wrap">
+      <div class="eyebrow rv">The history ledger</div>
+      <h2 class="rv lead-h">Git, doing the boring job it's best at.</h2>
+      <div class="gloss rv d1" style="max-width:70ch"><b>git, in one line</b> The thing software teams have
+        used for twenty years to keep every version of everything, forever, with a note about why it
+        changed. You never have to see it. You just get what it gives you.</div>
+      <div class="split">
+        <div class="rv d1">
+          <p>Every change your agent makes is committed: which files, when, at whose request, with a
+            readable message. Not a log <em>about</em> the work - the work itself, versioned.</p>
+          <p>That single fact is what makes the rest safe. <b>Nothing is overwritten silently</b>, because
+            every previous version is still there. <b>Undo is real</b> - not a feature we implemented, just
+            what git does. <b>&ldquo;When did we decide that?&rdquo;</b> has an answer with a date on it.
+            And an AI that edits your company is auditable line by line, by you or by anyone you hand the
+            folder to.</p>
+          <p>The Learning stage in the right rail is that history, made readable: recent commits, the files
+            each touched, and one click to open any of them.</p>
+          <p>Work is committed <b>on your machine first</b>. Sending it anywhere else is a separate,
+            deliberate step.</p>
+        </div>
+        <div class="rv d2">
+          <pre class="tree"><span class="c">recent changes</span>
+
+<span class="b">a3f9c21</span>  reply to Dana re: SSO
+        <span class="c">clients/globex.md · decisions/log.md</span>
+        <span class="c">you · 4 minutes ago</span>
+
+<span class="b">7e10b8d</span>  Q3 metrics verified
+        <span class="c">finance/metrics-q3.md</span>
+        <span class="c">agent · 2 hours ago</span>
+
+<span class="c">decisions/log.md</span>
+<span class="add">+ 2026-07-22 Interim SSO: shared service</span>
+<span class="add">+   account for ~60 days.</span>
+<span class="add">+   Supersedes the 2026-05 &ldquo;no shared</span>
+<span class="add">+   accounts&rdquo; note, with an end date.</span></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 10. the team ───────────────────────────────────────────────────── -->
+  <section class="divide" id="team">
+    <div class="wrap">
+      <div class="eyebrow rv">Your team</div>
+      <h2 class="rv lead-h">One brain, several machines.</h2>
+      <div class="split">
+        <div class="rv d1">
+          <h3>Today <span class="state-tag">shipped</span></h3>
+          <p>Your company is one repository. It lives on your machine, and you can point it at a remote you
+            already own - your own GitHub, your own server - and it will keep itself backed up there. Your
+            work is committed locally first and pushed when you say so; if you're offline, the commits
+            queue and go when you're back.</p>
+          <h3>Next <span class="state-tag soon">coming soon</span></h3>
+          <p>Hosted sync and seats: every member's machine holds a full copy of the company brain, and
+            changes travel between them as commits. Someone else's edits arrive as history you can read,
+            not as a mysterious overwrite. Your private layer stays on your machine.</p>
+          <h3>The rule that makes it safe</h3>
+          <p>If two people changed the same thing, the loser's version is backed up <b>byte for byte</b>
+            before anything else happens, and flagged for a human. Losing an operator's work isn't a bug
+            here, it's a failing test.</p>
+          <p>And the cloud's job stays deliberately small: <b>the cloud syncs, it never thinks</b>. No
+            model runs there. No one reads your company to make the product better.</p>
+        </div>
+        <div class="rv d2">
+          <pre class="tree"><span class="c">your machine</span>          <span class="c">teammate's machine</span>
+  acme-labs/               acme-labs/
+  <span class="b">full copy</span>                <span class="b">full copy</span>
+       │                        │
+       └────────►  <span class="b">sync</span>  ◄────────┘
+                    <span class="c">commits in, commits out</span>
+                    <span class="c">never reads, never thinks</span>
+
+  <span class="g">private-you/</span>             <span class="g">private-them/</span>
+  <span class="c">stays put</span>                <span class="c">stays put</span></pre>
+          <div class="gloss" style="margin-top:18px"><b>the escape hatch</b> It's a git repo of markdown.
+            Clone it and walk away, any day, and everything still works without us.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── close ──────────────────────────────────────────────────────────── -->
+  <section class="divide">
+    <div class="wrap">
+      <div class="finale rv">
+        <h2>Now go poke at it.</h2>
+        <p>Every claim on this page is either visible in the app or readable in the repo. Download it and
+          check, or read the code first - both are free.</p>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:4px">
+          <a class="btn lg" href="/download.html">Download BuildEx <span class="ar">→</span></a>
+          <a class="btn ghost lg" href="https://github.com/dejankeri/buildex" target="_blank" rel="noopener">Read the source <span class="ar">→</span></a>
+        </div>
+        <div class="re">Free · MIT-licensed · bring your own agent · your files live on your machine.</div>
+      </div>
+    </div>
+  </section>
