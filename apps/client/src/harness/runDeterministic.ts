@@ -11,12 +11,11 @@
 // lane). The keychain read belongs to the daemon; a CLI run takes the env-var lane so it works
 // headless and in CI. run.ts scrubs both vars from process.env before the agent spawns.
 //
-// Known gap, deliberate for now: a hard kill (Ctrl+C) during the drive skips both the provider
-// destroy and local teardown. Sandbox lane: the minted key lingers until the provider's TTL reaps
-// it (docs/sandbox-face.md recommends expiresAt). LOCAL lane: the caller's key has no TTL - it
-// stays in the leftover workspace/.mcp.json under ~/.buildex-e2e until a manual sweep (delete the
-// run dir, or rotate the key on the local instance). An interrupt-safe destroy lane lands with
-// the proof track.
+// A hard kill (Ctrl+C) is interrupt-safe: the SIGINT/SIGTERM handler below runs the cleanup
+// registry, which deletes the run's workspace - and the pinned .mcp.json holding the provider key
+// with it - before exiting. (The deterministic sandbox lane's provider destroy still unwinds inside
+// withSandbox and, failing that, relies on the provider's TTL; the local lane's key never lands
+// anywhere but the workspace, which the registry always removes.)
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +25,7 @@ import { ClaudeCodeDriver } from "../agent/claude-driver.js";
 import { nodeSpawnAgent } from "../agent/node-spawn.js";
 import { parseArgs } from "./cli-args.js";
 import { runDeterministicTrack } from "./run.js";
+import { CleanupRegistry } from "./cleanup.js";
 
 // Repo root, from this file's location (apps/client/src/harness/runDeterministic.ts → up four).
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
@@ -33,6 +33,15 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const corePackDir = resolveCorePackDir({ repoRoot: REPO });
+  const cleanup = new CleanupRegistry();
+
+  // A hard kill can't run the track's own finally, so unwind through the same registry directly,
+  // then exit with the POSIX signal convention (128 + signal number). Safe if the finally already
+  // ran (runAll is idempotent - entries run at most once).
+  const onSignal = (code: number) => () => void cleanup.runAll(console.log).then(() => process.exit(code));
+  process.on("SIGINT", onSignal(130)); // 128 + SIGINT(2)
+  process.on("SIGTERM", onSignal(143)); // 128 + SIGTERM(15)
+
   const outcome = await runDeterministicTrack(args, {
     source: bundleCatalogSource(join(corePackDir, "catalog")),
     corePackDir,
@@ -40,6 +49,7 @@ async function main(): Promise<void> {
     driver: new ClaudeCodeDriver({ spawn: nodeSpawnAgent, bin: "claude" }),
     fetch: globalThis.fetch,
     env: process.env,
+    cleanup,
   });
   process.exitCode = outcome.exitCode;
 }

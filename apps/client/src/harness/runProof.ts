@@ -36,12 +36,10 @@ async function main(): Promise<void> {
   const corePackDir = resolveCorePackDir({ repoRoot: REPO });
   const cleanup = new CleanupRegistry();
 
-  process.on("SIGINT", () => {
-    void cleanup.runAll(console.log).then(() => process.exit(130));
-  });
-  process.on("SIGTERM", () => {
-    void cleanup.runAll(console.log).then(() => process.exit(130));
-  });
+  // Unwind teardown on a hard kill, then exit with the POSIX signal convention (128 + signal number).
+  const onSignal = (code: number) => () => void cleanup.runAll(console.log).then(() => process.exit(code));
+  process.on("SIGINT", onSignal(130)); // 128 + SIGINT(2)
+  process.on("SIGTERM", onSignal(143)); // 128 + SIGTERM(15)
 
   const outcome = await runProofTrack(args, {
     source: bundleCatalogSource(join(corePackDir, "catalog")),

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runDeterministicTrack, type RunDeps } from "./run.js";
+import { CleanupRegistry } from "./cleanup.js";
 import { resolveCorePackDir } from "../provision/core-pack.js";
 import type { Args } from "./cli-args.js";
 import type { AgentDriver, RunPromptOpts, UiEvent } from "../agent/types.js";
@@ -71,6 +72,7 @@ function depsWith(over: Partial<RunDeps>): RunDeps {
     driver: fakeDriver().driver,
     fetch: (async () => res(500)) as unknown as typeof globalThis.fetch,
     env: {},
+    cleanup: new CleanupRegistry(),
     now: () => new Date("2026-07-23T12:00:00Z"),
     log: () => {},
     ...over,
@@ -78,6 +80,21 @@ function depsWith(over: Partial<RunDeps>): RunDeps {
 }
 
 describe("runDeterministicTrack - the composition", () => {
+  it("registers the workspace teardown on the injected cleanup registry - so a hard-kill signal handler can unwind the run and delete the pinned .mcp.json", async () => {
+    const cleanup = new CleanupRegistry();
+    const labels: string[] = [];
+    const realPush = cleanup.push.bind(cleanup);
+    cleanup.push = (label: string, fn: () => void | Promise<void>) => { labels.push(label); realPush(label, fn); };
+
+    const out = await runDeterministicTrack(localArgs, depsWith({ cleanup, env: { BUILDEX_LOCAL_MCP_KEY: "pk_x" } }));
+
+    // A teardown for the run's workspace was registered on the injected registry (the exact thing
+    // the shell's SIGINT handler invokes on a hard kill), not only deleted in a local finally.
+    expect(labels).toContain("run-teardown");
+    // And it actually ran (normal completion): the workspace + its pinned .mcp.json are gone.
+    expect(existsSync(join(out.runDir, "workspace"))).toBe(false);
+  });
+
   it("local lane: pins the caller's url+key, grants the server rule to the drive, scrubs the key from the env, redacts it from the transcript, exit 0", async () => {
     const { driver, seen } = fakeDriver([
       { kind: "text", text: "key is pk_local_secret_1 hah" } as unknown as UiEvent,
@@ -185,5 +202,21 @@ describe("runDeterministicTrack - the composition", () => {
     const out = await runDeterministicTrack(localArgs, depsWith({ driver, env }));
     expect(out.exitCode).toBe(1);
     expect(existsSync(join(out.runDir, "results.json"))).toBe(true);
+  });
+
+  it("redacts known secrets from any error that escapes the deterministic track", async () => {
+    // The sandbox lane's mint goes through fetch; make it throw an error that quotes the secret
+    // (as a lower-level network error echoing a request header could). The rethrow must scrub it.
+    const fetchLeaking = (async () => {
+      throw new Error("connection reset while sending header x-sandbox-key: sb_admin_secret");
+    }) as unknown as typeof globalThis.fetch;
+    try {
+      await runDeterministicTrack(sandboxArgs, depsWith({ fetch: fetchLeaking, env: { BUILDEX_SANDBOX_SECRET: "sb_admin_secret" } }));
+      expect.fail("expected runDeterministicTrack to throw");
+    } catch (e) {
+      const msg = (e as Error).message;
+      expect(msg).not.toContain("sb_admin_secret");
+      expect(msg).toContain("[REDACTED]");
+    }
   });
 });

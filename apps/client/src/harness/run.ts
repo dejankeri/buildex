@@ -14,7 +14,9 @@ import { installPackHeadless, regenAgentConfig, serverAllowRule, verifyInstall }
 import { pinKey, withSandbox } from "./sandbox-step.js";
 import { driveCase, type DriveResult } from "./drive-step.js";
 import { collectResults, writeResults } from "./results.js";
+import { redactText } from "./redact.js";
 import type { Args } from "./cli-args.js";
+import type { CleanupRegistry } from "./cleanup.js";
 
 const SMOKE_PROMPT = "List the skills available in this workspace and confirm which app tools you can reach.";
 
@@ -28,6 +30,11 @@ export interface RunDeps {
   /** The environment secrets are READ from - and SCRUBBED from, in place, before the agent spawns
    *  (the CLI passes process.env, so the child never inherits an admin secret or provider key). */
   env: Record<string, string | undefined>;
+  /** Interrupt-safe teardown: the run's throwaway workspace registers its teardown here as soon as
+   *  it is provisioned, so a hard kill mid-run (the CLI shell's SIGINT/SIGTERM handler) can still
+   *  delete it - and the pinned .mcp.json holding the provider key with it. Runs on normal completion
+   *  too; the registry is idempotent, so the signal path and the finally never double-delete. */
+  cleanup: CleanupRegistry;
   now?: () => Date;
   log?: (line: string) => void;
 }
@@ -58,6 +65,9 @@ export async function runDeterministicTrack(args: Args, deps: RunDeps): Promise<
   const sandboxSecret = deps.env["BUILDEX_SANDBOX_SECRET"];
   delete deps.env["BUILDEX_LOCAL_MCP_KEY"];
   delete deps.env["BUILDEX_SANDBOX_SECRET"];
+  // Scrub these from any error that escapes the track (see the redacting rethrow below) - a
+  // lower-level error can quote a secret verbatim even though the drive already redacts its transcript.
+  const knownSecrets = [localKey, sandboxSecret].filter((s): s is string => !!s);
 
   // Every refusal below happens BEFORE anything touches disk.
   if (mcpUrl !== undefined && !localKey) {
@@ -77,6 +87,10 @@ export async function runDeterministicTrack(args: Args, deps: RunDeps): Promise<
 
   const slug = `${slugTimestamp(now())}-${pack}`;
   const ctx = provisionRunContext({ baseDir: deps.baseDir, corePackDir: deps.corePackDir, slug });
+  // Register teardown the moment the workspace exists, so the CLI shell's SIGINT/SIGTERM handler can
+  // delete it (and the pinned .mcp.json holding the provider key) even on a hard kill - not only on
+  // the normal/thrown paths the finally covers.
+  deps.cleanup.push("run-teardown", () => teardownRunContext(ctx));
   log(`run dir: ${ctx.runDir}`);
 
   try {
@@ -141,7 +155,9 @@ export async function runDeterministicTrack(args: Args, deps: RunDeps): Promise<
     const results = collectResults({ pack, ctx, install: check, sandbox: sandboxResult, drives, ...(deps.now ? { now: deps.now } : {}) });
     const resultsPath = writeResults(ctx.runDir, results);
 
-    if (laneError) throw laneError;
+    // Redact before rethrowing - the backstop for a laneError that carries a secret verbatim (the
+    // generator/judge/drive paths already scrub their own; this covers a lower-level error).
+    if (laneError) throw new Error(redactText(String((laneError as Error)?.stack ?? laneError), knownSecrets));
 
     const anyErrored = drives.some((d) => d.errored);
     log(`\nresults: ${resultsPath}`);
@@ -151,6 +167,8 @@ export async function runDeterministicTrack(args: Args, deps: RunDeps): Promise<
 
     return { exitCode: !check.ok || anyErrored ? 1 : 0, runDir: ctx.runDir, resultsPath: resultsPath };
   } finally {
-    teardownRunContext(ctx);
+    // Runs the registered "run-teardown" (idempotent - if the signal handler already ran it, this
+    // is a no-op). Never rethrows, so it can't mask a laneError propagating out of the try.
+    await deps.cleanup.runAll(log);
   }
 }
