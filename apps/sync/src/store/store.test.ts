@@ -220,6 +220,22 @@ describe("slugFromEmail - de-duplicating slug helper", () => {
   });
 });
 
+describe("slugFromName - de-duplicating slug helper (shared with slugFromEmail)", () => {
+  it("slugifies a company name: lowercased, non-alphanumerics collapsed to '-'", () => {
+    expect(store.slugFromName("Acme Labs")).toBe("acme-labs");
+  });
+
+  it("suffixes -2, -3, ... when the slug is already taken by a company", () => {
+    store.createCompany({ id: "c1", slug: "acme-labs", name: "Acme Labs" });
+    expect(store.slugFromName("Acme Labs")).toBe("acme-labs-2");
+  });
+
+  it("falls back to 'company' when the name has no alphanumerics", () => {
+    expect(store.slugFromName("")).toBe("company");
+    expect(store.slugFromName("***")).toBe("company");
+  });
+});
+
 describe("persistence across reopen", () => {
   it("survives a close and reopen", () => {
     store.createCompany({ id: "c1", slug: "acme", name: "Acme" });

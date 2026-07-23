@@ -95,10 +95,12 @@ export function pkce(): { verifier: string; challenge: string } {
   return { verifier, challenge };
 }
 
-/** The real Supabase (GoTrue) PKCE OAuth client. Based on Supabase's documented `/auth/v1/authorize`
- *  and `/auth/v1/token?grant_type=pkce` endpoints - the exact query/body field names (and whether
- *  `provider=google` should instead be operator-choosable) MUST be verified against the owner's live
- *  Supabase project at cutover; nothing here has been exercised against a real project. */
+/** The real Supabase (GoTrue) auth client: PKCE OAuth (`authorizeUrl`/`exchangeCode`) plus no-browser
+ *  anonymous sign-in (`signInAnonymously`). Based on Supabase's documented `/auth/v1/authorize`,
+ *  `/auth/v1/token?grant_type=pkce`, and `/auth/v1/signup` (anonymous) endpoints - the exact
+ *  query/body field names (and whether `provider=google` should instead be operator-choosable) MUST
+ *  be verified against the owner's live Supabase project at cutover; nothing here has been exercised
+ *  against a real project. */
 export function realSupabaseAuthClient(deps: { supabaseUrl: string; anonKey: string; fetch: typeof fetch }): SupabaseAuthClient {
   const base = deps.supabaseUrl.replace(/\/+$/, "");
   return {
@@ -139,6 +141,40 @@ export function realSupabaseAuthClient(deps: { supabaseUrl: string; anonKey: str
         throw new Error("sign-in exchange returned a malformed response");
       }
       if (!body.access_token) throw new Error("sign-in exchange returned no access token");
+      return { jwt: body.access_token };
+    },
+    // No-browser anonymous sign-in (anon-first onboarding). Based on Supabase's documented GoTrue
+    // anonymous sign-up (`POST /auth/v1/signup` with an empty-credential body) - the exact
+    // endpoint/body MUST be verified against the owner's live Supabase project at cutover, same as
+    // authorizeUrl/exchangeCode above.
+    signInAnonymously: async () => {
+      let res: Response;
+      try {
+        res = await deps.fetch(base + "/auth/v1/signup", {
+          method: "POST",
+          headers: { "content-type": "application/json", apikey: deps.anonKey },
+          body: JSON.stringify({}),
+        });
+      } catch (e) {
+        throw new Error("could not reach the sign-in server: " + (e instanceof Error ? e.message : "network error"));
+      }
+      if (!res.ok) {
+        let msg = `anonymous sign-in failed (${res.status})`;
+        try {
+          const j = (await res.json()) as { error_description?: string; msg?: string; error?: string };
+          msg = j.error_description ?? j.msg ?? j.error ?? msg;
+        } catch {
+          /* non-JSON error body - keep the status message */
+        }
+        throw new Error(msg);
+      }
+      let body: { access_token?: string };
+      try {
+        body = (await res.json()) as { access_token?: string };
+      } catch {
+        throw new Error("anonymous sign-in returned a malformed response");
+      }
+      if (!body.access_token) throw new Error("anonymous sign-in returned no access token");
       return { jwt: body.access_token };
     },
   };

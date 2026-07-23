@@ -170,16 +170,31 @@ export class ControlPlaneStore {
     return this.db.prepare("SELECT 1 FROM companies WHERE slug = ?").get(slug) !== undefined;
   }
 
-  /** Derive a company-of-one slug from an email's local-part: lowercased, non-alphanumerics
-   *  collapsed to '-', trimmed; suffixed -2, -3, ... until a free slug is found. */
-  slugFromEmail(email: string): string {
-    const local = email.split("@")[0] ?? "";
-    const base = local.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "company";
+  /** Lowercase, collapse non-alphanumerics to '-', trim; empty result falls back to "company". */
+  private slugify(raw: string): string {
+    return raw.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "company";
+  }
+
+  /** Suffix -2, -3, ... off a slugified base until a free (unused) slug is found. */
+  private dedupeSlug(base: string): string {
     let slug = base;
     for (let n = 2; this.companyExistsBySlug(slug); n++) {
       slug = `${base}-${n}`;
     }
     return slug;
+  }
+
+  /** Derive a company-of-one slug from an email's local-part: lowercased, non-alphanumerics
+   *  collapsed to '-', trimmed; suffixed -2, -3, ... until a free slug is found. */
+  slugFromEmail(email: string): string {
+    const local = email.split("@")[0] ?? "";
+    return this.dedupeSlug(this.slugify(local));
+  }
+
+  /** Derive a company slug from an operator-typed company name, same slugify+dedup rules as
+   *  `slugFromEmail`. Used when anonymous onboarding gives the company a name up front. */
+  slugFromName(name: string): string {
+    return this.dedupeSlug(this.slugify(name));
   }
 
   // --- setup tokens (one-time, TTL) ---

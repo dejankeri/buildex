@@ -202,6 +202,28 @@ describe("POST /session (Supabase sign-in, dormant-safe)", () => {
     expect(store.findOperatorBySupabaseSub("s1")).not.toBeNull();
   });
 
+  it("accepts an optional companyName and slugs the team repo from it", async () => {
+    const sessionApp = createApp({
+      store,
+      provisioning,
+      git,
+      schedules,
+      serviceKey: SERVICE_KEY,
+      publicBaseUrl: "https://sync.test",
+      verifySession: async () => ({ sub: "s-named" }),
+    });
+    const res = await sessionApp(json("/session", { jwt: "good-jwt", companyName: "Acme" }));
+    expect(res.status).toBe(200);
+    const creds = (await res.json()) as { repos: Record<string, string> };
+    expect(creds.repos.team).toBe("https://sync.test/git/team-acme.git");
+  });
+
+  it("a companyName does not change dormancy - a dormant /session still 501s", async () => {
+    const res = await app(json("/session", { jwt: "whatever", companyName: "Acme" }));
+    expect(res.status).toBe(501);
+    expect(await res.json()).toEqual({ error: "sign-in not configured" });
+  });
+
   it("401s on a rejected JWT and NEVER provisions - a rejected session must not create a company", async () => {
     let provisionCalls = 0;
     const spiedProvisioning = new Proxy(provisioning, {

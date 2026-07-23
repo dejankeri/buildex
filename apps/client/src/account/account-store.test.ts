@@ -77,4 +77,24 @@ describe("AccountStore", () => {
     expect(keychain.get("org:org1:machine-token")).toBe("xmachine_new");
     expect(existsSync(join(dir, "account.json"))).toBe(true);
   });
+
+  it("clear() wipes the keychain pair and account.json - load/tokens/connected all revert to unset", () => {
+    const { keychain, store } = make();
+    store.save("https://sync.test", RESULT);
+
+    store.clear();
+
+    expect(store.load()).toBeNull();
+    expect(store.tokens()).toBeNull();
+    expect(store.connected()).toBe(false);
+    expect(existsSync(join(dir, "account.json"))).toBe(false);
+    expect(keychain.get("org:org1:machine-token")).toBeUndefined();
+    expect(keychain.get("org:org1:refresh-token")).toBeUndefined();
+  });
+
+  it("clear() on an already-clear store is a no-op (never throws)", () => {
+    const { store } = make();
+    expect(() => store.clear()).not.toThrow();
+    expect(store.load()).toBeNull();
+  });
 });

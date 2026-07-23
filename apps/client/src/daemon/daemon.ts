@@ -229,6 +229,16 @@ export interface DaemonDeps {
    *  Optional: absent whenever no Supabase client config is wired (the default today), so
    *  `POST /api/signin` stays dormant (501) rather than half-working. */
   signIn?: () => Promise<{ state: "connected" | "needs-help" }>;
+  /** Anonymous onboarding: mint an anonymous account no-browser and attach it under the given company
+   *  name. Optional: absent whenever no Supabase client config is wired (the same gate as `signIn`),
+   *  so `POST /api/onboard` stays dormant (501) rather than half-working. */
+  onboard?: (input: { companyName: string }) => Promise<{ state: "connected" | "needs-help" }>;
+  /** Local disconnect of the active org (Task 1's disconnect.ts): detach every root's remote and
+   *  clear the account store, reverting to a clean local-only state - git history is kept
+   *  (invariant 8). Optional and gated exactly like `openAccount`/`accountState` (an account store
+   *  must exist - e.g. absent for the sandbox), so `POST /api/logout` simply isn't wired for an org
+   *  with nothing to disconnect and the request falls through to the daemon's terminal 404. */
+  logout?: () => Promise<{ state: "local" }>;
 }
 
 export interface TreeNode {
@@ -723,6 +733,18 @@ export function createDaemon(deps: DaemonDeps): Handler {
     if (method === "GET" && deps.accountState && path === "/api/account") {
       return json(deps.accountState());
     }
+    // Local disconnect of the active org - the reverse of /api/account: detach every root's remote
+    // and clear the account store, keeping git history (invariant 8). Gated exactly like
+    // openAccount/accountState (absent whenever there is no account store to clear, e.g. the
+    // sandbox), so an unwired org's request simply falls through to the terminal 404 below rather
+    // than a dedicated dormant response. Any throw maps to a terse 400, never a raw 500.
+    if (method === "POST" && deps.logout && path === "/api/logout") {
+      try {
+        return json(await deps.logout());
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : "could not log out" }, 400);
+      }
+    }
     // The browser sign-in→attach chain. Dormant (501) whenever `signIn` isn't wired - the default
     // today, with no Supabase config - so the console can treat "not configured" and "failed" as
     // distinct outcomes. Errors map exactly like /api/account above: sandbox → 409, else 400, never 500.
@@ -732,6 +754,22 @@ export function createDaemon(deps: DaemonDeps): Handler {
         return json(await deps.signIn());
       } catch (e) {
         const msg = e instanceof Error ? e.message : "could not sign in";
+        const status = /sandbox/i.test(msg) ? 409 : 400;
+        return json({ error: msg }, status);
+      }
+    }
+    // Anonymous onboarding: the operator names their company and gets an anonymous account with no
+    // browser round-trip. Dormant (501) whenever `onboard` isn't wired - the same gate as `/api/signin`
+    // - so the console can treat "not configured" and "failed" as distinct outcomes. Errors map
+    // exactly like /api/signin above: sandbox → 409, else 400, never a raw 500.
+    if (method === "POST" && path === "/api/onboard") {
+      if (!deps.onboard) return json({ error: "sign-in not configured" }, 501);
+      const { companyName } = await body<{ companyName?: string }>(req, { companyName: "string" });
+      if (!companyName || !companyName.trim()) return json({ error: "companyName is required" }, 400);
+      try {
+        return json(await deps.onboard({ companyName }));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "could not onboard";
         const status = /sandbox/i.test(msg) ? 409 : 400;
         return json({ error: msg }, status);
       }

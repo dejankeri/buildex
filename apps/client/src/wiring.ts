@@ -57,7 +57,9 @@ import { AccountStore } from "./account/account-store.js";
 import { makeTokenProvider } from "./account/token-provider.js";
 import { gitAuthEnv } from "./account/credentials.js";
 import { openAccount as runOpenAccount, persistAndAttach } from "./account/open-account.js";
+import { disconnect as runDisconnect } from "./account/disconnect.js";
 import { signIn as runSignIn } from "./account/sign-in.js";
+import { signUpAnonymous } from "./account/anonymous.js";
 import { postSession } from "./account/session-client.js";
 import { openBrowser, realLoopbackServer, realSupabaseAuthClient, randomState, pkce } from "./account/real-seams.js";
 
@@ -349,6 +351,15 @@ export function buildClientHandler(config: ClientConfig): Handler {
     const a = account?.load();
     return a ? { state: "connected", operatorId: a.operatorId, companySlug: a.companySlug, remotes: a.repos } : { state: "local" };
   };
+  // Local disconnect (Task 2): the reverse of openAccount - detach every root's remote and clear the
+  // account store, reverting to a clean local-only state while keeping git history (invariant 8).
+  // Gated identically to openAccount/accountState (an account store must exist - absent for the
+  // sandbox, which has nothing to disconnect), reusing the SAME `sync` engine and `account` store
+  // those closures already read from above. Absent, `logout` stays undefined and `POST /api/logout`
+  // is simply unwired (falls through to the daemon's terminal 404) - a normal boot is unaffected.
+  const logout = account
+    ? (): Promise<{ state: "local" }> => runDisconnect({ engine: sync, account, roots: config.roots })
+    : undefined;
   // The browser sign-in→attach chain (Task 10): system-browser OAuth via Supabase (sign-in.ts), then
   // the SAME postSession→persistAndAttach tail the setup-token flow above ends in. Gated on BOTH an
   // account seam (org id+dir - openAccount's own precondition) and a Supabase project config -
@@ -384,6 +395,29 @@ export function buildClientHandler(config: ClientConfig): Handler {
         result,
       );
     };
+  })();
+  // Anonymous onboarding (Task 4): the operator never leaves the app - an anonymous Supabase user is
+  // minted no-browser (signUpAnonymous), then handed to the SAME postSession→persistAndAttach tail as
+  // `signIn` above. Gated identically (account seam + Supabase project config); absent either,
+  // `onboard` stays undefined and `/api/onboard` stays dormant (501) - the default today.
+  const onboard: ((input: { companyName: string }) => Promise<{ state: "connected" | "needs-help" }>) | undefined = (() => {
+    if (!account || !config.supabase) return undefined;
+    const acc = account;
+    const supabaseCfg = config.supabase;
+    return (input: { companyName: string }): Promise<{ state: "connected" | "needs-help" }> =>
+      signUpAnonymous(
+        {
+          supabase: realSupabaseAuthClient({ supabaseUrl: supabaseCfg.url, anonKey: supabaseCfg.anonKey, fetch: fetchImpl }),
+          account: acc,
+          engine: sync,
+          roots: config.roots,
+          sandbox: config.sandbox ?? false,
+          fetch: fetchImpl,
+          baseUrl: supabaseCfg.baseUrl,
+          machineName: hostname(),
+        },
+        input,
+      );
   })();
   // Regenerate the native agent config, threading the (optional) gate-hook command. Used after a
   // skill is authored and by the sync route, so the workspace's .claude stays consistent.
@@ -899,7 +933,9 @@ export function buildClientHandler(config: ClientConfig): Handler {
     usageFn,
     openAccount,
     accountState,
+    logout,
     signIn,
+    onboard,
     vault,
     saveDoc,
     fsOps,

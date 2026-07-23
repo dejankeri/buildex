@@ -102,7 +102,7 @@ async function route(deps: AppDeps, req: Request): Promise<Response> {
     // /session (no Supabase config wired) must see the documented 501, not a 400 about a field that
     // was never going to matter anyway.
     if (!deps.verifySession) return json({ error: "sign-in not configured" }, 501);
-    const b = await body<{ jwt?: string; machineName?: string }>(req);
+    const b = await body<{ jwt?: string; machineName?: string; companyName?: string }>(req);
     if (!b.jwt) throw new ValidationError("missing jwt");
 
     // A rejected verification MUST NOT reach provisionBySession - the whole point of the check.
@@ -116,6 +116,7 @@ async function route(deps: AppDeps, req: Request): Promise<Response> {
     const creds = await deps.provisioning.provisionBySession({
       sub: claims.sub,
       email: claims.email,
+      companyName: b.companyName,
       machineName: b.machineName ?? "device",
     });
     return json(withCloneUrls(deps, creds));

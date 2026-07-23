@@ -48,6 +48,7 @@ async function boot() {
   $("#tgLeft").onclick = () => { $(".app").classList.toggle("lc"); savePanels(); }; // toggle + remember the left column
   $("#tgRight").onclick = () => { $(".app").classList.toggle("rc"); savePanels(); }; // toggle + remember the right column
   $("#helpBtn").onclick = () => startTour(true); // replay the guided tour any time
+  $("#profileBtn").onclick = () => openProfile(); // account home - sign in / your company / log out
   $("#brandBtn").onclick = () => openBrainTab();
   $("#navBack").onclick = () => navGo(-1);
   $("#navFwd").onclick = () => navGo(1);
@@ -96,5 +97,17 @@ async function boot() {
   setInterval(() => refreshUsage(), 15 * 60000);
   // load the active project's context (its tabs), or show the start screen if it's empty
   if (S.activeProject) switchToProject(S.activeProject);
+  // First run: ask for the company name (and, when available, whether to back up to the cloud)
+  // BEFORE the rest of the wizard. openOnboard() does NOT mark onboarding complete - it only tears
+  // itself down - so /api/onboarding still reports firstRun:true afterward and checkOnboarding()
+  // (called unconditionally below) runs its full step sequence, including the essential "Connect
+  // your agent (Claude Code)" step. checkOnboarding() itself POSTs /api/onboarding/complete when
+  // it finishes, so the marker is set exactly once, by the wizard.
+  let firstRun = false;
+  try {
+    const o = await getJSON("/api/onboarding");
+    firstRun = !!(o && o.firstRun);
+  } catch (e) {}
+  if (firstRun && typeof openOnboard === "function") await openOnboard();
   checkOnboarding(); // fire-and-forget - shows the first-run wizard once on a fresh install
 }

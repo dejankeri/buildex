@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { startPackagedDaemon } from "./daemon-entry.js";
+import { startPackagedDaemon, supabaseFromEnv } from "./daemon-entry.js";
 import { commonBinDirs } from "./agent/resolve-path.js";
 import type { RunningDaemon } from "./server-main.js";
 
@@ -57,5 +57,47 @@ describe("startPackagedDaemon - the shipped app's boot", () => {
     } finally {
       process.env["PATH"] = savedPath;
     }
+  });
+});
+
+describe("supabaseFromEnv - Supabase config from env, all-or-nothing", () => {
+  it("populates supabase when all three env vars are present and non-empty", () => {
+    expect(
+      supabaseFromEnv({
+        BUILDEX_SUPABASE_URL: "https://proj.supabase.co",
+        BUILDEX_SUPABASE_ANON_KEY: "anon-key-123",
+        BUILDEX_SYNC_URL: "https://sync.example.com",
+      }),
+    ).toEqual({ url: "https://proj.supabase.co", anonKey: "anon-key-123", baseUrl: "https://sync.example.com" });
+  });
+
+  it("trims whitespace around each value", () => {
+    expect(
+      supabaseFromEnv({
+        BUILDEX_SUPABASE_URL: "  https://proj.supabase.co  ",
+        BUILDEX_SUPABASE_ANON_KEY: "  anon-key-123  ",
+        BUILDEX_SYNC_URL: "  https://sync.example.com  ",
+      }),
+    ).toEqual({ url: "https://proj.supabase.co", anonKey: "anon-key-123", baseUrl: "https://sync.example.com" });
+  });
+
+  it("stays undefined when any one of the three is missing", () => {
+    expect(supabaseFromEnv({ BUILDEX_SUPABASE_ANON_KEY: "anon-key-123", BUILDEX_SYNC_URL: "https://sync.example.com" })).toBeUndefined();
+    expect(supabaseFromEnv({ BUILDEX_SUPABASE_URL: "https://proj.supabase.co", BUILDEX_SYNC_URL: "https://sync.example.com" })).toBeUndefined();
+    expect(supabaseFromEnv({ BUILDEX_SUPABASE_URL: "https://proj.supabase.co", BUILDEX_SUPABASE_ANON_KEY: "anon-key-123" })).toBeUndefined();
+  });
+
+  it("stays undefined when a value is present but blank", () => {
+    expect(
+      supabaseFromEnv({
+        BUILDEX_SUPABASE_URL: "   ",
+        BUILDEX_SUPABASE_ANON_KEY: "anon-key-123",
+        BUILDEX_SYNC_URL: "https://sync.example.com",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("stays undefined with an empty env (the dormant default)", () => {
+    expect(supabaseFromEnv({})).toBeUndefined();
   });
 });

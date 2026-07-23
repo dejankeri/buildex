@@ -145,6 +145,14 @@ export class SyncEngine {
     else await this.git(["remote", "add", "origin", url], dir);
   }
 
+  /** Local-disconnect primitive (invariant 8): drop `origin` so the root reverts to unconnected, but
+   *  touch nothing else - no fetch, no reset, no commit is read or written, so every checkpoint stays
+   *  in `git log` exactly as it was. A no-op (never throws) on a root that has no remote, since
+   *  "already disconnected" is success, not an error the caller must special-case. */
+  async removeRemote(dir: string): Promise<void> {
+    if (await this.hasRemote(dir)) await this.git(["remote", "remove", "origin"], dir);
+  }
+
   // --- internals ---
 
   /** Stage everything except workspace-internal paths (which must never enter a commit). */
