@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentDriver, UiEvent } from "../agent/types.js";
+import { redactText } from "./redact.js";
 
 export interface DriveResult {
   /** Which case this drive ran, carried alongside the result so callers with several drives never
@@ -88,10 +89,7 @@ export async function driveCase(
   const transcriptDir = join(opts.runDir, "transcripts");
   mkdirSync(transcriptDir, { recursive: true });
   const transcriptPath = join(transcriptDir, `${opts.caseId}.json`);
-  let serialized = JSON.stringify(stampedEvents, null, 2);
-  for (const secret of opts.redact ?? []) {
-    if (secret) serialized = serialized.split(secret).join("[REDACTED]");
-  }
+  const serialized = redactText(JSON.stringify(stampedEvents, null, 2), opts.redact ?? []);
   writeFileSync(transcriptPath, serialized);
 
   return {
