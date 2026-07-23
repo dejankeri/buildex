@@ -33,6 +33,11 @@ export interface RunPromptOpts {
   /** Extra text appended to the agent's system prompt (e.g. the workspace file map, so the agent can
    *  navigate by Read even where Glob/Grep/Bash are unavailable). Passed via --append-system-prompt. */
   systemPromptAppend?: string;
+  /** Permission rules pre-granted for this spawn (Claude Code --allowedTools). Headless sessions in
+   *  fresh, never-trusted workspaces (the e2e harness) need this: project settings.json permissions
+   *  only apply to trusted folders, and non-interactive runs cannot answer a trust or permission
+   *  prompt. */
+  allowedTools?: string[];
   /** Abort the turn (kills the underlying process). */
   signal?: AbortSignal;
 }

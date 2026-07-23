@@ -103,6 +103,13 @@ export class ClaudeCodeDriver implements AgentDriver {
     const args = ["-p", opts.prompt, "--output-format", "stream-json", "--verbose"];
     if (opts.systemPromptAppend) args.push("--append-system-prompt", opts.systemPromptAppend);
     if (opts.resume) args.push("--resume", opts.resume);
+    if (opts.allowedTools?.length) {
+      // The flag is comma-joined; a rule containing "," (e.g. "Bash(foo, bar)") would silently
+      // split into two broken rules. Refuse loudly instead.
+      const bad = opts.allowedTools.find((r) => r.includes(","));
+      if (bad) throw new Error(`allowedTools rule contains a comma and would be split by --allowedTools: ${bad}`);
+      args.push("--allowedTools", opts.allowedTools.join(","));
+    }
     const model = opts.model ?? this.deps.defaultModel;
     if (model) {
       if (this.deps.allowedModels && !this.deps.allowedModels.includes(model)) {
