@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSy
 import { join, dirname } from "node:path";
 import { homedir, hostname } from "node:os";
 import { confinePath } from "./lib/confine-path.js";
-import { createDaemon, type Handler, type VaultReader, type Catalog, type TreeNode, type SkillEditor, type AutomationEngine, type ConnectorControl, type ConnectorGatewayView } from "./daemon/daemon.js";
+import { createDaemon, type Handler, type VaultReader, type Catalog, type TreeNode, type SkillEditor, type LoopsEngineControl, type ConnectorControl, type ConnectorGatewayView } from "./daemon/daemon.js";
 import { startGatewayHttp, writeGatewayRegistration, writeMcpEntries } from "@buildex/connectors";
 import { ConnectorGatewayHub } from "./brain/connector-gateway.js";
 import { readSkill, writeSkillFile, composeSkill, validateSkill, skillTemplate, originOf } from "./brain/skills.js";
@@ -17,24 +17,16 @@ import { ProvisionFlow } from "./brain/provision.js";
 import { emptyCatalogSource, type CatalogSource } from "./brain/catalog-source.js";
 import { buildAgentView } from "./brain/agent-view.js";
 import { serveApp, brokerData } from "./server/app-serve.js";
-import {
-  AutomationDefStore,
-  AutomationStateFile,
-  migrateJsonToYaml,
-  isDue,
-  nextRunMs,
-  type Cadence,
-  type CatchUp,
-} from "./brain/automations.js";
-import { AutomationsClient } from "./sync/automations-client.js";
-import { drainOnce, type DrainSource } from "./sync/automation-drain.js";
+import { LoopDefStore, LoopStateFile, migrateAutomationsYaml, parseScheduleInput, type LoopDef, type LoopSchedule } from "./brain/loops.js";
+import { LoopsEngine, type StartedRun } from "./brain/loops-engine.js";
 import { ConnectorHub } from "./brain/connectors.js";
 import { createKeychain } from "./keychain/keychain.js";
 import { FileSessionStore } from "./daemon/sessions.js";
 import { FileProjectStore } from "./daemon/projects.js";
 import { Gate } from "./gate/gate.js";
 import { PolicyEngine, type PolicyPreset } from "./gate/policy.js";
-import { ApprovalBroker, GATE_CARD_TTL_MS } from "./gate/approval.js";
+import { ApprovalBroker, GATE_CARD_TTL_MS, type ApprovalCard, type CardOrigin } from "./gate/approval.js";
+import { describeTool } from "./gate/describe.js";
 import { ClaudeCodeDriver } from "./agent/claude-driver.js";
 import { nodeSpawnAgent } from "./agent/node-spawn.js";
 import type { UiEvent } from "./agent/types.js";
@@ -82,12 +74,8 @@ export interface ClientConfig {
   /** The PreToolUse gate-hook command written into .claude/settings.json on regen. Omit for the
    *  local demo (native permissions, no hook) - the production sync worker sets it. */
   gateCommand?: string;
-  /** If set (>0), start the in-daemon automation scheduler on this interval (ms). Omit in tests. */
+  /** If set (>0), start the loop scheduler on this interval (ms). Omit in tests - no timer leaks. */
   schedulerIntervalMs?: number;
-  /** If set, drain durable automations from this sync worker instead of the local-only timer. */
-  automationsSync?: { baseUrl: string; token: string };
-  /** Poll interval (ms) for the durable drain loop; defaults to schedulerIntervalMs. */
-  drainIntervalMs?: number;
   /** If set, spawn the agent with CLAUDE_CONFIG_DIR here - a config home isolated from the operator's
    *  own Claude Code (no inherited hooks) so the agent gets clean tools. Requires a one-time login in
    *  that dir. When unset, the agent uses the operator's config (the file-map keeps the brain usable). */
@@ -303,7 +291,6 @@ export function buildClientHandler(config: ClientConfig): Handler {
     skills: () => listSkills(config.workspace, config.roots),
     rules: () => listRules(config.roots),
     connectors: () => listConnectors(config.roots),
-    routines: () => [], // local routines are a v1 seam - none configured yet
   };
 
   // Keychain (created before regenConfig so pack MCP re-pinning can read stored API keys). Persistence
@@ -776,111 +763,104 @@ export function buildClientHandler(config: ClientConfig): Handler {
   const sessions = new FileSessionStore(join(config.workspace, ".sessions"));
   const projects = new FileProjectStore(join(config.workspace, ".projects.json"));
 
-  // Automations: run a verb on a cadence. Definitions + last-run stamps live in a local file (like
-  // the session store), so scheduling never churns the brain. Running a verb streams the agent into a
-  // logged "Automations" session, exactly as a chat would - outward actions still hit the gate.
-  const autoRoot = config.roots.find((r) => r.name !== "core") ?? config.roots[0];
-  const autoYaml = join(autoRoot ? autoRoot.dir : config.workspace, "automations.yaml");
-  // One-time lift of the legacy daemon-owned JSON into the committed brain file.
-  migrateJsonToYaml(join(config.workspace, ".automations.json"), autoYaml);
-  const automationStore = new AutomationDefStore(autoYaml);
-  // Local-only run stamps (never committed) so the fallback timer de-dupes without polluting the
-  // brain. Cloud-backed mode ignores this - the cloud owns run-state there.
-  const localState = new AutomationStateFile(join(config.workspace, ".automations-state.json"));
-  // In-flight guard: never let the scheduler tick and a manual "Run now" (or two ticks over a long
-  // run) spawn overlapping agent runs of the same automation.
-  const running = new Set<string>();
-  const runVerbInSession = async (verb: string): Promise<{ sessionId: string }> => {
-    const sessionId = sessions.create({ folder: "Automations", title: `Auto · ${verb}` });
-    const prompt = "Use the `" + verb + "` skill.";
+  // Loops: a prompt (or a verb) the operator schedules to run on its own. Definitions live in a
+  // COMMITTED loops.yaml (invariant 2); run stamps live in a local file beside the workspace, so
+  // scheduling churn never touches the brain. A firing loop streams the agent into an ordinary
+  // logged session - exactly as a chat does, so outward actions still hit the gate.
+  const loopsRoot = config.roots.find((r) => r.name !== "core") ?? config.roots[0];
+  const loopsYaml = join(loopsRoot ? loopsRoot.dir : config.workspace, "loops.yaml");
+  // One-time lift of the legacy automations.yaml. The old file is left where it is (invariant 8).
+  migrateAutomationsYaml(join(loopsRoot ? loopsRoot.dir : config.workspace, "automations.yaml"), loopsYaml);
+  const loopDefs = new LoopDefStore(loopsYaml);
+  const loopState = new LoopStateFile(join(config.workspace, ".loops-state.json"));
+
+  /** Start a loop's agent run. Returns as soon as the session exists so "Run now" answers the
+   *  operator immediately; the run itself finishes behind the returned `done`.
+   *
+   *  `done` resolves with `blockedOn` when the run hit the gate and NOBODY was there to tap: the
+   *  card TTL-denied (see GATE_CARD_TTL_MS - a card cannot wait longer, or the PreToolUse hook
+   *  outlives Claude Code's timeout and the tool would proceed ungated). That is what the Loops
+   *  panel renders as "needed you", with one tap to run it again with the operator present.
+   *  Attribution is best-effort by session id: with several runs overlapping the broker leaves a
+   *  card's origin undefined, and the loop simply records an ordinary finish. */
+  const runLoop = async (loop: LoopDef): Promise<StartedRun> => {
+    const sessionId = sessions.create({ folder: "Loops", title: loop.title });
+    const prompt = loop.prompt ?? "Use the `" + loop.verb + "` skill.";
     sessions.append(sessionId, { kind: "text", text: prompt });
     sessions.setStatus(sessionId, "running");
-    try {
-      for await (const e of driver.runPrompt({ prompt, workspace: config.workspace, systemPromptAppend: workspaceHint() })) {
-        if (e.kind === "done" && e.sessionId) sessions.setClaudeSessionId(sessionId, e.sessionId);
-        sessions.append(sessionId, e);
+
+    const origin: CardOrigin = { kind: "automation", sessionId };
+    const cards = new Map<string, ApprovalCard>();
+    let blockedOn: string | undefined;
+    const unsubscribe = broker.subscribe((ev) => {
+      if (ev.type === "open") {
+        if (ev.card.origin?.sessionId === sessionId) cards.set(ev.card.id, ev.card);
+        return;
       }
-      sessions.setStatus(sessionId, "idle");
-    } catch (err) {
-      sessions.append(sessionId, { kind: "error", message: err instanceof Error ? err.message : String(err) });
-      sessions.setStatus(sessionId, "error");
-    }
-    return { sessionId };
-  };
-  const stampIso = (ms: number | undefined): string | undefined => (ms === undefined ? undefined : new Date(ms).toISOString());
-  const automations: AutomationEngine & { runDue(nowMs: number): Promise<string[]> } = {
-    // `list` surfaces the next run from the LOCAL stamp (only meaningful in local-only mode; in
-    // cloud mode the durable schedule lives server-side and this is a best-effort local view).
-    list: () =>
-      automationStore.list().map((d) => {
-        const withStamp = { ...d, lastRun: stampIso(localState.get(d.name)) };
-        return { ...d, nextRun: nextRunMs(withStamp, Date.now()) };
-      }),
-    add: (input) =>
-      automationStore.add({
-        name: input.name,
-        verb: input.verb,
-        cadence: input.cadence as Cadence,
-        catchUp: (input as { catchUp?: CatchUp }).catchUp,
-      }),
-    toggle: (name) => {
-      const a = automationStore.list().find((x) => x.name === name);
-      if (!a) throw new Error(`automation not found: ${name}`);
-      return automationStore.update(name, { enabled: !a.enabled });
-    },
-    remove: (name) => automationStore.remove(name),
-    runNow: async (name) => {
-      const a = automationStore.list().find((x) => x.name === name);
-      if (!a) throw new Error(`automation not found: ${name}`);
-      if (running.has(a.verb)) throw new Error(`automation already running: ${name}`);
-      running.add(a.verb);
+      const card = cards.get(ev.id);
+      cards.delete(ev.id);
+      if (card && ev.reason === "timeout") blockedOn ??= describeTool(card.tool);
+    });
+
+    const done = (async (): Promise<{ blockedOn?: string }> => {
+      broker.pushOrigin(origin);
       try {
-        const r = await runVerbInSession(a.verb);
-        localState.set(name, Date.now());
-        return r;
-      } finally {
-        running.delete(a.verb);
-      }
-    },
-    // Local-only fallback timer: run any def whose local stamp says it's due.
-    runDue: async (nowMs) => {
-      const ran: string[] = [];
-      for (const d of automationStore.list()) {
-        const withStamp = { ...d, lastRun: stampIso(localState.get(d.name)) };
-        if (!isDue(withStamp, nowMs) || running.has(d.verb)) continue;
-        running.add(d.verb);
-        try {
-          await runVerbInSession(d.verb);
-          localState.set(d.name, nowMs);
-          ran.push(d.name);
-        } catch {
-          /* a failed run leaves the stamp untouched - it retries next tick */
-        } finally {
-          running.delete(d.verb);
+        for await (const e of driver.runPrompt({ prompt, workspace: config.workspace, systemPromptAppend: workspaceHint() })) {
+          if (e.kind === "done" && e.sessionId) sessions.setClaudeSessionId(sessionId, e.sessionId);
+          sessions.append(sessionId, e);
         }
+        sessions.setStatus(sessionId, "idle");
+      } catch (err) {
+        sessions.append(sessionId, { kind: "error", message: err instanceof Error ? err.message : String(err) });
+        sessions.setStatus(sessionId, "error");
+        throw err;
+      } finally {
+        broker.popOrigin(origin);
+        unsubscribe();
       }
-      return ran;
-    },
+      return blockedOn === undefined ? {} : { blockedOn };
+    })();
+
+    return { sessionId, done };
   };
-  // The scheduler: a cloud-backed drain loop when a sync worker is configured, else the local-only
-  // fallback timer (opt-in via config; the demo sets one of these, tests omit both so no timer leaks).
-  if (config.automationsSync) {
-    const client = new AutomationsClient({ baseUrl: config.automationsSync.baseUrl, token: config.automationsSync.token });
-    const source: DrainSource = {
-      listDue: () => client.listDue(),
-      claim: (id) => client.claim(id),
-      report: (id, r) => client.report(id, r),
-      heartbeat: (id) => client.heartbeat(id),
-    };
-    const timer = setInterval(
-      () => void drainOnce({ source, runVerb: runVerbInSession, running }).catch(() => {}),
-      config.drainIntervalMs ?? config.schedulerIntervalMs ?? 60_000,
-    );
-    timer.unref?.();
-  } else if (config.schedulerIntervalMs && config.schedulerIntervalMs > 0) {
-    const timer = setInterval(() => void automations.runDue(Date.now()).catch(() => {}), config.schedulerIntervalMs);
+
+  const loopsEngine = new LoopsEngine({ defs: loopDefs, state: loopState, now: Date.now, run: runLoop });
+  // The clock. One timer, opt-in via config so tests never leak one; the demo and the packaged
+  // daemon set it. Loops run while the app is open - there is no cloud half.
+  if (config.schedulerIntervalMs && config.schedulerIntervalMs > 0) {
+    const timer = setInterval(() => void loopsEngine.tick().catch(() => {}), config.schedulerIntervalMs);
     timer.unref?.();
   }
+  /** The wire → engine seam. The console speaks the three flat schedule fields (every / at / days);
+   *  the engine speaks a parsed schedule. Converting here keeps the HTTP shape out of the scheduler
+   *  and means a malformed schedule is refused once, in one place. */
+  const toSchedule = (input: { every?: string; at?: string; days?: string }): LoopSchedule => {
+    const schedule = parseScheduleInput(input);
+    if (!schedule) throw new Error("a loop needs either `every` (e.g. 30m) or `at` (e.g. 09:00), not both");
+    return schedule;
+  };
+  const loops: LoopsEngineControl = {
+    list: () => loopsEngine.list(),
+    add: (b) =>
+      loopsEngine.add({
+        title: b.title,
+        ...(b.prompt ? { prompt: b.prompt } : {}),
+        ...(b.verb ? { verb: b.verb } : {}),
+        schedule: toSchedule(b),
+        ...(b.enabled !== undefined ? { enabled: b.enabled } : {}),
+      }),
+    update: (name, b) =>
+      loopsEngine.update(name, {
+        ...(b.title !== undefined ? { title: b.title } : {}),
+        ...(b.prompt !== undefined ? { prompt: b.prompt, verb: undefined } : {}),
+        ...(b.verb !== undefined ? { verb: b.verb, prompt: undefined } : {}),
+        ...(b.every !== undefined || b.at !== undefined ? { schedule: toSchedule(b) } : {}),
+        ...(b.enabled !== undefined ? { enabled: b.enabled } : {}),
+      }),
+    toggle: (name) => loopsEngine.toggle(name),
+    remove: (name) => loopsEngine.remove(name),
+    runNow: (name) => loopsEngine.runNow(name),
+  };
   const fileTree = (): TreeNode[] => config.roots.map((r) => ({ name: r.name, path: r.name, type: "dir" as const, children: treeOf(r.dir, r.name) }));
 
   // The derived agent surface (Files panel → "Show agent files"). Attribute pack skills by the union
@@ -945,7 +925,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
     fsOps,
     catalog,
     skillEditor,
-    automations,
+    loops,
     connectorHub,
     ...(gatewayView ? { gatewayView } : {}),
     sessions,

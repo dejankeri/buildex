@@ -210,32 +210,43 @@ describe("buildClientHandler - the client composition root", () => {
     expect(t.template).toMatch(/## When to use/);
   });
 
-  it("schedules automations: POST adds, GET lists with a nextRun, toggle flips, remove drops", async () => {
+  it("schedules loops end to end: POST adds, GET lists with a nextRun and a schedule sentence, toggle flips, remove drops", async () => {
     const app = handler();
     const post = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
 
-    const added = (await (await post("/api/routines", { name: "friday-review", verb: "weekly-review", cadence: "weekly" })).json()) as { name: string; enabled: boolean };
-    expect(added).toMatchObject({ name: "friday-review", enabled: true });
+    const added = (await (await post("/api/loops", { title: "Friday review", prompt: "draft it", at: "09:00", days: "fri" })).json()) as { name: string; enabled: boolean; scheduleText: string };
+    expect(added).toMatchObject({ name: "friday-review", enabled: true, scheduleText: "every Friday at 9:00 AM" });
 
-    const list1 = (await (await app(new Request("http://127.0.0.1/api/routines"))).json()) as { routines: { name: string; nextRun: number }[] };
-    expect(list1.routines).toHaveLength(1);
-    expect(typeof list1.routines[0]!.nextRun).toBe("number");
+    const list1 = (await (await app(new Request("http://127.0.0.1/api/loops"))).json()) as { loops: { name: string; nextRun: number }[] };
+    expect(list1.loops).toHaveLength(1);
+    expect(typeof list1.loops[0]!.nextRun).toBe("number");
 
-    const toggled = (await (await post("/api/routines/friday-review/toggle", {})).json()) as { enabled: boolean };
+    const toggled = (await (await post("/api/loops/friday-review/toggle", {})).json()) as { enabled: boolean };
     expect(toggled.enabled).toBe(false);
 
-    expect((await (await post("/api/routines/friday-review/remove", {})).json()) as { ok: boolean }).toEqual({ ok: true });
-    const list2 = (await (await app(new Request("http://127.0.0.1/api/routines"))).json()) as { routines: unknown[] };
-    expect(list2.routines).toHaveLength(0);
+    expect((await (await post("/api/loops/friday-review/remove", {})).json()) as { ok: boolean }).toEqual({ ok: true });
+    const list2 = (await (await app(new Request("http://127.0.0.1/api/loops"))).json()) as { loops: unknown[] };
+    expect(list2.loops).toHaveLength(0);
   });
 
-  it("rejects a routine with a bogus cadence (400, nothing persisted)", async () => {
+  it("writes a created loop into the COMMITTED loops.yaml, so it is reviewable and follows the operator", async () => {
+    const app = handler();
+    await app(new Request("http://127.0.0.1/api/loops", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Sweep", prompt: "sweep the inbox", every: "2h" }) }));
+    const yaml = readFileSync(join(ws, "team", "loops.yaml"), "utf8");
+    expect(yaml).toContain("- name: sweep");
+    expect(yaml).toContain("every: 2h");
+  });
+
+  it("rejects a loop with no schedule, and one that would run every minute (400, nothing persisted)", async () => {
     const app = handler();
     const post = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
-    const res = await post("/api/routines", { name: "bad", verb: "weekly-review", cadence: "bogus" });
-    expect(res.status).toBe(400);
-    const list = (await (await app(new Request("http://127.0.0.1/api/routines"))).json()) as { routines: unknown[] };
-    expect(list.routines).toHaveLength(0);
+
+    expect((await post("/api/loops", { title: "No schedule", prompt: "p" })).status).toBe(400);
+    expect((await post("/api/loops", { title: "Too fast", prompt: "p", every: "1m" })).status).toBe(400);
+    expect((await post("/api/loops", { title: "Both", prompt: "p", every: "1h", at: "09:00" })).status).toBe(400);
+
+    const list = (await (await app(new Request("http://127.0.0.1/api/loops"))).json()) as { loops: unknown[] };
+    expect(list.loops).toHaveLength(0);
   });
 
   it("rejects a junk project item (400, nothing persisted)", async () => {

@@ -15,7 +15,6 @@ import { ControlPlaneStore } from "../apps/sync/src/store/store.js";
 import { EmbeddedGitService } from "../apps/sync/src/git/service.js";
 import { ProvisioningService } from "../apps/sync/src/provisioning/service.js";
 import { createApp } from "../apps/sync/src/http/app.js";
-import { ScheduleStore } from "../apps/sync/src/automations/schedule-store.js";
 // client
 import { SyncEngine } from "../apps/client/src/sync/engine.js";
 import { generateAgentConfig } from "../apps/client/src/brain/agent-config.js";
@@ -32,10 +31,9 @@ const check = (c: boolean, m: string) => { console.log(`  ${c ? "✓" : "✗ FAI
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const base = mkdtempSync(join(tmpdir(), "buildex-x1-"));
-// Hoisted so `finally` can always close them: a throw mid-script would otherwise skip the closes
-// and leave rmSync to fail with EBUSY on Windows, masking the real error.
+// Hoisted so `finally` can always close it: a throw mid-script would otherwise skip the close and
+// leave rmSync to fail with EBUSY on Windows, masking the real error.
 let storeRef: ControlPlaneStore | undefined;
-let schedulesRef: ScheduleStore | undefined;
 const ENV = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null", GIT_AUTHOR_NAME: "dan", GIT_AUTHOR_EMAIL: "dan@x", GIT_COMMITTER_NAME: "dan", GIT_COMMITTER_EMAIL: "dan@x" } as NodeJS.ProcessEnv;
 const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, env: ENV, encoding: "utf8" });
 
@@ -50,9 +48,7 @@ try {
   let mid = 0;
   const provisioning = new ProvisioningService({ store, git: gitSvc, idFactory: () => `m${++mid}` });
   await provisioning.ensureCoreRepo();
-  const schedules = new ScheduleStore(join(base, "schedules.db"));
-  schedulesRef = schedules;
-  const app = createApp({ store, provisioning, git: gitSvc, schedules, serviceKey: "svc", publicBaseUrl: "https://sync.test" });
+  const app = createApp({ store, provisioning, git: gitSvc, serviceKey: "svc", publicBaseUrl: "https://sync.test" });
   const s2s = (p: string, b: unknown) => new Request(`https://sync.test${p}`, { method: "POST", headers: { "content-type": "application/json", "x-service-key": "svc" }, body: JSON.stringify(b) });
   const post = (p: string, b: unknown) => new Request(`https://sync.test${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
 
@@ -129,7 +125,6 @@ try {
   console.log(`\n${fails === 0 ? "✅ GATE-1 CROSS-MODULE SMOKE PASSED" : `❌ FAILED (${fails} check(s))`}`);
 } finally {
   storeRef?.close();
-  schedulesRef?.close();
   rmSync(base, { recursive: true, force: true });
 }
 process.exit(fails === 0 ? 0 : 1);

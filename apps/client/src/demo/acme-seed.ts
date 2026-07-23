@@ -17,6 +17,7 @@ import type { Root } from "../brain/graph.js";
 import type { PolicyPreset } from "../gate/policy.js";
 import { initAndCommit } from "../provision/core-pack.js";
 import { generateAgentConfig } from "../brain/agent-config.js";
+import { serializeLoopsYaml, type LoopDef } from "../brain/loops.js";
 
 /** Write one file, creating parent dirs. */
 function file(dir: string, rel: string, content: string): void {
@@ -550,9 +551,9 @@ export function writeAcmeContent(dir: string, opts: { corePackDir: string }): vo
 
 }
 
-// --- Workspace extras: daemon-owned files that make the left rail feel lived-in (automations,
-//     sessions, projects) plus the generated agent config. NEVER synced (they live in the workspace,
-//     not the repos). Timestamps stamped relative to the real clock so nothing looks stale. ---
+// --- Workspace extras: daemon-owned files that make the left rail feel lived-in (sessions,
+//     projects, loop run-state) plus the generated agent config and the committed loops.yaml.
+//     Timestamps stamped relative to the real clock so nothing looks stale. ---
 
 type SeedEvent =
   | { kind: "text"; text: string }
@@ -675,28 +676,51 @@ export function writeWorkspaceExtras(workspace: string, opts: { roots: Root[]; p
   // regenerates .claude/settings.json with that hook at startup. Enforcement is never faked.
   generateAgentConfig({ workspace, roots: opts.roots, preset: opts.preset });
 
-  // Automations: seed a few so the panel shows a real, populated example. Run-state is stamped relative
-  // to the REAL clock (a full interval has NOT elapsed), so the enabled automations are healthy but NOT
-  // due - a demo boot must never auto-spawn the agent (which would spend the operator's Claude usage
-  // unprompted). The operator hits "Run now" to see one work.
+  // Loops: seed a few so the panel shows a real, populated example - one at a time of day, one on an
+  // interval, one paused. Run-state is stamped relative to the REAL clock and always LESS than a full
+  // window ago, so the enabled loops read as healthy but are NOT due: a demo boot must never
+  // auto-spawn the agent (which would spend the operator's Claude usage unprompted). "Run now" is how
+  // the operator sees one work. Definitions go in the committed team root (invariant 2); the stamps
+  // stay in the workspace, uncommitted.
   const HOUR = 3600_000;
   const DAY = 24 * HOUR;
   const nowMs = Date.now();
+  const loopsRoot = opts.roots.find((r) => r.name !== "core") ?? opts.roots[0];
+  const loopDefs: LoopDef[] = [
+    {
+      name: "friday-review",
+      title: "Friday review",
+      prompt: "Read this week's activity log and draft the weekly review for the team.",
+      schedule: { kind: "at", hour: 16, minute: 0, days: ["fri"] },
+      enabled: true,
+    },
+    {
+      name: "pipeline-digest",
+      title: "Pipeline digest",
+      verb: "pipeline-digest",
+      schedule: { kind: "every", ms: 12 * HOUR, raw: "12h" },
+      enabled: true,
+    },
+    {
+      name: "inbox-triage",
+      title: "Inbox triage",
+      prompt: "Go through the inbox, draft replies to anything routine, and list what needs me.",
+      schedule: { kind: "at", hour: 9, minute: 0, days: [] },
+      enabled: false,
+    },
+  ];
+  writeFileSync(join(loopsRoot ? loopsRoot.dir : workspace, "loops.yaml"), serializeLoopsYaml(loopDefs));
   writeFileSync(
-    join(workspace, ".automations.json"),
+    join(workspace, ".loops-state.json"),
     JSON.stringify(
-      [
-        { name: "friday-review", verb: "weekly-review", cadence: "weekly", enabled: true },
-        { name: "monday-pipeline", verb: "pipeline-digest", cadence: "weekly", enabled: true },
-        { name: "daily-inbox-triage", verb: "inbox-triage", cadence: "daily", enabled: false },
-      ],
+      {
+        "friday-review": { firstSeen: nowMs - 30 * DAY, lastRun: nowMs - 2 * DAY, status: "ok" },
+        "pipeline-digest": { firstSeen: nowMs - 30 * DAY, lastRun: nowMs - 2 * HOUR, status: "ok" },
+        "inbox-triage": { firstSeen: nowMs - 30 * DAY, lastRun: nowMs - 6 * HOUR, status: "ok" },
+      },
       null,
       2,
     ) + "\n",
-  );
-  writeFileSync(
-    join(workspace, ".automations-state.json"),
-    JSON.stringify({ "friday-review": nowMs - 1 * DAY, "monday-pipeline": nowMs - 3 * DAY, "daily-inbox-triage": nowMs - 2 * HOUR }, null, 2) + "\n",
   );
 
   // Sessions: a lived-in history for the left rail (daemon-owned, NEVER synced - lives under .sessions/).

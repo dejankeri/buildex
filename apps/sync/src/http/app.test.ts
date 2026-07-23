@@ -5,13 +5,11 @@ import { join } from "node:path";
 import { ControlPlaneStore } from "../store/store.js";
 import { EmbeddedGitService } from "../git/service.js";
 import { ProvisioningService } from "../provisioning/service.js";
-import { ScheduleStore } from "../automations/schedule-store.js";
 import { createApp } from "./app.js";
 
 const SERVICE_KEY = "svc-secret-key";
 let dir: string;
 let store: ControlPlaneStore;
-let schedules: ScheduleStore;
 let git: EmbeddedGitService;
 let provisioning: ProvisioningService;
 let app: (req: Request) => Promise<Response>;
@@ -23,12 +21,10 @@ beforeEach(async () => {
   let n = 0;
   provisioning = new ProvisioningService({ store, git, idFactory: () => `m${++n}` });
   await provisioning.ensureCoreRepo();
-  schedules = new ScheduleStore(join(dir, "schedules.db"));
-  app = createApp({ store, provisioning, git, schedules, serviceKey: SERVICE_KEY, publicBaseUrl: "https://sync.test" });
+  app = createApp({ store, provisioning, git, serviceKey: SERVICE_KEY, publicBaseUrl: "https://sync.test" });
 });
 afterEach(() => {
   store.close();
-  schedules.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -180,7 +176,6 @@ describe("POST /session (Supabase sign-in, dormant-safe)", () => {
       store,
       provisioning,
       git,
-      schedules,
       serviceKey: SERVICE_KEY,
       publicBaseUrl: "https://sync.test",
       verifySession: async () => ({ sub: "s1", email: "a@acme.io" }),
@@ -207,7 +202,6 @@ describe("POST /session (Supabase sign-in, dormant-safe)", () => {
       store,
       provisioning,
       git,
-      schedules,
       serviceKey: SERVICE_KEY,
       publicBaseUrl: "https://sync.test",
       verifySession: async () => ({ sub: "s-named" }),
@@ -241,7 +235,6 @@ describe("POST /session (Supabase sign-in, dormant-safe)", () => {
       store,
       provisioning: spiedProvisioning,
       git,
-      schedules,
       serviceKey: SERVICE_KEY,
       publicBaseUrl: "https://sync.test",
       verifySession: async () => {
@@ -260,7 +253,6 @@ describe("POST /session (Supabase sign-in, dormant-safe)", () => {
       store,
       provisioning,
       git,
-      schedules,
       serviceKey: SERVICE_KEY,
       publicBaseUrl: "https://sync.test",
       verifySession: async () => ({ sub: "s1" }),

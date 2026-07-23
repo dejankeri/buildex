@@ -17,7 +17,6 @@ import { execFileSync } from "node:child_process";
 import { ControlPlaneStore } from "../store/store.js";
 import { EmbeddedGitService } from "../git/service.js";
 import { ProvisioningService } from "../provisioning/service.js";
-import { ScheduleStore } from "../automations/schedule-store.js";
 import { createApp, type Handler } from "./app.js";
 import { listen } from "./node-server.js";
 
@@ -81,7 +80,6 @@ interface Creds {
 describe("git transport over a REAL HTTP socket (E2)", () => {
   let dir: string;
   let store: ControlPlaneStore;
-  let schedules: ScheduleStore;
   let git: EmbeddedGitService;
   let app: Handler;
   let baseUrl: string;
@@ -104,8 +102,7 @@ describe("git transport over a REAL HTTP socket (E2)", () => {
     let n = 0;
     const provisioning = new ProvisioningService({ store, git, idFactory: () => `m${++n}` });
     await provisioning.ensureCoreRepo();
-    schedules = new ScheduleStore(join(dir, "schedules.db"));
-    app = createApp({ store, provisioning, git, schedules, serviceKey: SERVICE_KEY, publicBaseUrl: "http://sync.test" });
+    app = createApp({ store, provisioning, git, serviceKey: SERVICE_KEY, publicBaseUrl: "http://sync.test" });
 
     const started = await listen(app);
     baseUrl = `http://127.0.0.1:${started.port}`;
@@ -135,7 +132,6 @@ describe("git transport over a REAL HTTP socket (E2)", () => {
   afterEach(async () => {
     await close();
     store.close();
-    schedules.close();
     rmSync(dir, { recursive: true, force: true });
   });
 

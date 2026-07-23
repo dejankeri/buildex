@@ -32,10 +32,15 @@ export interface ApprovalCard {
   origin?: CardOrigin;
 }
 
+/** Why a card resolved. "timeout" is the TTL auto-deny below - nobody tapped. The distinction is
+ *  load-bearing for loops: a run the operator deliberately denied is finished business, while one
+ *  that timed out is a run that still needs a human, and the Loops surface says so. */
+export type ResolveReason = "operator" | "timeout";
+
 /** Broker lifecycle events, streamed to the UI (the push half of the inline-approval surface). */
 export type ApprovalEvent =
   | { type: "open"; card: ApprovalCard }
-  | { type: "resolve"; id: string; verdict: Verdict };
+  | { type: "resolve"; id: string; verdict: Verdict; reason: ResolveReason };
 
 export interface ApprovalBrokerDeps {
   idFactory: () => string;
@@ -105,7 +110,7 @@ export class ApprovalBroker {
       this.open.set(card.id, entry);
       const { ttlMs, setTimer } = this.deps;
       if (ttlMs && ttlMs > 0 && setTimer) {
-        entry.timer = setTimer(() => this.resolve(card.id, "deny"), ttlMs);
+        entry.timer = setTimer(() => this.resolve(card.id, "deny", "timeout"), ttlMs);
       }
     });
     this.deps.onCard?.(card);
@@ -119,13 +124,13 @@ export class ApprovalBroker {
 
   /** Resolve a pending card; returns false if the id is unknown (idempotent, never throws). Clears
    *  the TTL timer so an operator verdict never races the auto-deny (and vice-versa). */
-  resolve(id: string, verdict: Verdict): boolean {
+  resolve(id: string, verdict: Verdict, reason: ResolveReason = "operator"): boolean {
     const entry = this.open.get(id);
     if (!entry) return false;
     this.open.delete(id);
     if (entry.timer !== undefined) this.deps.clearTimer?.(entry.timer);
     entry.resolve(verdict);
-    this.emit({ type: "resolve", id, verdict });
+    this.emit({ type: "resolve", id, verdict, reason });
     return true;
   }
 }

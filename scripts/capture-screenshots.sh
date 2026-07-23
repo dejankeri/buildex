@@ -26,7 +26,7 @@
 #     /api/onboarding/complete - far more reliable than clicking through its 4 steps.
 #   - Element refs (@e.../@c...) are dynamic; we click by matching visible text in a fresh snapshot
 #     each time rather than hardcoding refs.
-#   - Automations are seeded "recently run" (not due) so a boot never auto-spawns the agent; the
+#   - Loops are seeded "recently run" (not due) so a boot never auto-spawns the agent; the
 #     gate card here is injected explicitly instead.
 set -eu
 
@@ -77,7 +77,7 @@ curl -sf "$BASE/api/sessions" >/dev/null 2>&1 || { echo "✗ daemon never came u
 
 echo "▶ 3/5  Dismissing first-run onboarding + settling the workspace ..."
 curl -s -X POST "$BASE/api/onboarding/complete" -d '{}' >/dev/null 2>&1 || true
-# The daemon writes a fresh automations.yaml at boot, which the console counts as one unsaved change
+# The seed writes loops.yaml after the initial commit, which the console counts as one unsaved change
 # (the "Save your work" card). Hit the product's own "Save now" (POST /api/sync) to commit + push it,
 # so the tray shows only the real approval card - no save prompt - in every shot.
 curl -s -X POST "$BASE/api/sync" >/dev/null 2>&1 || true

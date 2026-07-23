@@ -9,14 +9,11 @@ import type { EmbeddedGitService } from "../git/service.js";
 import { timingSafeEqualStr, hashToken } from "../lib/tokens.js";
 import { AuthError, ValidationError } from "../lib/errors.js";
 import { authorizeGit, opForService, type GitOp } from "./authorize.js";
-import { handleAutomationRoutes, type Caller } from "../automations/routes.js";
-import type { ScheduleStore } from "../automations/schedule-store.js";
 
 export interface AppDeps {
   store: ControlPlaneStore;
   provisioning: ProvisioningService;
   git: EmbeddedGitService;
-  schedules: ScheduleStore;
   serviceKey: string;
   publicBaseUrl: string;
   /**
@@ -49,14 +46,6 @@ async function route(deps: AppDeps, req: Request): Promise<Response> {
   const method = req.method;
 
   if (method === "GET" && path === "/healthz") return json({ ok: true });
-
-  // --- durable automations (authed per machine token → own company) ---
-  const auto = await handleAutomationRoutes(
-    { schedules: deps.schedules, resolve: (t) => resolveCaller(deps.store, t) },
-    req,
-    url,
-  );
-  if (auto) return auto;
 
   // --- S2S provisioning API (service-key gated) ---
   if (path.startsWith("/s2s/")) {
@@ -174,14 +163,6 @@ async function handleGit(
 }
 
 // --- helpers ---
-
-/** Map a raw machine token to { companyId, machineId } (invariant 6), or null if unknown/revoked. */
-function resolveCaller(store: ControlPlaneStore, token: string): Caller | null {
-  const machine = store.findMachineByTokenHash(hashToken(token));
-  if (!machine) return null;
-  const op = store.getOperator(machine.operatorId);
-  return op ? { companyId: op.companyId, machineId: machine.id } : null;
-}
 
 function requireServiceKey(req: Request, expected: string): void {
   const provided = req.headers.get("x-service-key") ?? "";

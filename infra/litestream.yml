@@ -34,13 +34,7 @@ dbs:
         # Restore onto a clean machine with:
         #   litestream restore -config /etc/litestream.yml -o /srv/buildex/control.db /srv/buildex/control.db
         # then run the rehearsed restore drill (apps/sync restore-drill) before serving traffic.
-  # server.ts also opens a second SQLite database, schedules.db, in the same data dir (automation
-  # run-state). The automations tick loop is deliberately unwired today, so the impact of missing it
-  # here is near zero - but the moment it goes live this file must already be backing it up.
-  - path: /srv/buildex/schedules.db
-    replicas:
-      - type: s3
-        bucket: ${LITESTREAM_BUCKET}
-        path: schedules.db
-        endpoint: ${LITESTREAM_ENDPOINT}
-        region: auto
+  # There is exactly ONE database to back up. server.ts used to open a second one (schedules.db, the
+  # durable-automation run-state); that scheduler was deleted with the move to Loops - loops are
+  # local, their definitions live in the operator's git repo, and their run stamps are disposable
+  # local state. Nothing else on this host holds durable server-side value.

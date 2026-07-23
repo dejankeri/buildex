@@ -3,7 +3,7 @@
 // each with a local file:// remote so sync works, generates the native agent config + a lived-in left
 // rail, and writes a demo config. Idempotent: pass --reset to rebuild. Run: npx tsx scripts/demo-setup.ts
 //
-// The company brain itself (all the Acme Labs content, sessions, projects, automations) lives in the
+// The company brain itself (all the Acme Labs content, sessions, projects, loops) lives in the
 // shared library apps/client/src/demo/acme-seed.ts - the SINGLE source of truth also used by the
 // packaged app's demo sandbox (B2b). This script's only job on top of that is the dev-only scaffolding:
 // file:// remotes so the local sync demo works, an isolated agent config dir, and the demo.json runner
@@ -80,7 +80,7 @@ rmSync(join(DEMO, ".seed"), { recursive: true, force: true });
 
 // Root names MUST equal the on-disk directory names: the map/vault/file-tree display these paths, and
 // the agent (cwd = workspace) must be able to open exactly what's shown. Then lay down the daemon-owned
-// left rail (agent config, automations, sessions, projects) - the same extras the packaged demo gets.
+// left rail (agent config, loops, sessions, projects) - the same extras the packaged demo gets.
 const preset = JSON.parse(readFileSync(join(CORE_PACK, "policy", "preset.json"), "utf8"));
 const roots = [
   { name: "core", dir: join(ws, "core") },
@@ -117,7 +117,7 @@ const config = {
   claudeBin: "claude",
   webRoot: join(REPO, "apps", "client", "web"),
   company: { name: "Acme Labs", operator: "you@acme.demo", seats: 1 },
-  schedulerIntervalMs: 60000, // check for due automations every minute while the app is open
+  schedulerIntervalMs: 60000, // check for due loops every minute while the app is open
   agentConfigDir, // used only once logged in (npm run demo:agent-login) - see demo.ts
 };
 writeFileSync(join(DEMO, "demo.json"), JSON.stringify(config, null, 2));

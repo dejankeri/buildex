@@ -148,3 +148,14 @@ async function postJSON(p, b) {
   const r = await fetch(p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
   return r.json();
 }
+
+/**
+ * PATCH a JSON body to a URL and parse the JSON response (does not check response status).
+ * @param {string} p - request path.
+ * @param {any} b - value to JSON-encode as the request body.
+ * @returns {Promise<any>} the parsed JSON body.
+ */
+async function patchJSON(p, b) {
+  const r = await fetch(p, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+  return r.json();
+}

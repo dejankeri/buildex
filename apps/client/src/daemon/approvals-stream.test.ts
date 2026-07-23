@@ -72,7 +72,7 @@ describe("GET /api/approvals/stream", () => {
     expect(await readFrame(reader)).toMatchObject({ type: "open", card: { id: "card1", tool: { name: "mcp:stripe.charge" } } });
 
     broker.resolve(card.id, "approve");
-    expect(await readFrame(reader)).toEqual({ type: "resolve", id: "card1", verdict: "approve" });
+    expect(await readFrame(reader)).toEqual({ type: "resolve", id: "card1", verdict: "approve", reason: "operator" });
 
     await reader.cancel(); // unsubscribes (cancel() → unsub)
   });

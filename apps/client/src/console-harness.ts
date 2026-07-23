@@ -80,12 +80,12 @@ const EXPOSE = [
   "findPendingCard", "flattenTree", "fmtNext", "fmtReset", "getJSON", "hideProjectStart",
   "injectApproval", "kbdLabel", "loadAgentView", "loadBrain", "loadDoc", "loadMap", "loadSession", "loadStorePane",
   "loadTree", "navGo", "navRecord", "navUpdate", "newConversation", "newProject", "offerConnect",
-  "onAddShortcut", "openAddAppForm", "openAddMenu", "openAppTab", "openAutomationEditor", "openConnectAccount",
+  "onAddShortcut", "openAddAppForm", "openAddMenu", "openAppTab", "openConnectAccount",
   "openBrainTab", "openBrowserTab", "openChatTab", "openConnectorEditor", "openDocTab", "openFilesSettings",
   "openMapTab", "openMarkdownEditor", "openMcpEditor", "openOnboard", "openProfile", "openLogoutConfirm", "openProjectItem", "openSaveMenu", "openSaveDialog", "locationLabel",
   "openSkillEditor", "openSkillTab", "openStoreTab", "parseSkill", "postJSON", "projectMenu",
   "refreshOrgs", "renderOrgSwitcher", "toggleOrgMenu", "switchOrg", "createOrg",
-  "projectRename", "projectStatus", "rAuto", "rFiles", "rGateway", "rPending", "rSkills", "rSyncLog", "refreshApps",
+  "projectRename", "projectStatus", "rFiles", "rGateway", "rPending", "rSkills", "rSyncLog", "refreshApps",
   "refreshPending", "refreshProjects", "refreshUsage", "removeProjectItem", "renderAgentHealth", "rootSlot", "toggleTreeNode", "treeActions", "wireTreeActions", "openFileMenu", "openTreeMoreMenu", "uploadIntoFolder", "fsDo", "promptAction", "toast", "renderBrain",
   "renderBrainRail", "renderConnectorEditor", "renderHistory", "renderMcpEditor", "renderPending", "renderSigninPill",
   "renderTabbar", "renderTree", "reorderTab", "resolveCard", "runSkill", "scrollTabIntoView", "sendPrompt", "setMsg", "setSync",
@@ -99,6 +99,9 @@ const EXPOSE = [
   // Brain rail (right panel) + Documents zones + the media guard.
   "rBrain", "renderBrainPanel", "renderBrainSection", "renderBrainSectionBody", "brainScope", "setBrainScope",
   "scopeVerbs", "brainSectionOpen", "rDocs", "externalDrives", "renderExternalDrives", "connectDrive", "classifyDrop",
+  // Loops (right panel): the schedule surface and its composer.
+  "rLoops", "refreshLoops", "renderLoopList", "loopCard", "loopEmptyState", "loopStatusChip", "renderLoopBadge",
+  "runLoopNow", "toggleLoop", "removeLoop", "openLoopComposer", "openLoopMenu", "dayWords", "LOOP_SUGGESTIONS", "patchJSON",
   // Agent Context viewer ("what my agent sees").
   "openAgentContextTab", "loadAgentContext", "renderAgentContext", "regenAgentContext", "actxGroup", "actxRow", "actxSelectFile",
 ];

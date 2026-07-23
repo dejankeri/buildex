@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { createServices, type Services } from "./server.js";
 import type { SyncConfig } from "./config.js";
 import { ControlPlaneStore } from "./store/store.js";
-import { ScheduleStore } from "./automations/schedule-store.js";
 
 let dir: string;
 let services: Services | undefined;
@@ -65,21 +64,18 @@ describe("createServices", () => {
     expect(res.status).toBe(401);
   });
 
-  it("closes both SQLite stores, so nothing holds a handle after shutdown", async () => {
-    // Hold direct references to the real stores via the DI seam so this test can assert the SQLite
-    // handles are actually released - not just that close() doesn't throw twice. If close() ever
-    // stopped closing `schedules` (the ee770eb regression class), `nextFireAt` below would still
+  it("closes the SQLite store, so nothing holds a handle after shutdown", async () => {
+    // Hold a direct reference to the real store via the DI seam so this test can assert the SQLite
+    // handle is actually released - not just that close() doesn't throw twice. If close() ever
+    // stopped closing the store (the ee770eb regression class), `companyCount` below would still
     // succeed and this test would catch it; a throw-twice-only assertion never would.
     let capturedStore: ControlPlaneStore | undefined;
-    let capturedSchedules: ScheduleStore | undefined;
     const s = await createServices(config(), {
       createStore: (dbPath) => (capturedStore = new ControlPlaneStore(dbPath)),
-      createSchedules: (dbPath) => (capturedSchedules = new ScheduleStore(dbPath)),
     });
     s.close();
 
     expect(() => capturedStore!.companyCount()).toThrow();
-    expect(() => capturedSchedules!.nextFireAt("c1", "some-schedule")).toThrow();
 
     // Closing twice must not throw - shutdown can race a signal with an error path.
     expect(() => s.close()).not.toThrow();

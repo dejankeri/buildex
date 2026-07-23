@@ -76,20 +76,6 @@ export class ControlPlaneStore {
       CREATE TABLE IF NOT EXISTS audit_events (
         at INTEGER NOT NULL, actor TEXT NOT NULL, company_id TEXT NOT NULL, action TEXT NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS automation_schedules (
-        company_id TEXT NOT NULL, name TEXT NOT NULL,
-        verb TEXT NOT NULL, cadence TEXT NOT NULL,
-        enabled INTEGER NOT NULL DEFAULT 1, catch_up TEXT NOT NULL DEFAULT 'coalesce',
-        next_fire_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-        PRIMARY KEY (company_id, name)
-      );
-      CREATE TABLE IF NOT EXISTS automation_runs (
-        id TEXT PRIMARY KEY, company_id TEXT NOT NULL, schedule_name TEXT NOT NULL,
-        verb TEXT NOT NULL, due_at INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'due',
-        claimed_by TEXT, claimed_at INTEGER, lease_expires_at INTEGER,
-        attempts INTEGER NOT NULL DEFAULT 0, finished_at INTEGER, session_id TEXT, error TEXT
-      );
-      CREATE INDEX IF NOT EXISTS idx_runs_company_state ON automation_runs (company_id, state);
     `);
     this.migrateSupabaseSub();
   }
