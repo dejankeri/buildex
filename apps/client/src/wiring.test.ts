@@ -297,4 +297,32 @@ describe("buildClientHandler - the client composition root", () => {
     expect(gmail.lastSync).toBeTruthy();
     delete process.env["BUILDEX_DEMO_FIXTURES"];
   });
+
+  // signInAvailable IS `!!deps.signIn`, and the console's sign-in / onboarding CTAs gate on it. With a
+  // Supabase project configured, a real org must advertise sign-in, but the local-only sandbox must NOT
+  // - the sandbox can never attach, so advertising it would fire the onboarding dialog and then throw at
+  // call time. This locks the wiring-time sandbox gate that prevents that.
+  const withAccount = (extra: Record<string, unknown>) => {
+    const orgDir = mkdtempSync(join(tmpdir(), "buildex-org-"));
+    return buildClientHandler({
+      workspace: ws,
+      roots: [{ name: "team", dir: join(ws, "team") }],
+      preset: { allow: ["Read"], ask: ["Bash"], deny: [], default: "ask" },
+      claudeBin: "claude",
+      orgId: "org-1",
+      orgDir,
+      supabase: { url: "https://x.supabase.co", anonKey: "anon", baseUrl: "https://sync.example" },
+      ...extra,
+    });
+  };
+  const signInAvailable = async (app: ReturnType<typeof buildClientHandler>) =>
+    ((await (await app(new Request("http://127.0.0.1/api/sync"))).json()) as { signInAvailable: boolean }).signInAvailable;
+
+  it("advertises sign-in for a real org once Supabase is configured", async () => {
+    expect(await signInAvailable(withAccount({}))).toBe(true);
+  });
+
+  it("does NOT advertise sign-in for the local-only sandbox, even with Supabase configured", async () => {
+    expect(await signInAvailable(withAccount({ sandbox: true }))).toBe(false);
+  });
 });

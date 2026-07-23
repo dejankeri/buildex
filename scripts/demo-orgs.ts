@@ -12,6 +12,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Root } from "../apps/client/src/brain/graph.js";
 import { startOrgDaemon } from "../apps/client/src/server-main.js";
+import { supabaseFromEnv } from "../apps/client/src/daemon-entry.js";
 import { resolveOrgsRoot } from "../apps/client/src/orgs/roots.js";
 import { resolveCorePackDir } from "../apps/client/src/provision/core-pack.js";
 import { provisionLocalWorkspace } from "../apps/client/src/provision/local-workspace.js";
@@ -59,6 +60,12 @@ const daemon = await startOrgDaemon({
     schedulerIntervalMs: 60000,
     keychainMode: (process.env["BUILDEX_KEYCHAIN"] as "auto" | "system" | "memory") || "auto",
     webRoot: join(REPO, "apps", "client", "web"),
+    // Managed-auth sign-in / anonymous cloud onboarding (mirrors startPackagedDaemon): present ONLY
+    // when all three of BUILDEX_SUPABASE_URL / BUILDEX_SUPABASE_ANON_KEY / BUILDEX_SYNC_URL are in the
+    // env. Absent → no `supabase` key → sign-in stays dormant and the demo behaves exactly as before.
+    // A real org ("Start my company") then exercises the live anonymous cloud flow; the Acme sandbox
+    // stays local-only (the wiring gates sign-in/onboard off for sandbox orgs).
+    ...(supabaseFromEnv(process.env) ? { supabase: supabaseFromEnv(process.env) } : {}),
     // Per-org connector gateway (see daemon-entry.ts for the rationale). Gateway on console+1 by
     // default (env-overridable so worktrees don't collide); the router rebinds it on org switch.
     connectorsMcp: {

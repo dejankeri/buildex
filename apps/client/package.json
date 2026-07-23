@@ -16,7 +16,8 @@
     "build:daemon": "node scripts/build-daemon.mjs",
     "check:electron": "node ../../scripts/check-electron-version.mjs",
     "package:mac": "npm run check:electron && electron-builder --mac --config electron-builder.yml",
-    "package:mac:unsigned": "npm run check:electron && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac -c.mac.notarize=false --config electron-builder.yml"
+    "package:mac:unsigned": "npm run check:electron && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac -c.mac.notarize=false --config electron-builder.yml",
+    "package:win": "npm run check:electron && electron-builder --win -c.extraMetadata.name=BuildEx --config electron-builder.yml"
   },
   "devDependencies": {
     "esbuild": "^0.28.1",
