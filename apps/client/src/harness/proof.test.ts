@@ -189,13 +189,26 @@ describe("runProofTrack - the composition", () => {
     expect(results.cases.every((c: { verdict: unknown }) => c.verdict !== null)).toBe(true);
     expect(results.drift).toBeNull();
 
-    // No local key anywhere it was persisted:
+    // The HTML report bundle is written alongside report.md, one case page per scenario:
+    expect(existsSync(join(out.runDir, "index.html"))).toBe(true);
+    expect(existsSync(join(out.runDir, "matrix.html"))).toBe(true);
+    expect(existsSync(join(out.runDir, "findings.html"))).toBe(true);
+    expect(existsSync(join(out.runDir, "styles.css"))).toBe(true);
+    expect(existsSync(join(out.runDir, "cases", "happy-case.html"))).toBe(true);
+    expect(existsSync(join(out.runDir, "cases", "edge-case.html"))).toBe(true);
+
+    // No local key anywhere it was persisted - including every page of the HTML bundle:
     const artifacts = [
       join(out.runDir, "surface.json"),
       join(out.runDir, "proof-results.json"),
       join(out.runDir, "report.md"),
       happyTranscript,
       edgeTranscript,
+      join(out.runDir, "index.html"),
+      join(out.runDir, "matrix.html"),
+      join(out.runDir, "findings.html"),
+      join(out.runDir, "cases", "happy-case.html"),
+      join(out.runDir, "cases", "edge-case.html"),
     ];
     for (const f of artifacts) {
       expect(readFileSync(f, "utf8")).not.toContain("pk_local_secret_1");

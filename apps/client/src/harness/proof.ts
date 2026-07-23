@@ -9,7 +9,7 @@
 // the gap runDeterministic.ts's header comment names as "known, deliberate for now" is closed here.
 import { hostname } from "node:os";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { readPack } from "../brain/catalog.js";
 import { PACK_KEY_PREFIX } from "@buildex/connectors";
 import type { CatalogSource } from "../brain/catalog-source.js";
@@ -23,7 +23,9 @@ import { generateCases } from "./scenario-step.js";
 import { driveCase } from "./drive-step.js";
 import { judgeCase, type Verdict } from "./judge-step.js";
 import { computeScorecard, renderProofReport, type ProofResults } from "./proof-report.js";
+import { renderProofHtmlBundle } from "./proof-report-html.js";
 import { CleanupRegistry } from "./cleanup.js";
+import type { UiEvent } from "../agent/types.js";
 import type { ProofArgs } from "./cli-args.js";
 import { slugTimestamp } from "./run.js";
 import { redactText } from "./redact.js";
@@ -255,6 +257,24 @@ export async function runProofTrack(args: ProofArgs, deps: ProofDeps): Promise<P
     writeFileSync(join(runDir, "proof-results.json"), JSON.stringify(results, null, 2) + "\n");
     const reportPath = join(runDir, "report.md");
     writeFileSync(reportPath, renderProofReport(results));
+
+    // The analyst-facing HTML bundle, rendered deterministically from the same results plus each
+    // case's ALREADY-REDACTED transcript (driveCase scrubbed secrets before writing it to disk), so
+    // the bundle inherits report.md's secret hygiene. Written into the run dir like every other
+    // artifact - present even on a late laneError, which rethrows just below.
+    const transcriptsByCase: Record<string, (UiEvent & { at?: string })[]> = {};
+    for (const c of results.cases) {
+      try {
+        transcriptsByCase[c.case.id] = JSON.parse(readFileSync(join(runDir, "cases", c.case.id, "transcripts", `${c.case.id}.json`), "utf8"));
+      } catch {
+        transcriptsByCase[c.case.id] = [];
+      }
+    }
+    for (const [rel, content] of Object.entries(renderProofHtmlBundle(results, transcriptsByCase))) {
+      const p = join(runDir, rel);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, content);
+    }
 
     if (laneError) {
       // Redact before rethrowing: a laneError can carry a secret verbatim (e.g. a lower-level
