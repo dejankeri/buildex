@@ -34,7 +34,11 @@ export interface LoopDef {
 export type LoopStatus = "ok" | "failed" | "needs-approval" | "missed" | "running";
 
 export interface LoopRunState {
-  /** The tick this loop was first observed - the anchor a never-run loop counts from. */
+  /** Whether THIS machine runs this loop. Absent/false means no - a definition arriving by sync is
+   *  inert until the operator switches it on here. The whole point: loops.yaml is shared, so without
+   *  a per-machine opt-in every open laptop in the company would fire the same loop independently. */
+  activeHere?: boolean;
+  /** When this loop was switched on here - the anchor a never-run loop counts from. */
   firstSeen?: number;
   lastRun?: number;
   status?: LoopStatus;

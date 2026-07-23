@@ -17,11 +17,19 @@ export const MIN_EVERY_MS = 5 * MIN;
 /** How late a time-of-day window may still fire. Past this it is recorded missed, not run. */
 export const LATE_FIRE_MS = 4 * HOUR;
 
-/** Run state the clock needs. `firstSeen` is stamped the tick a loop is first observed, so a loop
- *  created at 2pm with a 9am window waits for tomorrow rather than firing on the spot. */
+/** Run state the clock needs. `firstSeen` is the anchor: stamped when a loop is switched on for THIS
+ *  machine, so a loop turned on at 2pm with a 9am window waits for tomorrow rather than firing on
+ *  the spot. */
 export interface LoopClockState {
   firstSeen: number;
   lastRun?: number;
+}
+
+/** Where the clock counts from: the later of "last actually ran" and "switched on here". Taking the
+ *  MAX is what stops a loop that ran months ago on another machine from being instantly due the
+ *  moment this machine adopts it. */
+function anchor(state: LoopClockState): number {
+  return Math.max(state.lastRun ?? 0, state.firstSeen);
 }
 
 /** Parse an `every:` token (`30m`, `2h`, `1d`) to ms. Null when malformed or under the floor. */
@@ -71,7 +79,7 @@ function nextWindowAfter(s: Extract<LoopSchedule, { kind: "at" }>, now: number):
 /** When this loop next runs, as an ms timestamp. Returns `now` when it is already due. */
 export function nextFire(schedule: LoopSchedule, state: LoopClockState, now: number): number {
   if (schedule.kind === "every") {
-    const fire = (state.lastRun ?? state.firstSeen) + schedule.ms;
+    const fire = anchor(state) + schedule.ms;
     return fire <= now ? now : fire;
   }
   const due = dueness(schedule, state, now);
@@ -87,8 +95,7 @@ export function dueness(
   now: number,
 ): { due: boolean; missed?: number } {
   if (schedule.kind === "every") {
-    const base = state.lastRun ?? state.firstSeen;
-    return { due: now - base >= schedule.ms };
+    return { due: now - anchor(state) >= schedule.ms };
   }
   const window = lastWindowAtOrBefore(schedule, now);
   // Nothing owed if there is no window yet, if it predates the loop, or if it already ran.

@@ -41,6 +41,23 @@ The card then reads **Needed you** and names what it tried. Tap **Run now**: you
 approval appears live and you approve it in the moment. The Loops tab carries a badge while any loop
 is waiting on you.
 
+## Loops are shared; running them is per machine
+
+`loops.yaml` is committed, so a loop you create reaches everyone in your company — and every machine
+that has BuildEx open. If they all fired it you would get two Monday updates and two emails, so
+**a loop only runs on a machine that has been switched on for it**:
+
+- A loop you **create here** runs here. No extra step.
+- A loop that arrives **from a teammate or your other machine** shows as *not running on this
+  machine*. Tap **Run here** to adopt it.
+- **Pause here** drops it on this machine only. **Pause for everyone** (in the ⋯ menu) stops it for
+  the whole company by editing the shared file.
+- **Run now** always works, on any machine, adopted or not — running something by hand is not the
+  same as scheduling it.
+
+Adopting a loop restarts its clock, so taking on one that last ran months ago on someone else's
+machine waits a full window instead of firing the moment you tap.
+
 ## Where loops live
 
 Definitions are plain text in your brain, at `loops.yaml` in your team repo — versioned and
@@ -64,15 +81,12 @@ reviewable like everything else:
 Edit the file directly if you prefer; the panel reads it live. An entry it cannot honour exactly is
 skipped rather than guessed at, so a typo can never quietly reschedule your company.
 
-Run stamps — when each loop last ran and how it went — stay on your machine in `.loops-state.json`
-and are never committed, so scheduling churn does not pollute your brain.
+Run stamps — when each loop last ran, how it went, and whether this machine runs it at all — stay on
+your machine in `.loops-state.json` and are never committed, so scheduling churn does not pollute
+your brain and one machine's choices never override another's.
 
 ## Known edges
 
-- **`loops.yaml` is shared with your team.** Every machine running that company with the app open
-  will fire the same loop independently — there is no ownership or lease yet. If two people (or one
-  person on two machines) keep BuildEx open, expect duplicate runs. Pause the loop everywhere but one
-  machine until per-machine ownership lands.
 - **Each fire spends your Claude usage.** A loop `every: 30m` is 48 unattended agent runs a day.
   There is no per-loop cost readout or cap yet.
 - **Only the last run is remembered** — three failed mornings show as one **Failed** chip.

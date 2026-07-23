@@ -54,12 +54,20 @@ function engineWith(rec: ReturnType<typeof recorder>, now: () => number, maxConc
   return new LoopsEngine({ defs, state, now, run: rec.run, ...(maxConcurrent ? { maxConcurrent } : {}) });
 }
 
+/** Define a loop AND adopt it on this machine - what creating one through the console does. Tests
+ *  about firing want a loop this machine actually runs; the machine-scope tests below skip this. */
+function seed(engine: LoopsEngine, input: Parameters<LoopDefStore["add"]>[0]) {
+  const def = defs.add(input);
+  engine.setActiveHere(def.name, true);
+  return def;
+}
+
 describe("LoopsEngine — firing", () => {
   it("does not fire a brand-new loop on the tick that first sees it", async () => {
     const rec = recorder();
     let now = T0;
     const engine = engineWith(rec, () => now);
-    defs.add({ title: "Sweep", prompt: "sweep", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    seed(engine, { title: "Sweep", prompt: "sweep", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
 
     await engine.tick();
     expect(rec.started).toEqual([]);
@@ -73,7 +81,7 @@ describe("LoopsEngine — firing", () => {
     const rec = recorder();
     let now = T0;
     const engine = engineWith(rec, () => now);
-    defs.add({ title: "Sweep", prompt: "sweep", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    seed(engine, { title: "Sweep", prompt: "sweep", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
     await engine.tick(); // stamps firstSeen
 
     now = T0 + HOUR;
@@ -92,7 +100,7 @@ describe("LoopsEngine — firing", () => {
     const rec = recorder();
     let now = T0;
     const engine = engineWith(rec, () => now);
-    defs.add({ title: "Slow", prompt: "slow", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    seed(engine, { title: "Slow", prompt: "slow", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
     await engine.tick();
 
     now = T0 + HOUR;
@@ -108,7 +116,7 @@ describe("LoopsEngine — firing", () => {
     const rec = recorder();
     let now = T0;
     const engine = engineWith(rec, () => now);
-    defs.add({ title: "Sweep", prompt: "sweep", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    seed(engine, { title: "Sweep", prompt: "sweep", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
     await engine.tick();
 
     now = T0 + 9 * HOUR; // nine windows elapsed while the app was shut
@@ -124,7 +132,7 @@ describe("LoopsEngine — firing", () => {
     const rec = recorder();
     let now = T0;
     const engine = engineWith(rec, () => now, 2);
-    for (const t of ["A", "B", "C"]) defs.add({ title: t, prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    for (const t of ["A", "B", "C"]) seed(engine, { title: t, prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
     await engine.tick();
 
     now = T0 + HOUR;
@@ -141,7 +149,7 @@ describe("LoopsEngine — firing", () => {
     const rec = recorder();
     let now = T0;
     const engine = engineWith(rec, () => now);
-    defs.add({ title: "Off", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" }, enabled: false });
+    seed(engine, { title: "Off", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" }, enabled: false });
     await engine.tick();
     now = T0 + 5 * HOUR;
     await engine.tick();
@@ -152,7 +160,7 @@ describe("LoopsEngine — firing", () => {
     const rec = recorder();
     let now = new Date(2026, 6, 22, 20, 0).getTime(); // created the evening before
     const engine = engineWith(rec, () => now);
-    defs.add({ title: "Standup", prompt: "draft it", schedule: { kind: "at", hour: 9, minute: 0, days: [] } });
+    seed(engine, { title: "Standup", prompt: "draft it", schedule: { kind: "at", hour: 9, minute: 0, days: [] } });
     await engine.tick();
 
     now = new Date(2026, 6, 23, 20, 0).getTime(); // laptop opened eleven hours after the window
@@ -168,12 +176,87 @@ describe("LoopsEngine — firing", () => {
   });
 });
 
+describe("LoopsEngine — machine scope", () => {
+  // loops.yaml is COMMITTED, so a definition reaches every machine in the company. If every machine
+  // fired it, two open laptops would mean two Monday updates and two emails. Adoption is per machine
+  // and off by default; the only loop active without a tap is one created right here.
+  it("does not fire a loop this machine has not adopted, however overdue", async () => {
+    const rec = recorder();
+    let now = T0;
+    const engine = engineWith(rec, () => now);
+    defs.add({ title: "Theirs", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } }); // arrived by sync
+
+    now = T0 + 100 * HOUR;
+    await engine.tick();
+    await engine.tick();
+    expect(rec.started).toEqual([]);
+    expect(engine.list()[0]!.activeHere).toBe(false);
+  });
+
+  it("adopts a loop created here, without a tap", () => {
+    const engine = engineWith(recorder(), () => T0);
+    const view = engine.add({ title: "Mine", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    expect(view.activeHere).toBe(true);
+  });
+
+  it("starts firing once adopted, and stops when the machine drops it", async () => {
+    const rec = recorder();
+    let now = T0;
+    const engine = engineWith(rec, () => now);
+    defs.add({ title: "Theirs", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+
+    engine.setActiveHere("theirs", true);
+    now = T0 + HOUR;
+    await engine.tick();
+    expect(rec.started).toEqual(["theirs"]);
+    await rec.finishAll();
+    await engine.settled();
+
+    engine.setActiveHere("theirs", false);
+    now = T0 + 10 * HOUR;
+    await engine.tick();
+    expect(rec.started).toEqual(["theirs"]); // no second run
+  });
+
+  it("adopting a loop that ran long ago elsewhere waits a full window instead of firing at once", async () => {
+    const rec = recorder();
+    let now = T0;
+    const engine = engineWith(rec, () => now);
+    defs.add({ title: "Theirs", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    // Its last run came from another machine, months back - the shared file knows, this machine doesn't.
+    state.set("theirs", { lastRun: T0 - 60 * 24 * HOUR });
+
+    engine.setActiveHere("theirs", true);
+    await engine.tick();
+    expect(rec.started).toEqual([]); // NOT instantly due despite a two-month-old lastRun
+
+    now = T0 + HOUR;
+    await engine.tick();
+    expect(rec.started).toEqual(["theirs"]);
+  });
+
+  it("runs on demand even when this machine has not adopted it - the button is not the schedule", async () => {
+    const rec = recorder();
+    const engine = engineWith(rec, () => T0);
+    defs.add({ title: "Theirs", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+
+    await engine.runNow("theirs");
+    expect(rec.started).toEqual(["theirs"]);
+    expect(engine.list()[0]!.activeHere).toBe(false); // one manual run does not adopt it
+  });
+
+  it("refuses to adopt a loop that does not exist", () => {
+    const engine = engineWith(recorder(), () => T0);
+    expect(() => engine.setActiveHere("ghost", true)).toThrow(/not found/i);
+  });
+});
+
 describe("LoopsEngine — run bookkeeping", () => {
   it("records the session and an ok status when a run completes", async () => {
     const rec = recorder();
     const now = T0;
     const engine = engineWith(rec, () => now);
-    defs.add({ title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    seed(engine, { title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
 
     const started = await engine.runNow("sweep");
     expect(started).toEqual({ sessionId: "s1" });
@@ -188,7 +271,7 @@ describe("LoopsEngine — run bookkeeping", () => {
     const rec = recorder();
     let now = T0;
     const engine = engineWith(rec, () => now);
-    defs.add({ title: "Broken", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    seed(engine, { title: "Broken", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
     await engine.tick();
 
     now = T0 + HOUR;
@@ -205,7 +288,7 @@ describe("LoopsEngine — run bookkeeping", () => {
   it("records what a run needed a human for", async () => {
     const rec = recorder();
     const engine = engineWith(rec, () => T0);
-    defs.add({ title: "Mailer", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    seed(engine, { title: "Mailer", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
 
     await engine.runNow("mailer");
     rec.pending[0]!.finish({ blockedOn: "send an email to the team" });
@@ -217,7 +300,7 @@ describe("LoopsEngine — run bookkeeping", () => {
   it("clears the old blocker when the loop is run again", async () => {
     const rec = recorder();
     const engine = engineWith(rec, () => T0);
-    defs.add({ title: "Mailer", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    seed(engine, { title: "Mailer", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
 
     await engine.runNow("mailer");
     rec.pending[0]!.finish({ blockedOn: "send an email" });
@@ -234,7 +317,7 @@ describe("LoopsEngine — run bookkeeping", () => {
   it("refuses a second manual run while one is in flight", async () => {
     const rec = recorder();
     const engine = engineWith(rec, () => T0);
-    defs.add({ title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    seed(engine, { title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
 
     await engine.runNow("sweep");
     await expect(engine.runNow("sweep")).rejects.toThrow(/already running/i);
@@ -249,7 +332,7 @@ describe("LoopsEngine — run bookkeeping", () => {
   it("runs a disabled loop on demand - the toggle is about the schedule, not the button", async () => {
     const rec = recorder();
     const engine = engineWith(rec, () => T0);
-    defs.add({ title: "Off", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" }, enabled: false });
+    seed(engine, { title: "Off", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" }, enabled: false });
     await engine.runNow("off");
     expect(rec.started).toEqual(["off"]);
   });
@@ -259,7 +342,7 @@ describe("LoopsEngine — the view the console renders", () => {
   it("carries the schedule sentence and the next run", async () => {
     const rec = recorder();
     const engine = engineWith(rec, () => T0);
-    defs.add({ title: "Weekly review", prompt: "p", schedule: { kind: "at", hour: 9, minute: 0, days: ["mon"] } });
+    seed(engine, { title: "Weekly review", prompt: "p", schedule: { kind: "at", hour: 9, minute: 0, days: ["mon"] } });
 
     const [view] = engine.list();
     expect(view).toMatchObject({
@@ -273,7 +356,7 @@ describe("LoopsEngine — the view the console renders", () => {
   it("reports a loop as running while its agent is in flight", async () => {
     const rec = recorder();
     const engine = engineWith(rec, () => T0);
-    defs.add({ title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    seed(engine, { title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
 
     await engine.runNow("sweep");
     expect(engine.list()[0]!.status).toBe("running");
@@ -285,7 +368,7 @@ describe("LoopsEngine — the view the console renders", () => {
   it("forgets the state of a loop the operator deleted", async () => {
     const rec = recorder();
     const engine = engineWith(rec, () => T0);
-    defs.add({ title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    seed(engine, { title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
     await engine.runNow("sweep");
     await rec.finishAll();
     await engine.settled();
@@ -298,7 +381,7 @@ describe("LoopsEngine — the view the console renders", () => {
   it("toggles a loop without disturbing its run state", async () => {
     const rec = recorder();
     const engine = engineWith(rec, () => T0);
-    defs.add({ title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
+    seed(engine, { title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
     await engine.runNow("sweep");
     await rec.finishAll();
     await engine.settled();

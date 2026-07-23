@@ -17,6 +17,7 @@ function loop(over: Record<string, unknown> = {}) {
     prompt: "Read last week's activity log and draft the Monday update",
     scheduleText: "every Monday at 9:00 AM",
     enabled: true,
+    activeHere: true,
     nextRun: Date.now() + 3 * 24 * HOUR,
     ...over,
   };
@@ -65,12 +66,29 @@ describe("console renderers (jsdom) — the Loops panel", () => {
     expect(card.querySelector(".loopmore").getAttribute("aria-label")).toBe("More actions for " + XSS);
   });
 
-  it("says a paused loop is paused instead of counting down to a run that will not happen", () => {
-    const { doc } = withLoops([loop({ enabled: false })]);
+  it("distinguishes the two switches - paused for everyone vs not running here", () => {
+    // loops.yaml is shared, so "off" is ambiguous unless the card says WHICH switch is off.
+    const everyone = withLoops([loop({ enabled: false })]).doc.querySelector("#looplist .loopcard") as any;
+    expect(everyone.className).toContain("off");
+    expect(everyone.querySelector(".loopnext").textContent).toBe("paused for everyone");
+
+    const here = withLoops([loop({ activeHere: false })]).doc.querySelector("#looplist .loopcard") as any;
+    expect(here.className).toContain("off");
+    expect(here.querySelector(".loopnext").textContent).toBe("not running on this machine");
+    expect(here.querySelector(".tgl").textContent).toBe("Run here");
+
+    const live = withLoops([loop()]).doc.querySelector("#looplist .loopcard") as any;
+    expect(live.className).not.toContain("off");
+    expect(live.querySelector(".loopnext").textContent).toContain("next ");
+    expect(live.querySelector(".tgl").textContent).toBe("Pause here");
+  });
+
+  it("puts the company-wide pause in the menu, so the card's own switch is unambiguously local", () => {
+    const { doc } = withLoops([loop()]);
     const card = doc.querySelector("#looplist .loopcard") as any;
-    expect(card.className).toContain("off");
-    expect(card.querySelector(".loopnext").textContent).toBe("paused");
-    expect(card.querySelector(".tgl").textContent).toBe("Resume");
+    (card.querySelector(".loopmore") as any).click();
+    const items = Array.from(doc.querySelectorAll("[data-menu] button") as any, (n: any) => n.textContent);
+    expect(items).toEqual(["✎Edit loop", "⏸Pause for everyone", "⌫Delete loop"]);
   });
 
   it("renders a status chip per outcome, and none at all before the first run", () => {
@@ -107,11 +125,11 @@ describe("console renderers (jsdom) — the Loops panel", () => {
     const { doc } = withLoops([loop()]);
     const card = doc.querySelector("#looplist .loopcard") as any;
     const inline = Array.from(card.querySelectorAll(".ra button") as any, (n: any) => n.textContent);
-    expect(inline).toEqual(["Run now", "Pause", "⋯"]);
+    expect(inline).toEqual(["Run now", "Pause here", "⋯"]);
 
     (card.querySelector(".loopmore") as any).click();
     const items = Array.from(doc.querySelectorAll("[data-menu] button") as any, (n: any) => n.textContent);
-    expect(items).toEqual(["✎Edit loop", "⌫Delete loop"]);
+    expect(items).toContain("⌫Delete loop");
   });
 
   it("offers suggestions, not an empty box, when nothing is scheduled", () => {

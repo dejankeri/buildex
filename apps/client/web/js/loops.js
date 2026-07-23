@@ -86,7 +86,7 @@ function loopCard(loop) {
   const running = loop.status === "running";
   const card = el(
     "div",
-    { class: "rcard loopcard" + (loop.enabled ? "" : " off"), dataset: { loop: loop.name } },
+    { class: "rcard loopcard" + (loop.enabled && loop.activeHere ? "" : " off"), dataset: { loop: loop.name } },
     el(
       "div",
       { class: "cn" },
@@ -100,7 +100,7 @@ function loopCard(loop) {
       { class: "cd loopwhen" },
       el("span", { class: "loopsched", text: loop.scheduleText }),
       el("span", { class: "loopsep", "aria-hidden": "true", text: "·" }),
-      el("span", { class: "loopnext", text: loop.enabled ? "next " + fmtNext(loop.nextRun) : "paused" }),
+      el("span", { class: "loopnext", text: loopWhenText(loop) }),
     ),
     loop.blockedOn
       // The chip already says WHY it stopped ("Needed you"); this line says WHAT it wanted to do,
@@ -116,10 +116,13 @@ function loopCard(loop) {
         disabled: running || undefined,
         onClick: () => runLoopNow(loop),
       }),
+      // The prominent switch is the LOCAL one - "does this run on my machine" is what an operator
+      // means nine times out of ten. The company-wide pause lives in the ⋯ menu.
       el("button", {
         class: "mini ghost tgl",
-        text: loop.enabled ? "Pause" : "Resume",
-        onClick: () => toggleLoop(loop),
+        text: loop.activeHere ? "Pause here" : "Run here",
+        title: loop.activeHere ? "Stop running this on this machine" : "Run this loop on this machine",
+        onClick: () => setLoopActiveHere(loop, !loop.activeHere),
       }),
       el("button", {
         class: "loopmore",
@@ -147,9 +150,28 @@ function openLoopMenu(anchor, loop) {
     "div",
     { class: "dropdown" },
     el("button", { onClick: () => { closeMenus(); openLoopComposer(loop); } }, el("span", { class: "k", text: "✎" }), "Edit loop"),
+    el(
+      "button",
+      { onClick: () => { closeMenus(); toggleLoop(loop); } },
+      el("span", { class: "k", text: loop.enabled ? "⏸" : "▶" }),
+      loop.enabled ? "Pause for everyone" : "Resume for everyone",
+    ),
     el("button", { onClick: () => { closeMenus(); removeLoop(loop); } }, el("span", { class: "k", text: "⌫" }), "Delete loop"),
   );
   dropAt(menu, anchor);
+}
+
+/**
+ * When (or whether) this loop runs, in one phrase. Two switches govern it and they mean different
+ * things, so the card never just says "paused" and leaves the operator guessing which one is off:
+ * `enabled` is company-wide (it lives in the shared loops.yaml), `activeHere` is this machine only.
+ * @param {object} loop - a row from /api/loops.
+ * @returns {string}
+ */
+function loopWhenText(loop) {
+  if (!loop.enabled) return "paused for everyone";
+  if (!loop.activeHere) return "not running on this machine";
+  return "next " + fmtNext(loop.nextRun);
 }
 
 /** The last-run chip. Clicking one that has a session opens that run's transcript. */
@@ -219,6 +241,17 @@ async function runLoopNow(loop) {
   refreshLoops();
 }
 
+/** Adopt or drop this loop on THIS machine. Nothing else in the company is affected. */
+async function setLoopActiveHere(loop, active) {
+  try {
+    await postJSON("/api/loops/" + loop.name + "/here", { active });
+  } catch (e) {
+    /* the refresh below shows the true state either way */
+  }
+  refreshLoops();
+}
+
+/** Pause or resume the loop for the whole company (edits the shared loops.yaml). */
 async function toggleLoop(loop) {
   try {
     await postJSON("/api/loops/" + loop.name + "/toggle", {});

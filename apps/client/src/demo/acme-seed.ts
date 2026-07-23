@@ -714,9 +714,11 @@ export function writeWorkspaceExtras(workspace: string, opts: { roots: Root[]; p
     join(workspace, ".loops-state.json"),
     JSON.stringify(
       {
-        "friday-review": { firstSeen: nowMs - 30 * DAY, lastRun: nowMs - 2 * DAY, status: "ok" },
-        "pipeline-digest": { firstSeen: nowMs - 30 * DAY, lastRun: nowMs - 2 * HOUR, status: "ok" },
-        "inbox-triage": { firstSeen: nowMs - 30 * DAY, lastRun: nowMs - 6 * HOUR, status: "ok" },
+        // activeHere: this demo machine has adopted all three. A loop arriving from another machine
+        // in the company would land WITHOUT this and stay inert until the operator switches it on.
+        "friday-review": { activeHere: true, firstSeen: nowMs - 30 * DAY, lastRun: nowMs - 2 * DAY, status: "ok" },
+        "pipeline-digest": { activeHere: true, firstSeen: nowMs - 30 * DAY, lastRun: nowMs - 2 * HOUR, status: "ok" },
+        "inbox-triage": { activeHere: true, firstSeen: nowMs - 30 * DAY, lastRun: nowMs - 6 * HOUR, status: "ok" },
       },
       null,
       2,

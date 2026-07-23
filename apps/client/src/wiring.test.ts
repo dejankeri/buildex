@@ -248,6 +248,31 @@ describe("buildClientHandler - the client composition root", () => {
     expect(yaml).toContain("every: 2h");
   });
 
+  it("a loop only runs on a machine that adopted it - a synced definition is inert until switched on", async () => {
+    const app = handler();
+    const post = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
+
+    // Created here → adopted here, no tap needed.
+    const mine = (await (await post("/api/loops", { title: "Mine", prompt: "p", every: "1h" })).json()) as { activeHere: boolean };
+    expect(mine.activeHere).toBe(true);
+
+    // A definition that arrived by sync (written straight into the repo, as a git pull would) is
+    // inert on this machine until the operator says otherwise - otherwise every open laptop in the
+    // company fires the same loop.
+    writeFileSync(
+      join(ws, "team", "loops.yaml"),
+      readFileSync(join(ws, "team", "loops.yaml"), "utf8") + "\n- name: theirs\n  title: Theirs\n  prompt: p\n  every: 1h\n  enabled: true\n",
+    );
+    const listed = (await (await app(new Request("http://127.0.0.1/api/loops"))).json()) as { loops: { name: string; activeHere: boolean }[] };
+    expect(listed.loops.find((l) => l.name === "theirs")!.activeHere).toBe(false);
+
+    const adopted = (await (await post("/api/loops/theirs/here", { active: true })).json()) as { activeHere: boolean };
+    expect(adopted.activeHere).toBe(true);
+
+    // Adoption is machine-local, so it never touches the shared file.
+    expect(readFileSync(join(ws, "team", "loops.yaml"), "utf8")).not.toContain("activeHere");
+  });
+
   it("switches a loop between a prompt and a verb without ending up with both or neither", async () => {
     const app = handler();
     const post = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));

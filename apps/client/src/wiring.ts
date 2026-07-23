@@ -867,6 +867,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
         ...(b.enabled !== undefined ? { enabled: b.enabled } : {}),
       }),
     toggle: (name) => loopsEngine.toggle(name),
+    setActiveHere: (name, active) => loopsEngine.setActiveHere(name, active),
     remove: (name) => loopsEngine.remove(name),
     runNow: (name) => loopsEngine.runNow(name),
   };

@@ -101,7 +101,7 @@ const EXPOSE = [
   "scopeVerbs", "brainSectionOpen", "rDocs", "externalDrives", "renderExternalDrives", "connectDrive", "classifyDrop",
   // Loops (right panel): the schedule surface and its composer.
   "rLoops", "refreshLoops", "renderLoopList", "loopCard", "loopEmptyState", "loopStatusChip", "renderLoopBadge",
-  "runLoopNow", "toggleLoop", "removeLoop", "openLoopComposer", "openLoopMenu", "dayWords", "LOOP_SUGGESTIONS", "patchJSON",
+  "runLoopNow", "toggleLoop", "setLoopActiveHere", "loopWhenText", "removeLoop", "openLoopComposer", "openLoopMenu", "dayWords", "LOOP_SUGGESTIONS", "patchJSON",
   // Agent Context viewer ("what my agent sees").
   "openAgentContextTab", "loadAgentContext", "renderAgentContext", "regenAgentContext", "actxGroup", "actxRow", "actxSelectFile",
 ];

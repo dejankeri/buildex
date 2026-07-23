@@ -104,7 +104,10 @@ export interface LoopRecord {
   prompt?: string;
   verb?: string;
   scheduleText: string;
+  /** Company-wide: is this loop live at all (loops.yaml, shared with the team). */
   enabled: boolean;
+  /** This machine only: does it run HERE. Off by default for anything not created here. */
+  activeHere: boolean;
   nextRun: number;
   lastRun?: number;
   status?: string;
@@ -119,6 +122,8 @@ export interface LoopsEngineControl {
   add(input: LoopInput): LoopRecord;
   update(name: string, patch: Partial<LoopInput>): LoopRecord;
   toggle(name: string): LoopRecord;
+  /** Adopt (or drop) a loop on this machine. */
+  setActiveHere(name: string, active: boolean): LoopRecord;
   remove(name: string): void;
   runNow(name: string): Promise<{ sessionId: string }>;
 }
@@ -636,12 +641,16 @@ export function createDaemon(deps: DaemonDeps): Handler {
           return json({ error: e instanceof Error ? e.message : "add failed" }, 400);
         }
       }
-      const lm = /^\/api\/loops\/([a-z0-9-]+)(?:\/(run|toggle|remove))?$/.exec(path);
+      const lm = /^\/api\/loops\/([a-z0-9-]+)(?:\/(run|toggle|remove|here))?$/.exec(path);
       if (lm) {
         const [, name, action] = lm;
         try {
           if (method === "POST" && action === "run") return json(await deps.loops.runNow(name!));
           if (method === "POST" && action === "toggle") return json(deps.loops.toggle(name!));
+          if (method === "POST" && action === "here") {
+            const b = await body<{ active?: boolean }>(req, { active: "boolean" });
+            return json(deps.loops.setActiveHere(name!, b.active !== false));
+          }
           if (method === "POST" && action === "remove") {
             deps.loops.remove(name!);
             return json({ ok: true });

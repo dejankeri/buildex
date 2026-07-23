@@ -40,6 +40,7 @@ function fakeLoops() {
         ...(b.verb ? { verb: b.verb } : {}),
         scheduleText: b.every ? `every ${b.every}` : `every day at ${b.at}`,
         enabled: b.enabled ?? true,
+        activeHere: true, // created here
         nextRun: 1_000,
       };
       rows.set(name, rec);
@@ -56,6 +57,13 @@ function fakeLoops() {
       const cur = rows.get(name);
       if (!cur) throw new Error(`loop not found: ${name}`);
       const next = { ...cur, enabled: !cur.enabled };
+      rows.set(name, next);
+      return next;
+    },
+    setActiveHere: (name, active) => {
+      const cur = rows.get(name);
+      if (!cur) throw new Error(`loop not found: ${name}`);
+      const next = { ...cur, activeHere: active };
       rows.set(name, next);
       return next;
     },
@@ -147,9 +155,24 @@ describe("/api/loops", () => {
     expect(await (await get("/api/loops")).json()).toEqual({ loops: [] });
   });
 
+  it("adopts and drops a loop on this machine, separately from the company-wide switch", async () => {
+    await post("/api/loops", { title: "Sweep", prompt: "p", every: "1h" });
+
+    const dropped = (await (await post("/api/loops/sweep/here", { active: false })).json()) as LoopRecord;
+    expect(dropped).toMatchObject({ activeHere: false, enabled: true });
+
+    const adopted = (await (await post("/api/loops/sweep/here", { active: true })).json()) as LoopRecord;
+    expect(adopted).toMatchObject({ activeHere: true, enabled: true });
+
+    // The two switches are independent: pausing for everyone leaves this machine's adoption alone.
+    const paused = (await (await post("/api/loops/sweep/toggle")).json()) as LoopRecord;
+    expect(paused).toMatchObject({ enabled: false, activeHere: true });
+  });
+
   it("answers 400 for an action on a loop that does not exist", async () => {
     expect((await post("/api/loops/ghost/run")).status).toBe(400);
     expect((await post("/api/loops/ghost/toggle")).status).toBe(400);
+    expect((await post("/api/loops/ghost/here", { active: true })).status).toBe(400);
     expect((await patch("/api/loops/ghost", { title: "x" })).status).toBe(400);
   });
 

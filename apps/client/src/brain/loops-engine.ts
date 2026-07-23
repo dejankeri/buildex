@@ -18,6 +18,8 @@ import { dueness, nextFire, scheduleSentence } from "./loops-schedule.js";
 /** A loop as the console renders it: the definition, its schedule in words, and how it last went. */
 export interface LoopView extends LoopDef {
   scheduleText: string;
+  /** Whether THIS machine is the one running it. */
+  activeHere: boolean;
   nextRun: number;
   lastRun?: number;
   status?: LoopStatus;
@@ -60,6 +62,7 @@ export class LoopsEngine {
       return {
         ...def,
         scheduleText: scheduleSentence(def.schedule),
+        activeHere: st.activeHere === true,
         nextRun: nextFire(def.schedule, { firstSeen, ...(st.lastRun !== undefined ? { lastRun: st.lastRun } : {}) }, now),
         ...(st.lastRun !== undefined ? { lastRun: st.lastRun } : {}),
         ...(this.running.has(def.name) ? { status: "running" as const } : st.status ? { status: st.status } : {}),
@@ -71,10 +74,20 @@ export class LoopsEngine {
 
   add(input: NewLoop): LoopView {
     const def = this.deps.defs.add(input);
-    // Anchor it now, so a loop created at 2pm with a 9am window waits for tomorrow instead of
-    // firing the moment the next tick sees it.
-    this.deps.state.set(def.name, { firstSeen: this.deps.now() });
+    // Created here, so it runs here - the one case where a loop is active without an explicit tap.
+    // Anchored now, so a loop created at 2pm with a 9am window waits for tomorrow instead of firing
+    // the moment the next tick sees it.
+    this.deps.state.set(def.name, { activeHere: true, firstSeen: this.deps.now() });
     return this.view(def.name);
+  }
+
+  /** Switch this machine's participation in a loop on or off. Switching ON re-anchors the clock to
+   *  now, so adopting a loop that last ran months ago on someone else's machine does not fire it
+   *  instantly - it waits a full window, exactly like a freshly created one. */
+  setActiveHere(name: string, active: boolean): LoopView {
+    if (!this.deps.defs.list().some((l) => l.name === name)) throw new Error(`loop not found: ${name}`);
+    this.deps.state.set(name, active ? { activeHere: true, firstSeen: this.deps.now() } : { activeHere: false });
+    return this.view(name);
   }
 
   update(name: string, patch: { title?: string; prompt?: string; verb?: string; schedule?: LoopSchedule; enabled?: boolean }): LoopView {
@@ -111,6 +124,9 @@ export class LoopsEngine {
     const due: LoopDef[] = [];
     for (const def of defs) {
       const st = this.deps.state.get(def.name) ?? {};
+      // A loop this machine has not adopted is inert here: no firing, and no stamping either, so
+      // switching it on later is what anchors its clock.
+      if (st.activeHere !== true) continue;
       if (st.firstSeen === undefined) {
         this.deps.state.set(def.name, { firstSeen: now });
         continue; // never fire on the tick that first sees a loop
