@@ -1,6 +1,6 @@
 {
   "name": "@buildex/toolkit",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "@buildex/toolkit - Company setup toolkit: provision, backfill, connector scaffold; CLI wrapper pending",
   "license": "MIT",
