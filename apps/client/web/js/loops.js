@@ -30,7 +30,6 @@ async function rLoops() {
       el("h4", { text: "Loops" }),
       el("button", { class: "radd", id: "newLoop", text: "+ New loop", onClick: () => openLoopComposer() }),
     ),
-    el("div", { id: "loopspend" }),
     el("div", { id: "loopcomposer" }),
     el("div", { id: "looplist" }),
   );
@@ -41,18 +40,13 @@ async function rLoops() {
 async function refreshLoops() {
   const before = S.loops;
   try {
-    const r = await getJSON("/api/loops");
-    S.loops = r.loops || [];
-    S.loopSpend = r.spend || null;
+    S.loops = (await getJSON("/api/loops")).loops || [];
   } catch (e) {
     S.loops = [];
   }
   noticeLoopChanges(before, S.loops);
   renderLoopBadge();
-  if (S.rightTab === "loops") {
-    renderLoopSpend();
-    renderLoopList();
-  }
+  if (S.rightTab === "loops") renderLoopList();
 }
 
 /**
@@ -91,59 +85,6 @@ function noticeLoopChanges(before, after) {
       });
     }
   }
-}
-
-/** The spend line above the list: what loops have cost on this machine, and their daily ceiling. */
-function renderLoopSpend() {
-  const host = $("#loopspend");
-  if (!host) return;
-  host.innerHTML = "";
-  const spend = S.loopSpend;
-  if (!spend || (!spend.month.runs && spend.capUsd === undefined)) return; // nothing has run, nothing to say
-
-  if (spend.overCap) {
-    // Not a footnote: the scheduler is deliberately not firing, and an operator who is not told that
-    // will read it as broken. Says what happens next, and offers the one control that changes it.
-    host.append(
-      el(
-        "div",
-        { class: "loopcap over" },
-        el("span", { class: "lc-tx", text: "Loops are paused — this machine has spent its " + usd(spend.capUsd) + " for today. They start again after midnight." }),
-        el("button", { class: "mini ghost lc-edit", text: "Change limit", onClick: () => openLoopBudget() }),
-      ),
-    );
-    return;
-  }
-  host.append(
-    el(
-      "div",
-      { class: "loopcap" },
-      el("span", {
-        class: "lc-tx",
-        text:
-          spend.capUsd === undefined
-            ? "About " + usd(spend.today.costUsd) + " today · " + usd(spend.month.costUsd) + " this month"
-            : "About " + usd(spend.today.costUsd) + " of " + usd(spend.capUsd) + " today",
-      }),
-      el("button", {
-        class: "mini ghost lc-edit",
-        text: spend.capUsd === undefined ? "Set a limit" : "Change",
-        onClick: () => openLoopBudget(),
-      }),
-    ),
-  );
-}
-
-/**
- * Money, the way the operator reads it. Loop runs are routinely fractions of a cent, so a bare
- * round-to-cents would show "$0.00" for real spending — say "under $0.01" instead of lying.
- * @param {number} n - USD.
- * @returns {string}
- */
-function usd(n) {
-  const v = Number(n) || 0;
-  if (v > 0 && v < 0.01) return "under $0.01";
-  return "$" + v.toFixed(2);
 }
 
 /** Paint the list of loop cards, or the empty state when there are none. */
@@ -279,7 +220,6 @@ function loopRunStrip(loop) {
 function runSentence(r, opts) {
   const words = { ok: "Ran", failed: "Failed", "needs-approval": "Needed you", missed: "Missed" };
   const parts = [(words[r.status] || "Ran") + (opts && opts.absolute ? "" : " " + ago(r.at))];
-  if (r.costUsd) parts.push("about " + usd(r.costUsd));
   if (r.blockedOn) parts.push("wanted to " + r.blockedOn);
   return parts.join(" · ");
 }
@@ -337,75 +277,6 @@ function runWhen(at) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-/**
- * The daily spending limit. A loop firing unattended spends the operator's own agent budget, and
- * this is the one control that bounds it. Per machine, because that is whose budget it is; per DAY,
- * because "$5 a day, resetting at midnight" is a sentence an operator can predict, which a rolling
- * window is not.
- */
-function openLoopBudget() {
-  const spend = S.loopSpend || { today: { costUsd: 0 }, month: { costUsd: 0 } };
-  const bd = elt("div", "ovbackdrop");
-  const input = el("input", {
-    class: "ovinput lb-cap",
-    type: "number",
-    min: "0",
-    step: "0.5",
-    placeholder: "No limit",
-    value: spend.capUsd === undefined ? "" : String(spend.capUsd),
-  });
-  const msg = el("span", { class: "emsg" });
-  const save = async () => {
-    const raw = input.value.trim();
-    const capUsd = raw === "" ? 0 : Number(raw);
-    if (Number.isNaN(capUsd) || capUsd < 0) {
-      msg.className = "emsg bad";
-      msg.textContent = "Enter an amount, or leave it blank for no limit.";
-      return;
-    }
-    msg.className = "emsg";
-    msg.textContent = "Saving…";
-    try {
-      S.loopSpend = await postJSON("/api/loops-budget", { capUsd });
-    } catch (e) {
-      msg.className = "emsg bad";
-      msg.textContent = "Could not save the limit.";
-      return;
-    }
-    bd.remove();
-    renderLoopSpend();
-  };
-  bd.append(
-    el(
-      "div",
-      { class: "ovcard loopbudget" },
-      el("h3", { class: "ovh", text: "Daily limit for loops" }),
-      el("p", {
-        class: "ovp",
-        text:
-          "Loops run without you, and each run costs agent usage. Above this much in a day, scheduled runs stop " +
-          "until midnight. Running a loop yourself is never blocked — you are there.",
-      }),
-      el("label", { class: "ovlabel" }, "Stop scheduled runs after (US$ per day)", input),
-      el("div", { class: "lb-now", text: "Spent today: about " + usd(spend.today.costUsd) + " · this month: " + usd(spend.month.costUsd) }),
-      el("div", { class: "ovrow" },
-        el("button", { class: "mini ghost", text: "Cancel", onClick: () => bd.remove() }),
-        el("button", { class: "mini lb-save", text: "Save", onClick: save }),
-        msg),
-      el("div", { class: "ns-note", text: "Costs are what your agent reported. On a subscription plan that is the equivalent API price, not a charge." }),
-    ),
-  );
-  document.body.appendChild(bd);
-  bd.onclick = (e) => {
-    if (e.target === bd) bd.remove();
-  };
-  input.onkeydown = (e) => {
-    if (e.key === "Enter") save();
-    if (e.key === "Escape") bd.remove();
-  };
-  input.focus();
-}
-
 /** Edit + Delete live behind the card's ⋯ - the row stays one line, and the destructive action is
  *  never a stray tap away from "Run now". Anchored with the shared dropAt()/closeMenus() machinery
  *  the tree menus use, so it escapes the panel's overflow container like they do. */
@@ -440,13 +311,10 @@ function loopWhenText(loop) {
   return "next " + fmtNext(loop.nextRun);
 }
 
-/** The last-run chip. Clicking one that has a session opens that run's transcript. A successful run
- *  carries its price: "Ran 2h" says nothing about what a loop is costing to leave switched on. */
+/** The last-run chip. Clicking one that has a session opens that run's transcript. */
 function loopStatusChip(loop) {
-  const last = (loop.runs || [])[0];
-  const cost = last && last.costUsd ? " · " + usd(last.costUsd) : "";
   const chips = {
-    ok: { text: "Ran " + ago(loop.lastRun) + cost, cls: "ok" },
+    ok: { text: "Ran " + ago(loop.lastRun), cls: "ok" },
     running: { text: "Running", cls: "live" },
     failed: { text: "Failed", cls: "bad" },
     "needs-approval": { text: "Needed you", cls: "warn" },

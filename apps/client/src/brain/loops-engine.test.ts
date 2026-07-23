@@ -396,27 +396,26 @@ describe("LoopsEngine — the view the console renders", () => {
 });
 
 // Only the last run was ever remembered, so three failed mornings showed as one Failed chip. The
-// history is what makes a pattern visible - and it is the same ledger the spending limit reads, so
-// these tests also pin that a run is never counted in one place and missed in the other.
+// history is what makes a pattern visible.
 describe("LoopsEngine — run history", () => {
-  it("records each finished run, newest first, with its session and price", async () => {
+  it("records each finished run, newest first, with the session it produced", async () => {
     const rec = recorder();
     let now = T0;
     const engine = engineWith(rec, () => now);
     seed(engine, { title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
 
     await engine.runNow("sweep");
-    rec.pending.splice(0)[0]!.finish({ costUsd: 0.02, ms: 4000 });
+    await rec.finishAll();
     await engine.settled();
 
     now = T0 + HOUR;
     await engine.runNow("sweep");
-    rec.pending.splice(0)[0]!.finish({ costUsd: 0.03, ms: 5000 });
+    await rec.finishAll();
     await engine.settled();
 
     const history = runs.history("sweep");
     expect(history.map((r) => r.at)).toEqual([T0 + HOUR, T0]);
-    expect(history[0]).toMatchObject({ status: "ok", sessionId: "s2", costUsd: 0.03, ms: 5000 });
+    expect(history[0]).toMatchObject({ status: "ok", sessionId: "s2" });
   });
 
   it("ships the history inline on list(), so the panel needs no request per card", async () => {
@@ -473,74 +472,5 @@ describe("LoopsEngine — run history", () => {
     engine.remove("sweep");
     await engine.tick();
     expect(runs.history("sweep")).toEqual([]);
-  });
-});
-
-// A loop firing unattended spends the operator's agent budget - the money dimension of invariant 5,
-// which just never looked like money because it is compute. The ceiling is the gate.
-describe("LoopsEngine — the daily spending limit", () => {
-  /** A loop that is due right now, with `spent` already on today's ledger. */
-  function overspent(rec: ReturnType<typeof recorder>, spent: number, cap: number) {
-    const engine = engineWith(rec, () => T0 + 2 * HOUR);
-    const def = defs.add({ title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
-    state.set(def.name, { activeHere: true, firstSeen: T0 });
-    runs.setCap(cap);
-    runs.record(def.name, { at: T0, status: "ok", costUsd: spent });
-    return engine;
-  }
-
-  it("fires as usual while the day is under its ceiling", async () => {
-    const rec = recorder();
-    expect(await overspent(rec, 0.2, 1).tick()).toEqual(["sweep"]);
-  });
-
-  it("stops the clock once the day's ceiling is reached", async () => {
-    const rec = recorder();
-    expect(await overspent(rec, 1.5, 1).tick()).toEqual([]);
-    expect(rec.started).toEqual([]);
-  });
-
-  it("stamps nothing while held back, so a held window is judged tomorrow on its own terms", async () => {
-    const rec = recorder();
-    const engine = overspent(rec, 1.5, 1);
-    await engine.tick();
-    expect(state.get("sweep")!.status).toBeUndefined();
-    expect(state.get("sweep")!.lastRun).toBeUndefined();
-  });
-
-  it("still runs on demand over the ceiling - the operator is present, which is the distinction", async () => {
-    const rec = recorder();
-    const engine = overspent(rec, 1.5, 1);
-    await engine.runNow("sweep");
-    expect(rec.started).toEqual(["sweep"]);
-  });
-
-  it("fires again after midnight, when the day's ledger resets", async () => {
-    const rec = recorder();
-    let now = T0 + 2 * HOUR;
-    const engine = new LoopsEngine({ defs, state, runs, now: () => now, run: rec.run });
-    const def = defs.add({ title: "Sweep", prompt: "p", schedule: { kind: "every", ms: HOUR, raw: "1h" } });
-    state.set(def.name, { activeHere: true, firstSeen: T0 });
-    runs.setCap(1);
-    runs.record(def.name, { at: T0, status: "ok", costUsd: 1.5 });
-
-    expect(await engine.tick()).toEqual([]);
-    now = new Date(2026, 6, 24, 9, 0, 0).getTime(); // the next local day
-    expect(await engine.tick()).toEqual(["sweep"]);
-  });
-
-  it("reports today and the month against the ceiling", () => {
-    const rec = recorder();
-    const engine = engineWith(rec, () => T0);
-    runs.setCap(2);
-    runs.record("sweep", { at: T0, status: "ok", costUsd: 0.25 });
-    expect(engine.spend()).toMatchObject({ today: { runs: 1, costUsd: 0.25 }, capUsd: 2, overCap: false });
-  });
-
-  it("sets and clears the ceiling", () => {
-    const rec = recorder();
-    const engine = engineWith(rec, () => T0);
-    expect(engine.setCap(5).capUsd).toBe(5);
-    expect(engine.setCap(undefined).capUsd).toBeUndefined();
   });
 });

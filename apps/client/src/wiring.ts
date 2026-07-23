@@ -774,8 +774,8 @@ export function buildClientHandler(config: ClientConfig): Handler {
   migrateAutomationsYaml(join(loopsRoot ? loopsRoot.dir : config.workspace, "automations.yaml"), loopsYaml);
   const loopDefs = new LoopDefStore(loopsYaml);
   const loopState = new LoopStateFile(join(config.workspace, ".loops-state.json"));
-  // What each loop actually did and what it cost. Local and uncommitted like the stamps: one
-  // machine's spend is not another's, and it is this machine's agent budget the ceiling protects.
+  // What each loop actually did - the ring behind the history strip. Local and uncommitted like the
+  // stamps beside it: one machine's runs are not another's.
   const loopRuns = new LoopRunsFile(join(config.workspace, ".loops-runs.json"));
 
   /** Start a loop's agent run. Returns as soon as the session exists so "Run now" answers the
@@ -806,22 +806,11 @@ export function buildClientHandler(config: ClientConfig): Handler {
       if (card && ev.reason === "timeout") blockedOn ??= describeTool(card.tool);
     });
 
-    // What the agent said the turn cost. It reports this once, on its final `result` line, which the
-    // parser now carries onto `done` - that is the whole source of loop spend. A run that never
-    // reaches a result line (crash, abort) simply has no price, and is counted as a run at zero.
-    let priced: { costUsd?: number; ms?: number } = {};
-
     const done = (async (): Promise<RunOutcome> => {
       broker.pushOrigin(origin);
       try {
         for await (const e of driver.runPrompt({ prompt, workspace: config.workspace, systemPromptAppend: workspaceHint() })) {
-          if (e.kind === "done") {
-            if (e.sessionId) sessions.setClaudeSessionId(sessionId, e.sessionId);
-            priced = {
-              ...(e.costUsd !== undefined ? { costUsd: e.costUsd } : {}),
-              ...(e.ms !== undefined ? { ms: e.ms } : {}),
-            };
-          }
+          if (e.kind === "done" && e.sessionId) sessions.setClaudeSessionId(sessionId, e.sessionId);
           sessions.append(sessionId, e);
         }
         sessions.setStatus(sessionId, "idle");
@@ -833,7 +822,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
         broker.popOrigin(origin);
         unsubscribe();
       }
-      return { ...priced, ...(blockedOn === undefined ? {} : { blockedOn }) };
+      return blockedOn === undefined ? {} : { blockedOn };
     })();
 
     return { sessionId, done };
@@ -885,8 +874,6 @@ export function buildClientHandler(config: ClientConfig): Handler {
     setActiveHere: (name, active) => loopsEngine.setActiveHere(name, active),
     remove: (name) => loopsEngine.remove(name),
     runNow: (name) => loopsEngine.runNow(name),
-    spend: () => loopsEngine.spend(),
-    setCap: (usd) => loopsEngine.setCap(usd),
   };
   const fileTree = (): TreeNode[] => config.roots.map((r) => ({ name: r.name, path: r.name, type: "dir" as const, children: treeOf(r.dir, r.name) }));
 

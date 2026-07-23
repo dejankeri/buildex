@@ -14,7 +14,7 @@ import {
   type LoopSchedule,
 } from "./loops.js";
 import { dueness, nextFire, scheduleSentence } from "./loops-schedule.js";
-import { LoopRunsFile, type LoopRun, type SpendSummary } from "./loops-runs.js";
+import { LoopRunsFile, type LoopRun } from "./loops-runs.js";
 
 /** A loop as the console renders it: the definition, its schedule in words, and how it last went. */
 export interface LoopView extends LoopDef {
@@ -31,12 +31,9 @@ export interface LoopView extends LoopDef {
   runs: LoopRun[];
 }
 
-/** How a run ended. `blockedOn` is set only when the gate TTL-denied with nobody there to tap; the
- *  price is whatever the agent reported, which on a subscription plan is a notional API-rate figure. */
+/** How a run ended. `blockedOn` is set only when the gate TTL-denied with nobody there to tap. */
 export interface RunOutcome {
   blockedOn?: string;
-  costUsd?: number;
-  ms?: number;
 }
 
 /** A started run: the session exists immediately, the work finishes later. Splitting the two is what
@@ -49,7 +46,7 @@ export interface StartedRun {
 export interface LoopsEngineDeps {
   defs: LoopDefStore;
   state: LoopStateFile;
-  /** What each loop did and what it cost - the history strip, and the ledger the daily limit reads. */
+  /** What each loop did - the ring behind the history strip. */
   runs: LoopRunsFile;
   now: () => number;
   run: (loop: LoopDef) => Promise<StartedRun>;
@@ -86,18 +83,6 @@ export class LoopsEngine {
         runs: history[def.name] ?? [],
       };
     });
-  }
-
-  /** Today's unattended spend against its ceiling, and the month so far. */
-  spend(): SpendSummary {
-    return this.deps.runs.summary(this.deps.now());
-  }
-
-  /** Set (or clear, with undefined) the ceiling on what loops may spend per local day on THIS
-   *  machine. Local, because the money is the operator's own agent usage, not the company's file. */
-  setCap(usd: number | undefined): SpendSummary {
-    this.deps.runs.setCap(usd);
-    return this.spend();
   }
 
   add(input: NewLoop): LoopView {
@@ -149,14 +134,7 @@ export class LoopsEngine {
     const defs = this.deps.defs.list();
     const names = new Set(defs.map((d) => d.name));
     this.deps.state.prune(names);
-    this.deps.runs.prune(names, now);
-
-    // Money is one of the three things invariant 5 gates, and a loop spending the operator's agent
-    // budget while nobody is watching is exactly that - it just never looked like money because it is
-    // compute. Over the ceiling we stop the CLOCK, and stamp nothing: a window that goes cold while
-    // held back is recorded missed tomorrow, on its own terms, rather than being written off now.
-    // "Run now" is untouched, because the operator is present - that is the whole distinction.
-    if (this.deps.runs.overCap(now)) return [];
+    this.deps.runs.prune(names);
 
     const due: LoopDef[] = [];
     for (const def of defs) {
@@ -231,14 +209,7 @@ export class LoopsEngine {
   private finish(name: string, sessionId: string, status: "ok" | "failed" | "needs-approval", r: RunOutcome): void {
     const at = this.deps.now();
     this.deps.state.set(name, { lastRun: at, status, sessionId, blockedOn: r.blockedOn });
-    this.deps.runs.record(name, {
-      at,
-      status,
-      sessionId,
-      ...(r.ms !== undefined ? { ms: r.ms } : {}),
-      ...(r.costUsd !== undefined ? { costUsd: r.costUsd } : {}),
-      ...(r.blockedOn !== undefined ? { blockedOn: r.blockedOn } : {}),
-    });
+    this.deps.runs.record(name, { at, status, sessionId, ...(r.blockedOn !== undefined ? { blockedOn: r.blockedOn } : {}) });
   }
 
   private view(name: string): LoopView {

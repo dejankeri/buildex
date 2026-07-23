@@ -23,23 +23,10 @@ links to that run's transcript. **Run now** fires it immediately whatever the sc
 
 Under each card is a row of small marks — one per run, oldest on the left, up to the last twenty.
 Green ran clean, amber stopped for you, red failed, grey means the window was missed. Click any mark
-to open that run. **⋯ → Run history** lists the same runs with times and costs.
+to open that run. **⋯ → Run history** lists the same runs with their times.
 
 The strip is where a *pattern* shows up: a loop that fails every Monday looks nothing like a loop
 that failed once. Run stamps are per machine, so this is what happened on *this* computer.
-
-## What loops cost
-
-Every fire spends your agent usage — a loop set to `30m` is 48 unattended runs a day. The panel says
-what loops have cost today and this month, and each finished run carries its own price.
-
-Those figures are what your agent reported. On a subscription plan they are the equivalent API
-price, not a charge on your card.
-
-**Set a daily limit** from the spend line. Once scheduled runs have spent that much in a day, the
-scheduler stops until midnight and the panel says so. **Run now** is never blocked — you are there,
-which is the whole distinction. The limit is per machine, like the runs it counts, and lives outside
-the shared file.
 
 ## Being told when a loop needs you
 
@@ -116,14 +103,12 @@ Edit the file directly if you prefer; the panel reads it live. An entry it canno
 skipped rather than guessed at, so a typo can never quietly reschedule your company.
 
 Run stamps — when each loop last ran, how it went, and whether this machine runs it at all — stay on
-your machine in `.loops-state.json`, and the run history, costs and daily limit in `.loops-runs.json`.
-Neither is committed, so scheduling churn does not pollute your brain and one machine's choices never
-override another's.
+your machine in `.loops-state.json`, and the run history in `.loops-runs.json`. Neither is committed,
+so scheduling churn does not pollute your brain and one machine's choices never override another's.
 
 ## Known edges
 
 - **Loops do not run while BuildEx is closed**, and a closed app cannot notify you either.
-- **A run that crashes before finishing has no price**, so it counts as a run at zero against the
-  daily limit.
-- **The history keeps the last twenty runs per loop**, per machine. Older runs are forgotten; the
-  spend totals behind them are kept for two months.
+- **The history keeps the last twenty runs per loop**, per machine. Older runs are forgotten.
+- **Each fire spends your agent usage.** A loop `every: 30m` is 48 unattended runs a day, and
+  BuildEx does not yet meter or cap that — keep an eye on the intervals you pick.

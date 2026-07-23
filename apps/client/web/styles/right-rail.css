@@ -84,14 +84,6 @@
   .loopdays .daybtn.on{background:var(--brand-tint);border-color:color-mix(in srgb,var(--brand) 45%,transparent);color:var(--brand);}
   .loopreview{font-size:12px;color:var(--faint);margin:2px 0 10px;font-style:italic;}
   .emsg.bad{color:var(--crit);}
-  /* the spend line + its ceiling: what leaving loops switched on is costing, and the one control */
-  .loopcap{display:flex;align-items:center;gap:8px;margin:8px 0 2px;font-size:11.5px;color:var(--faint);}
-  .loopcap .lc-tx{flex:1;min-width:0;line-height:1.45;}
-  .loopcap .lc-edit{padding:2px 8px;font-size:11px;}
-  /* Stacked, like the notification nudge: a button beside four lines of explanation floats level
-     with the first one and reads as unrelated to the sentence it answers. */
-  .loopcap.over{display:block;padding:9px 10px;border:1px solid color-mix(in srgb,var(--gate) 40%,transparent);border-radius:8px;background:var(--gate-tint);color:var(--ink);font-size:12px;}
-  .loopcap.over .lc-tx{display:block;} .loopcap.over .lc-edit{margin-top:9px;}
   /* the run strip: one mark per past run, oldest first - a pattern, not a single last-run chip */
   .loopstrip{display:flex;gap:3px;flex-wrap:wrap;margin-top:8px;}
   .lrun{width:7px;height:7px;border-radius:2px;background:var(--line-2);flex:0 0 auto;}
@@ -109,7 +101,6 @@
   /* WRAPS, deliberately: what a blocked run wanted to do is the payload of the row, and an ellipsis
      lands exactly on it ("Needed you · about $0.2…"). */
   .lh-what{color:var(--ink);min-width:0;line-height:1.45;}
-  .loopbudget .lb-now{font-size:12px;color:var(--faint);margin:-4px 0 14px;}
   /* notifications: the nudge in the panel, and the settings dialog */
   /* Stacked, not side-by-side: in a ~250px rail a button beside the sentence squeezes the sentence
      into a four-word column and reads as an ad rather than an offer. */

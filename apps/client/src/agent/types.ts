@@ -8,10 +8,7 @@ export type UiEvent =
   | { kind: "thinking"; text: string }
   | { kind: "tool"; id: string; name: string; input: unknown; path?: string }
   | { kind: "tool_result"; id: string; name: string; ok: boolean; output?: string }
-  // `costUsd`/`ms` are what the agent itself reported for the turn, when it reported anything. On a
-  // subscription plan the cost is notional - the API-rate equivalent of the work - which is why
-  // every surface that shows it says "about".
-  | { kind: "done"; sessionId?: string; costUsd?: number; ms?: number }
+  | { kind: "done"; sessionId?: string }
   | { kind: "error"; message: string };
 
 /** True once a turn has ended (no more events will follow). */

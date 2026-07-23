@@ -102,7 +102,7 @@ const EXPOSE = [
   // Loops (right panel): the schedule surface and its composer.
   "rLoops", "refreshLoops", "renderLoopList", "loopCard", "loopEmptyState", "loopStatusChip", "renderLoopBadge",
   "runLoopNow", "toggleLoop", "setLoopActiveHere", "loopWhenText", "removeLoop", "openLoopComposer", "openLoopMenu", "dayWords", "LOOP_SUGGESTIONS", "patchJSON",
-  "loopRunStrip", "runSentence", "runMarkClass", "runWhen", "openLoopHistory", "openLoopBudget", "renderLoopSpend", "noticeLoopChanges", "usd",
+  "loopRunStrip", "runSentence", "runMarkClass", "runWhen", "openLoopHistory", "noticeLoopChanges",
   // Notifications: the mechanism, the preference, and the two surfaces that configure it.
   "NOTIFY_KINDS", "notifySupported", "notifyPermission", "notifyPrefs", "setNotifyPref", "enableNotifications",
   "notifyOperator", "notifyNudge", "openNotifySettings", "notifySettingsBody",

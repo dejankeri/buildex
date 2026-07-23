@@ -123,17 +123,7 @@ export interface LoopRunRecord {
   at: number;
   status: string;
   sessionId?: string;
-  ms?: number;
-  costUsd?: number;
   blockedOn?: string;
-}
-
-/** What loops have spent on THIS machine: today against its ceiling, and the month so far. */
-export interface LoopSpendRecord {
-  today: { runs: number; costUsd: number };
-  month: { runs: number; costUsd: number };
-  capUsd?: number;
-  overCap: boolean;
 }
 
 /** Create, schedule, toggle and run loops. runNow drives the real agent (and returns as soon as the
@@ -147,10 +137,6 @@ export interface LoopsEngineControl {
   setActiveHere(name: string, active: boolean): LoopRecord;
   remove(name: string): void;
   runNow(name: string): Promise<{ sessionId: string }>;
-  /** Today's unattended spend against its ceiling, and the month so far. */
-  spend(): LoopSpendRecord;
-  /** Set (or, with undefined, clear) the ceiling on what loops may spend per local day here. */
-  setCap(usd: number | undefined): LoopSpendRecord;
 }
 
 /** What the console may send when creating or editing a loop. Exactly one of prompt/verb, and
@@ -655,16 +641,8 @@ export function createDaemon(deps: DaemonDeps): Handler {
       return json({ connectors: deps.catalog.connectors() });
     }
     if (deps.loops) {
-      // One request paints the whole panel: the cards, their histories, and the spend line.
-      if (method === "GET" && path === "/api/loops") return json({ loops: deps.loops.list(), spend: deps.loops.spend() });
-      // Deliberately NOT /api/loops/budget: loop names are kebab-cased titles, and a loop called
-      // "Budget" would own that path.
-      if (method === "POST" && path === "/api/loops-budget") {
-        const b = await body<{ capUsd?: number }>(req, { capUsd: "number" });
-        // A missing, zero or negative ceiling means "no ceiling" - never a limit of nothing, which
-        // would silently stop every loop on the machine.
-        return json(deps.loops.setCap(typeof b.capUsd === "number" && b.capUsd > 0 ? b.capUsd : undefined));
-      }
+      // One request paints the whole panel: the cards and their histories.
+      if (method === "GET" && path === "/api/loops") return json({ loops: deps.loops.list() });
       if (method === "POST" && path === "/api/loops") {
         const b = await body<LoopInput>(req, {
           title: "string!", prompt: "string", verb: "string", every: "string", at: "string", days: "string", enabled: "boolean",
