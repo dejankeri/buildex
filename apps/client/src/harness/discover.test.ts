@@ -46,9 +46,28 @@ describe("discoverSkills", () => {
     writeSkill(priv, "shared-skill", fm("shared-skill", "private version"));
     writeSkill(core, "core-only", fm("core-only", "only in core"));
 
-    expect(discoverSkills([core, team, priv])).toEqual([
+    // shared-skill is in the pack set, so its non-core (team/private) copies survive scoping and
+    // precedence still resolves private > team > core; core-only rides in as a core always-on skill.
+    expect(discoverSkills([core, team, priv], ["shared-skill"])).toEqual([
       { name: "core-only", description: "only in core" },
       { name: "shared-skill", description: "private version" },
+    ]);
+  });
+
+  it("scopes to the pack under test: keeps core always-on skills + the pack's declared skills, drops other packs' skills", () => {
+    const base = tmp("discover-");
+    const core = makeRoot(base, "core");
+    const team = makeRoot(base, "team-acme");
+
+    writeSkill(core, "capture-decision", fm("capture-decision", "always-on core skill"));
+    writeSkill(team, "protocol-scheduling", fm("protocol-scheduling", "pack under test"));
+    writeSkill(team, "stripe-billing", fm("stripe-billing", "a DIFFERENT pack's skill"));
+    writeSkill(team, "linear-issue", fm("linear-issue", "another pack's skill"));
+
+    // pack under test declares only its own skills; core is always kept, foreign packs dropped.
+    expect(discoverSkills([core, team], ["protocol-scheduling"])).toEqual([
+      { name: "capture-decision", description: "always-on core skill" },
+      { name: "protocol-scheduling", description: "pack under test" },
     ]);
   });
 
@@ -56,41 +75,41 @@ describe("discoverSkills", () => {
     const base = tmp("discover-");
     const core = makeRoot(base, "core");
     writeSkill(core, "no-manifest", null);
-    expect(discoverSkills([core])).toEqual([{ name: "no-manifest", description: "" }]);
+    expect(discoverSkills([core], [])).toEqual([{ name: "no-manifest", description: "" }]);
   });
 
   it("fails soft on frontmatter missing the closing fence", () => {
     const base = tmp("discover-");
     const core = makeRoot(base, "core");
     writeSkill(core, "broken", "---\nname: broken\ndescription: no closing fence\n# body\n");
-    expect(discoverSkills([core])).toEqual([{ name: "broken", description: "" }]);
+    expect(discoverSkills([core], [])).toEqual([{ name: "broken", description: "" }]);
   });
 
   it("fails soft on a SKILL.md with no frontmatter fences at all", () => {
     const base = tmp("discover-");
     const core = makeRoot(base, "core");
     writeSkill(core, "plain", "# Just a heading\nNo frontmatter here.\n");
-    expect(discoverSkills([core])).toEqual([{ name: "plain", description: "" }]);
+    expect(discoverSkills([core], [])).toEqual([{ name: "plain", description: "" }]);
   });
 
   it("falls back to the directory name when the name: line is absent, keeping the parsed description", () => {
     const base = tmp("discover-");
     const core = makeRoot(base, "core");
     writeSkill(core, "unnamed", "---\ndescription: has a description, no name\n---\n");
-    expect(discoverSkills([core])).toEqual([{ name: "unnamed", description: "has a description, no name" }]);
+    expect(discoverSkills([core], [])).toEqual([{ name: "unnamed", description: "has a description, no name" }]);
   });
 
   it("keeps colons in the description intact (splits on the first ': ' only)", () => {
     const base = tmp("discover-");
     const core = makeRoot(base, "core");
     writeSkill(core, "colon-desc", fm("colon-desc", "Ratio is 3: 2, handle it: carefully"));
-    expect(discoverSkills([core])).toEqual([{ name: "colon-desc", description: "Ratio is 3: 2, handle it: carefully" }]);
+    expect(discoverSkills([core], [])).toEqual([{ name: "colon-desc", description: "Ratio is 3: 2, handle it: carefully" }]);
   });
 
   it("treats a root with no skills/ dir at all as normal, not an error", () => {
     const base = tmp("discover-");
     const core = makeRoot(base, "core"); // no skills/ subdir created
-    expect(discoverSkills([core])).toEqual([]);
+    expect(discoverSkills([core], [])).toEqual([]);
   });
 });
 
@@ -116,7 +135,7 @@ describe("discoverSurface", () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(res(200, plain({}))).mockResolvedValueOnce(res(200, plain({ tools: okTools })));
 
     const surface = await discoverSurface(
-      { pack: "acme", roots: [core], mcpUrl: "https://mcp.example.com", headers: {} },
+      { pack: "acme", roots: [core], mcpUrl: "https://mcp.example.com", headers: {}, packSkills: [] },
       { fetch: fetchMock as unknown as typeof globalThis.fetch },
     );
 

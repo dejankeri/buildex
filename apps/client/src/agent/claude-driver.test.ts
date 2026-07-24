@@ -98,6 +98,23 @@ describe("ClaudeCodeDriver.runPrompt", () => {
     expect(calls).toHaveLength(0); // refused before any spawn, like the model allowlist
   });
 
+  it("passes --strict-mcp-config + --mcp-config when mcpConfigPath is set, and neither flag otherwise", async () => {
+    const { spawn: s1, calls: c1 } = fakeSpawn(TRANSCRIPT);
+    const d1 = new ClaudeCodeDriver({ spawn: s1, bin: "claude" });
+    await collect(d1.runPrompt({ prompt: "go", workspace: "/ws", mcpConfigPath: "/ws/.mcp.json" }));
+    const args = c1[0]!.args;
+    expect(args).toContain("--strict-mcp-config");
+    const i = args.indexOf("--mcp-config");
+    expect(i).toBeGreaterThan(-1);
+    expect(args[i + 1]).toBe("/ws/.mcp.json");
+
+    const { spawn: s2, calls: c2 } = fakeSpawn(TRANSCRIPT);
+    const d2 = new ClaudeCodeDriver({ spawn: s2, bin: "claude" });
+    await collect(d2.runPrompt({ prompt: "go", workspace: "/ws" }));
+    expect(c2[0]!.args).not.toContain("--strict-mcp-config");
+    expect(c2[0]!.args).not.toContain("--mcp-config");
+  });
+
   it("passes the workspace file map via --append-system-prompt when given", async () => {
     const { spawn, calls } = fakeSpawn(TRANSCRIPT);
     const driver = new ClaudeCodeDriver({ spawn, bin: "claude" });

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildJudgePrompt, parseVerdict, judgeCase, JUDGE_RUBRIC } from "./judge-step.js";
@@ -230,6 +230,22 @@ describe("judgeCase", () => {
     expect(seen[0]!.prompt).toContain("./transcript.json");
     expect(seen[0]!.prompt).not.toContain(TRANSCRIPT_JSON);
     expect(readFileSync(join(scratchDir, "transcript.json"), "utf8")).toBe(TRANSCRIPT_JSON);
+  });
+
+  it("isolates the judge with strict-mcp: writes an empty .mcp.json in its clean room and points the spawn at it, so the operator's claude.ai connectors are never in reach", async () => {
+    const { transcriptPath } = transcriptFixture();
+    const scratchDir = mkdtempSync(join(tmpdir(), "judge-scratch-"));
+    dirs.push(scratchDir);
+    const { driver, seen } = fakeDriver([fenced(VALID_VERDICT)]);
+
+    await judgeCase(driver, { scratchDir, case: CASE, transcriptPath, redact: [] });
+
+    const mcpPath = join(scratchDir, "empty.mcp.json");
+    expect(seen[0]!.mcpConfigPath).toBe(mcpPath);
+    expect(JSON.parse(readFileSync(mcpPath, "utf8"))).toEqual({ mcpServers: {} });
+    // The judge's clean room still holds NO .mcp.json (no pinned credential) - the strict config is a
+    // dedicated, credential-free file.
+    expect(existsSync(join(scratchDir, ".mcp.json"))).toBe(false);
   });
 
   it("keeps the judge's prompt SHORT even when the transcript fixture is large (Windows argv limit: the transcript rides on disk, never in the prompt)", async () => {

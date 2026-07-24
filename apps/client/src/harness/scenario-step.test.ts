@@ -183,6 +183,16 @@ describe("generateCases", () => {
     expect(seen[0]!.workspace).toBe("w");
   });
 
+  it("forwards mcpConfigPath to the spawn (strict-mcp isolation), and omits it when not given", async () => {
+    const { driver: d1, seen: s1 } = fakeDriver([fenced(VALID_CASES)]);
+    await generateCases(d1, { workspace: "w", surface: SURFACE, n: 2, redact: [], mcpConfigPath: "w/.mcp.json" });
+    expect(s1[0]!.mcpConfigPath).toBe("w/.mcp.json");
+
+    const { driver: d2, seen: s2 } = fakeDriver([fenced(VALID_CASES)]);
+    await generateCases(d2, { workspace: "w", surface: SURFACE, n: 2, redact: [] });
+    expect(s2[0]!.mcpConfigPath).toBeUndefined();
+  });
+
   it("retries ONCE, quoting the parse error, and succeeds on the second attempt", async () => {
     const { driver, seen } = fakeDriver(["garbage, not json at all", fenced(VALID_CASES)]);
     const cases = await generateCases(driver, { workspace: "w", surface: SURFACE, n: 2, redact: [] });

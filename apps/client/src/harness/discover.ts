@@ -54,14 +54,24 @@ function readSkillEntry(skillsDir: string, dirName: string): { name: string; des
  *  root's skill overrides an earlier one's same-named DIRECTORY, mirroring brain/agent-config.ts's
  *  linkSkills). A root with no skills/ dir at all is normal, not an error. Returns skills sorted by
  *  name. */
-export function discoverSkills(roots: Root[]): Surface["skills"] {
+export function discoverSkills(roots: Root[], packSkills: Iterable<string>): Surface["skills"] {
+  // Scope the surface to the pack UNDER TEST: keep the core root's always-on skills plus the pack's
+  // own declared skills; drop every OTHER installed pack's skills. Without this a `--pack protocol`
+  // run surfaces the whole team brain (Stripe, Linear, HubSpot, …), and the generator invents
+  // cross-app scenarios the run has no tools to satisfy - inflating the fail count and diluting the
+  // read on the pack actually being tested. Core root is the always-on layer (name convention shared
+  // with install-step.ts's `r.name !== "core"`).
+  const keep = new Set(packSkills);
   const resolved = new Map<string, { name: string; description: string }>(); // keyed by directory name
   for (const root of roots) {
     const skillsDir = join(root.dir, "skills");
     if (!existsSync(skillsDir)) continue;
+    const isCore = root.name === "core";
     for (const dirName of readdirSync(skillsDir).sort()) {
       if (!statSync(join(skillsDir, dirName)).isDirectory()) continue;
-      resolved.set(dirName, readSkillEntry(skillsDir, dirName));
+      const entry = readSkillEntry(skillsDir, dirName);
+      if (!isCore && !keep.has(dirName) && !keep.has(entry.name)) continue;
+      resolved.set(dirName, entry);
     }
   }
   return [...resolved.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -70,10 +80,10 @@ export function discoverSkills(roots: Root[]): Surface["skills"] {
 /** Build the pack's full Surface: skills off disk plus the live mcp server's tools (Task 1's
  *  listMcpTools) - the seam later tasks generate scenarios from instead of hardcoding either half. */
 export async function discoverSurface(
-  opts: { pack: string; roots: Root[]; mcpUrl: string; headers: Record<string, string> },
+  opts: { pack: string; roots: Root[]; mcpUrl: string; headers: Record<string, string>; packSkills: Iterable<string> },
   deps: { fetch: typeof globalThis.fetch },
 ): Promise<Surface> {
-  const skills = discoverSkills(opts.roots);
+  const skills = discoverSkills(opts.roots, opts.packSkills);
   const tools = await listMcpTools({ url: opts.mcpUrl, headers: opts.headers }, deps);
   return { pack: opts.pack, skills, tools };
 }

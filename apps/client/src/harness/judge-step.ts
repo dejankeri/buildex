@@ -2,7 +2,7 @@
 // against its raw persisted transcript. Context isolation is the whole point - the judge never sees
 // the workspace, the pack, or any other case; it sees only the case spec and the transcript JSON
 // (copied into its own clean room and Read from disk - see judgeCase's doc comment for why).
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentDriver, RunPromptOpts } from "../agent/types.js";
 import type { ProofCase } from "./scenario-step.js";
@@ -211,12 +211,17 @@ export async function judgeCase(
 ): Promise<Verdict> {
   mkdirSync(opts.scratchDir, { recursive: true });
   copyFileSync(opts.transcriptPath, join(opts.scratchDir, "transcript.json"));
+  // An empty MCP config the strict-mcp spawn points at: the judge's clean room already has no pin,
+  // and this keeps the operator's claude.ai connectors out of the judge's reach too (belt to the
+  // Read-only allowedTools suspenders). Dedicated name (NOT .mcp.json) - strict-mcp reads it by path.
+  const mcpConfigPath = join(opts.scratchDir, "empty.mcp.json");
+  writeFileSync(mcpConfigPath, JSON.stringify({ mcpServers: {} }));
   const prompt = buildJudgePrompt(opts.case, "./transcript.json");
 
   const attempt = async (thisPrompt: string): Promise<Verdict> => {
     let text = "";
     let sawError: string | undefined;
-    const runOpts: RunPromptOpts = { prompt: thisPrompt, workspace: opts.scratchDir, allowedTools: ["Read"] };
+    const runOpts: RunPromptOpts = { prompt: thisPrompt, workspace: opts.scratchDir, allowedTools: ["Read"], mcpConfigPath };
     for await (const event of driver.runPrompt(runOpts)) {
       if (event.kind === "text") text += (text ? "\n" : "") + event.text;
       if (event.kind === "error") sawError = event.message;

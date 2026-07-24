@@ -166,7 +166,9 @@ export async function runProofTrack(args: ProofArgs, deps: ProofDeps): Promise<P
       const header = m.apiKey?.header ?? "Authorization";
       const prefix = m.apiKey?.prefix ?? "Bearer ";
       surface = await discoverSurface(
-        { pack: args.pack, roots: discoveryCtx.roots, mcpUrl: effectiveMcpUrl, headers: { [header]: `${prefix}${pinnedKey}` } },
+        // packSkills scopes the surface to the pack under test (its declared skills) + core - so the
+        // generator only invents scenarios this run has the tools to satisfy.
+        { pack: args.pack, roots: discoveryCtx.roots, mcpUrl: effectiveMcpUrl, headers: { [header]: `${prefix}${pinnedKey}` }, packSkills: m.skills ?? [] },
         { fetch: deps.fetch },
       );
       writeSurface(runDir, surface);
@@ -189,11 +191,17 @@ export async function runProofTrack(args: ProofArgs, deps: ProofDeps): Promise<P
       // the discovery workspace carries.
       const genDir = join(runDir, "generator");
       mkdirSync(genDir, { recursive: true });
+      // Empty MCP config the generator's strict-mcp spawn points at - keeps the operator's claude.ai
+      // connectors out of the isolated generator. A dedicated name (NOT .mcp.json) preserves the
+      // "generator holds no .mcp.json / no pinned credential" invariant; strict-mcp reads it by path.
+      const genMcpConfig = join(genDir, "empty.mcp.json");
+      writeFileSync(genMcpConfig, JSON.stringify({ mcpServers: {} }));
       const generated = await generateCases(deps.driver, {
         workspace: genDir,
         surface,
         n: args.cases,
         redact: allSecrets,
+        mcpConfigPath: genMcpConfig,
       });
 
       // Each case runs in its OWN fresh clean-room, sequentially - one case's commits/state must
@@ -220,6 +228,9 @@ export async function runProofTrack(args: ProofArgs, deps: ProofDeps): Promise<P
           runDir: caseCtx.runDir,
           caseId: c.id,
           allowedTools: [serverRule],
+          // The pinned workspace .mcp.json holds only the pack under test - strict-mcp against it
+          // means the driven agent sees that pack and NOT the operator's claude.ai connectors.
+          mcpConfigPath: join(caseCtx.workspace, ".mcp.json"),
           redact: allSecrets,
         });
 

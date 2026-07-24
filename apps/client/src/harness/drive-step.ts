@@ -25,6 +25,10 @@ export interface DriveCaseOpts {
    *  fresh workspaces are never folder-trusted, so settings.json permissions alone cannot grant
    *  the pinned pack's MCP tools to a headless session. */
   allowedTools?: string[];
+  /** MCP config the spawn is restricted to (see RunPromptOpts.mcpConfigPath) - the pinned
+   *  workspace `.mcp.json`, so the driven agent sees the pack under test and nothing else (no
+   *  operator claude.ai connectors). */
+  mcpConfigPath?: string;
   /** Secret values (pinned keys, admin secrets) scrubbed from the PERSISTED transcript - the one
    *  artifact that survives the run. In-memory events keep their raw form for counting. */
   redact?: string[];
@@ -52,6 +56,7 @@ export async function driveCase(
       prompt: opts.prompt,
       workspace: opts.workspace,
       ...(opts.allowedTools ? { allowedTools: opts.allowedTools } : {}),
+      ...(opts.mcpConfigPath ? { mcpConfigPath: opts.mcpConfigPath } : {}),
     })) {
       const stampedEvent = {
         ...event,

@@ -38,6 +38,13 @@ export interface RunPromptOpts {
    *  only apply to trusted folders, and non-interactive runs cannot answer a trust or permission
    *  prompt. */
   allowedTools?: string[];
+  /** When set, spawn with `--strict-mcp-config --mcp-config <path>` so the agent uses ONLY this MCP
+   *  config file and ignores user, global, AND account-level (claude.ai) MCP configs. The harness
+   *  needs this: without it a spawned `claude` inherits the operator's own claude.ai connectors
+   *  (Gmail/Calendar/Drive), which are then reachable-until-denied by `allowedTools` rather than
+   *  never present. Strict-mcp is the first layer (can't see them), allowedTools the second (can't
+   *  call them). Model auth is unaffected - auth is the login, not MCP config. */
+  mcpConfigPath?: string;
   /** Abort the turn (kills the underlying process). */
   signal?: AbortSignal;
 }

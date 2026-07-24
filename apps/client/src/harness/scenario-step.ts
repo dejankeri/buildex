@@ -176,14 +176,16 @@ export function parseCases(text: string, n: number): ProofCase[] {
  *  original prompt plus the quoted validation error; a second failure throws that error (redacted). */
 export async function generateCases(
   driver: AgentDriver,
-  opts: { workspace: string; surface: Surface; n: number; redact: string[] },
+  opts: { workspace: string; surface: Surface; n: number; redact: string[]; mcpConfigPath?: string },
 ): Promise<ProofCase[]> {
   const prompt = buildGeneratorPrompt(opts.surface, opts.n);
 
   const attempt = async (thisPrompt: string): Promise<ProofCase[]> => {
     let text = "";
     let sawError: string | undefined;
-    const runOpts: RunPromptOpts = { prompt: thisPrompt, workspace: opts.workspace };
+    // Strict-mcp against the caller's (empty) config keeps the operator's claude.ai connectors out
+    // of the generator's reach - defense in depth atop its already-empty allowedTools.
+    const runOpts: RunPromptOpts = { prompt: thisPrompt, workspace: opts.workspace, ...(opts.mcpConfigPath ? { mcpConfigPath: opts.mcpConfigPath } : {}) };
     for await (const event of driver.runPrompt(runOpts)) {
       if (event.kind === "text") text += (text ? "\n" : "") + event.text;
       if (event.kind === "error") sawError = event.message;

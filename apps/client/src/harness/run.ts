@@ -124,7 +124,10 @@ export async function runDeterministicTrack(args: Args, deps: RunDeps): Promise<
         runDir: ctx.runDir,
         caseId: "smoke-1",
         redact,
-        ...(willPin ? { allowedTools: [serverRule] } : {}),
+        // When pinning, the workspace .mcp.json holds only the pack under test; strict-mcp against
+        // it (mcpConfigPath) keeps the operator's claude.ai connectors out of the driven agent, the
+        // same server also riding --allowedTools.
+        ...(willPin ? { allowedTools: [serverRule], mcpConfigPath: join(ctx.workspace, ".mcp.json") } : {}),
       });
       drives.push(drive);
     };

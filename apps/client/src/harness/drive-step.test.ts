@@ -37,6 +37,35 @@ describe("driveCase", () => {
     expect(seen).toEqual(["mcp__buildex-pack_acme"]);
   });
 
+  it("threads mcpConfigPath through to the driver's runPrompt (strict-mcp isolation)", async () => {
+    const runDir = mkdtempSync(join(tmpdir(), "drive-"));
+    dirs.push(runDir);
+    let seen: string | undefined;
+    let seenWhenOmitted: string | undefined = "SENTINEL";
+    const driver = {
+      detect: async () => ({ ok: true }) as never,
+      // eslint-disable-next-line @typescript-eslint/require-await
+      runPrompt: async function* (o: { mcpConfigPath?: string }) {
+        seen = o.mcpConfigPath;
+        yield { kind: "done" } as UiEvent;
+      } as never,
+    } as AgentDriver;
+    await driveCase(driver, { workspace: "w", prompt: "p", runDir, caseId: "c", mcpConfigPath: "/ws/.mcp.json" });
+    expect(seen).toBe("/ws/.mcp.json");
+
+    // Omitted → the field is never forwarded (no accidental strict-mcp with no config).
+    const driver2 = {
+      detect: async () => ({ ok: true }) as never,
+      // eslint-disable-next-line @typescript-eslint/require-await
+      runPrompt: async function* (o: { mcpConfigPath?: string }) {
+        seenWhenOmitted = o.mcpConfigPath;
+        yield { kind: "done" } as UiEvent;
+      } as never,
+    } as AgentDriver;
+    await driveCase(driver2, { workspace: "w", prompt: "p", runDir, caseId: "c2" });
+    expect(seenWhenOmitted).toBeUndefined();
+  });
+
   it("marks a TRUNCATED stream as errored - a stream with no done and no error is a crashed agent, not a pass", async () => {
     const runDir = mkdtempSync(join(tmpdir(), "drive-"));
     dirs.push(runDir);

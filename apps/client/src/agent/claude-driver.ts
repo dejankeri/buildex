@@ -103,6 +103,9 @@ export class ClaudeCodeDriver implements AgentDriver {
     const args = ["-p", opts.prompt, "--output-format", "stream-json", "--verbose"];
     if (opts.systemPromptAppend) args.push("--append-system-prompt", opts.systemPromptAppend);
     if (opts.resume) args.push("--resume", opts.resume);
+    // Strict MCP: use ONLY this config file, ignoring user/global/account-level (claude.ai)
+    // connectors. --strict-mcp-config is inert without --mcp-config, so they ship together.
+    if (opts.mcpConfigPath) args.push("--strict-mcp-config", "--mcp-config", opts.mcpConfigPath);
     if (opts.allowedTools?.length) {
       // The flag is comma-joined; a rule containing "," (e.g. "Bash(foo, bar)") would silently
       // split into two broken rules. Refuse loudly instead.
