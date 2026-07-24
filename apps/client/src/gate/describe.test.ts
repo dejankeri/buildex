@@ -1,7 +1,7 @@
 // The sentence an operator reads hours after the run that produced it, so it has to name the action
 // without leaking a payload.
 import { describe, it, expect } from "vitest";
-import { describeTool } from "./describe.js";
+import { describeAction, describeTool } from "./describe.js";
 
 describe("describeTool", () => {
   it("prefers a connector's own summary", () => {
@@ -37,5 +37,17 @@ describe("describeTool", () => {
   it("survives a malformed invocation", () => {
     expect(describeTool({ name: "WebFetch", input: { url: "not a url" } })).toBe("fetch not a url");
     expect(describeTool({ name: "Odd", input: {} })).toBe("use Odd");
+  });
+});
+
+describe("describeAction - the activity-ledger clause", () => {
+  it("prefixes the connector name when the call rode the gateway", () => {
+    expect(describeAction({ name: "mcp:slack.post_message", input: { connector: "slack", summary: "post a message to #general" } })).toBe(
+      "slack: post a message to #general",
+    );
+  });
+
+  it("is exactly describeTool's sentence when no connector is involved", () => {
+    expect(describeAction({ name: "Bash", input: { command: "git push" } })).toBe("run `git push`");
   });
 });

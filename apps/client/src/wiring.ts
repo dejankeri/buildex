@@ -17,6 +17,7 @@ import { ProvisionFlow } from "./brain/provision.js";
 import { startProvisionProxy } from "./brain/provision-proxy.js";
 import { emptyCatalogSource, type CatalogSource } from "./brain/catalog-source.js";
 import { buildAgentView } from "./brain/agent-view.js";
+import { ActivityLedger } from "./brain/ledger.js";
 import { serveApp, brokerData } from "./server/app-serve.js";
 import { brokerAppFetch, setAppSecret } from "./server/app-fetch.js";
 import { LoopDefStore, LoopStateFile, migrateAutomationsYaml, parseScheduleInput, type LoopDef, type LoopSchedule } from "./brain/loops.js";
@@ -167,6 +168,14 @@ export function buildClientHandler(config: ClientConfig): Handler {
     },
     clearTimer: (h) => clearTimeout(h as unknown as ReturnType<typeof setTimeout>),
   };
+  // The company activity ledger (invariant 5): every gated moment the broker below resolves -
+  // approve, deny, TTL auto-deny - is appended to activity/YYYY-MM.md in the TEAM brain, so it
+  // commits and syncs like any other brain file. Optional like the other team-root-scoped deps: a
+  // boot without a team root (most unit tests) builds no ledger and the broker records nothing.
+  // The touch schedules the debounced commit; it runs only at resolution time, well after the
+  // scheduler below is assigned (the same late-reference pattern saveDoc uses).
+  const ledgerRoot = config.roots.find((r) => slotOf(r.name) === "team");
+  const ledger = ledgerRoot ? new ActivityLedger({ dir: ledgerRoot.dir, now: Date.now }) : undefined;
   // The approval broker: ask-tier tools raise a card and block until the operator taps - or until the
   // card TTL auto-denies, so a tool call never hangs forever (see GATE_CARD_TTL_MS). What routes tools
   // here at run time is the PreToolUse gate hook in the generated .claude/settings.json (agent-config)
@@ -177,6 +186,9 @@ export function buildClientHandler(config: ClientConfig): Handler {
     ttlMs: GATE_CARD_TTL_MS,
     setTimer: (fn, ms) => realClock.setTimer(fn, ms),
     clearTimer: (h) => realClock.clearTimer(h as TimerHandle),
+    ...(ledger && ledgerRoot
+      ? { ledger: { record: (e) => { ledger.record(e); scheduler.touch(ledgerRoot.dir); } } }
+      : {}),
   });
   config.onBroker?.(broker);
   const gate = new Gate(new PolicyEngine(composePreset(config.preset, config.roots)), broker);
@@ -1029,6 +1041,10 @@ export function buildClientHandler(config: ClientConfig): Handler {
       const root = config.roots.find((r) => r.name !== "core") ?? config.roots[0];
       return root ? recentChanges(root.dir, 12) : [];
     },
+    // The company activity ledger for the Brain view's Gate rail - the current + previous month's
+    // entries, straight off the committed activity/ files (deterministic, invariant 9). Only wired
+    // when a team root exists, exactly like the ledger itself.
+    ...(ledger ? { ledgerView: () => ledger.recent() } : {}),
     // "Save now" (POST /api/sync) - the operator's explicit decision to send everything.
     syncFn: async () => saveResultStatus(await scheduler.publishAll()),
     // The dot's live status (GET /api/sync) - "local" (no account yet) / "queued" (offline) /

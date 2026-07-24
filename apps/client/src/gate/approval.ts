@@ -37,6 +37,15 @@ export interface ApprovalCard {
  *  that timed out is a run that still needs a human, and the Loops surface says so. */
 export type ResolveReason = "operator" | "timeout";
 
+/** One resolved card, as the company activity ledger records it (brain/ledger.ts). Carries only
+ *  what the card + decision already held - the ledger line is derived, never composed anew. */
+export interface LedgerResolution {
+  tool: ToolInvocation;
+  verdict: Verdict;
+  reason: ResolveReason;
+  origin?: CardOrigin;
+}
+
 /** Broker lifecycle events, streamed to the UI (the push half of the inline-approval surface). */
 export type ApprovalEvent =
   | { type: "open"; card: ApprovalCard }
@@ -54,6 +63,12 @@ export interface ApprovalBrokerDeps {
    *  this is provided). In production the daemon passes an unref'd setTimeout/clearTimeout pair. */
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
+  /** The company activity ledger (brain/ledger.ts): every resolution - approve, deny, TTL auto-deny -
+   *  is recorded there, one line per moment (invariant 5). Allowed tools never reach the broker, so
+   *  routine autonomous work never lands on the ledger by construction. Optional like the timer seam:
+   *  a boot without a team root records nothing and existing tests are untouched. Best-effort - a
+   *  failed append must never block (or fail) the decision the operator just made. */
+  ledger?: { record(entry: LedgerResolution): void };
 }
 
 interface PendingEntry {
@@ -130,6 +145,11 @@ export class ApprovalBroker {
     this.open.delete(id);
     if (entry.timer !== undefined) this.deps.clearTimer?.(entry.timer);
     entry.resolve(verdict);
+    try {
+      this.deps.ledger?.record({ tool: entry.card.tool, verdict, reason, ...(entry.card.origin ? { origin: entry.card.origin } : {}) });
+    } catch {
+      /* the ledger records the decision; it must never be the reason a decision fails */
+    }
     this.emit({ type: "resolve", id, verdict, reason });
     return true;
   }

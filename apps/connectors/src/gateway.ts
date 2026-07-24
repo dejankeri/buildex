@@ -9,7 +9,10 @@
 // money, outbound-to-real-people, publishing, or irreversible destruction (MCP's own `destructiveHint`
 // or an outward-intent name), or a connector policy explicitly gates it. Gated calls go through the
 // injected approver (→ inline in chat / the company surface) and only run if a human approves. The
-// operator can tighten OR widen any tool (setToolPolicy); every outward call is logged regardless.
+// operator can tighten OR widen any tool (setToolPolicy). The gateway itself is daemon-agnostic and
+// records nothing: gating decisions surface through the client's approval broker, where the company
+// activity ledger writes one line per resolution (a tool widened to run autonomously is routine
+// work, which the ledger deliberately does not carry).
 
 /** A provider tool as the gateway sees it (mirrors the MCP tool shape we depend on). */
 export interface McpTool {
@@ -255,9 +258,10 @@ export class ConnectorGateway {
 
   /** Reclassify one tool, OPERATOR-ADJUSTABLE both ways: read↔gated↔hidden. Under the revised
    *  invariant 5 the operator may widen an outward tool to run autonomously (they own the risk) as
-   *  well as tighten a read tool to the gate - autonomy is configured, not add-only. Every outward
-   *  call is logged on the company activity surface regardless. Returns the new connector policy so
-   *  the caller can persist it. Never throws. */
+   *  well as tighten a read tool to the gate - autonomy is configured, not add-only. A call that
+   *  still gates crosses the injected approver, where the client's broker records the resolution on
+   *  the company activity ledger; a widened tool runs as routine work and is not recorded. Returns
+   *  the new connector policy so the caller can persist it. Never throws. */
   setToolPolicy(connName: string, toolName: string, target: ToolState): { ok: boolean; reason?: string; policy?: ConnectorPolicy } {
     const conn = this.conns.get(connName);
     if (!conn) return { ok: false, reason: `unknown connector: ${connName}` };

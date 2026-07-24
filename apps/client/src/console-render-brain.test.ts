@@ -26,6 +26,15 @@ function snapshot() {
     rules: [{ name: "Operating rules", description: "how we run", root: "team", path: "team/CLAUDE.md" }],
     changes: [{ subject: "init brain", author: "ada", at: Date.now() - 1000, sha: "abcdef1234567", files: ["x.md"] }],
     cfg: { company: { name: "Acme" } },
+    ledger: [
+      {
+        month: "2026-07",
+        entries: [
+          "- 2026-07-20 09:15 · denied by operator · run `git push` (chat)",
+          "- 2026-07-24 14:02 · approved by operator · slack: post a message to #general (chat)",
+        ],
+      },
+    ],
   };
 }
 
@@ -105,6 +114,35 @@ describe("console renderers (jsdom) — Brain view", () => {
     c.renderBrainRail({ brain: d, focusKey: "policy" }, host, c.brainNodes(d));
     expect(doc.querySelector("#rpanel img")).toBeNull();
     expect(doc.querySelector("#rpanel .bcn")!.textContent).toContain("<img");
+  });
+
+  it("Gate rail lists the month's ledger entries newest first, bullet marker stripped", () => {
+    const { doc, c } = loadConsole();
+    const host = doc.querySelector("#rpanel")!;
+    const d = snapshot();
+    c.renderBrainRail({ brain: d, focusKey: "gate" }, host, c.brainNodes(d));
+    const rows = Array.from(doc.querySelectorAll("#rpanel #bml .bdm") as any, (n: any) => n.textContent);
+    expect(rows).toEqual([
+      "2026-07-24 14:02 · approved by operator · slack: post a message to #general (chat)",
+      "2026-07-20 09:15 · denied by operator · run `git push` (chat)",
+    ]);
+  });
+
+  it("Gate rail shows the ledger's empty affordance when the month has no gated moments", () => {
+    const { doc, c } = loadConsole();
+    const host = doc.querySelector("#rpanel")!;
+    const d = { ...snapshot(), ledger: [] };
+    c.renderBrainRail({ brain: d, focusKey: "gate" }, host, c.brainNodes(d));
+    expect(doc.querySelector("#rpanel #bml .bempty")!.textContent).toContain("No gated moments");
+  });
+
+  it("ESCAPES a hostile ledger entry in the Gate rail - inert text, never a live element", () => {
+    const { doc, c } = loadConsole();
+    const host = doc.querySelector("#rpanel")!;
+    const d = { ...snapshot(), ledger: [{ month: "2026-07", entries: ["- 2026-07-24 14:02 · approved by operator · " + XSS] }] };
+    c.renderBrainRail({ brain: d, focusKey: "gate" }, host, c.brainNodes(d));
+    expect(doc.querySelector("#rpanel #bml img")).toBeNull();
+    expect(doc.querySelector("#rpanel #bml .bdm")!.textContent).toContain("<img");
   });
 
   it("ESCAPES a hostile pending tool name in the Gate rail", () => {

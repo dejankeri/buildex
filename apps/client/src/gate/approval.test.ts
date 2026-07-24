@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ApprovalBroker, type ApprovalEvent, type CardOrigin } from "./approval.js";
+import { ApprovalBroker, type ApprovalEvent, type CardOrigin, type LedgerResolution } from "./approval.js";
 
 function makeBroker() {
   let n = 0;
@@ -170,5 +170,81 @@ describe("ApprovalBroker TTL auto-deny", () => {
     });
     broker.request({ name: "Bash", input: {} });
     expect(armed).toBe(0);
+  });
+});
+
+// The company activity ledger (invariant 5): every resolution - approve, deny, TTL auto-deny - is
+// exactly one recorded entry, carrying the card's tool + origin unchanged. The broker only ever sees
+// ask-tier tools (allowed tools resolve at the Gate without a card - see gate.test.ts), so "routine
+// work is never recorded" holds by construction here.
+describe("ApprovalBroker activity ledger", () => {
+  function makeRecordingBroker() {
+    let n = 0;
+    const recorded: LedgerResolution[] = [];
+    const timers: (() => void)[] = [];
+    const broker = new ApprovalBroker({
+      idFactory: () => `card${++n}`,
+      now: () => 1000,
+      ttlMs: 1000,
+      setTimer: (fn) => (timers.push(fn), timers.length),
+      clearTimer: () => {},
+      ledger: { record: (e) => recorded.push(e) },
+    });
+    return { broker, recorded, fireAll: () => timers.forEach((fn) => fn()) };
+  }
+
+  it("records an operator approval as exactly one entry, tool and origin intact", async () => {
+    const { broker, recorded } = makeRecordingBroker();
+    broker.pushOrigin({ kind: "chat", sessionId: "s1" });
+    const { card, decision } = broker.request({ name: "mcp:slack.post", input: { connector: "slack" } });
+    broker.resolve(card.id, "approve");
+    await decision;
+    expect(recorded).toEqual([
+      { tool: { name: "mcp:slack.post", input: { connector: "slack" } }, verdict: "approve", reason: "operator", origin: { kind: "chat", sessionId: "s1" } },
+    ]);
+  });
+
+  it("records an operator deny as exactly one entry", async () => {
+    const { broker, recorded } = makeRecordingBroker();
+    const { card, decision } = broker.request({ name: "Bash", input: { command: "git push" } });
+    broker.resolve(card.id, "deny");
+    await decision;
+    expect(recorded).toEqual([{ tool: { name: "Bash", input: { command: "git push" } }, verdict: "deny", reason: "operator" }]);
+  });
+
+  it("records a TTL auto-deny as exactly one entry, reason 'timeout'", async () => {
+    const { broker, recorded, fireAll } = makeRecordingBroker();
+    const { decision } = broker.request({ name: "SendEmail", input: {} });
+    fireAll();
+    await decision;
+    expect(recorded).toEqual([{ tool: { name: "SendEmail", input: {} }, verdict: "deny", reason: "timeout" }]);
+  });
+
+  it("never double-records: resolving the same card twice leaves one entry", async () => {
+    const { broker, recorded } = makeRecordingBroker();
+    const { card, decision } = broker.request({ name: "Bash", input: {} });
+    broker.resolve(card.id, "approve");
+    broker.resolve(card.id, "deny"); // idempotent no-op
+    await decision;
+    expect(recorded).toHaveLength(1);
+  });
+
+  it("a throwing ledger never blocks the decision (record is best-effort)", async () => {
+    let n = 0;
+    const broker = new ApprovalBroker({
+      idFactory: () => `card${++n}`,
+      now: () => 0,
+      ledger: { record: () => { throw new Error("disk full"); } },
+    });
+    const { card, decision } = broker.request({ name: "Bash", input: {} });
+    expect(broker.resolve(card.id, "approve")).toBe(true);
+    expect(await decision).toBe("approve");
+  });
+
+  it("records nothing when no ledger is wired (a boot without a team root)", async () => {
+    const { broker } = makeBroker();
+    const { card, decision } = broker.request({ name: "Bash", input: {} });
+    broker.resolve(card.id, "approve");
+    expect(await decision).toBe("approve"); // degrades to no-op, decision unaffected
   });
 });

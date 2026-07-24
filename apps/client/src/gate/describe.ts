@@ -43,6 +43,15 @@ export function describeTool(tool: ToolInvocation): string {
   return `use ${tool.name}`;
 }
 
+/** The activity-ledger clause: the connector's name (when the call rode the gateway or the
+ *  provision proxy - both stamp `input.connector`) in front of the same sentence the card showed.
+ *  One phrasing path: this builds ON describeTool, so the ledger can never drift from the tray. */
+export function describeAction(tool: ToolInvocation): string {
+  const connector = str((tool.input ?? {})["connector"]);
+  const clause = describeTool(tool);
+  return connector ? `${connector}: ${clause}` : clause;
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }

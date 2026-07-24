@@ -40,7 +40,7 @@ function openBrainTab(focusKey) {
  * @param {object} tab - the brain tab; gains a `tab.brain` snapshot as a side effect.
  */
 async function loadBrain(tab) {
-  const [conn, gw, pend, skills, rules, changes, cfg] = await Promise.all([
+  const [conn, gw, pend, skills, rules, changes, cfg, ledger] = await Promise.all([
     getJSON("/api/connectors").catch(() => ({ connectors: [] })),
     getJSON("/api/connectors/gateway").catch(() => ({ status: [], tools: [] })),
     getJSON("/api/pending").catch(() => ({ cards: [] })),
@@ -48,8 +48,9 @@ async function loadBrain(tab) {
     getJSON("/api/rules").catch(() => ({ rules: [] })),
     getJSON("/api/changes").catch(() => ({ changes: [] })),
     getJSON("/api/config").catch(() => ({})),
+    getJSON("/api/ledger").catch(() => ({ months: [] })),
   ]);
-  tab.brain = { conn: conn.connectors || [], gw: gw || { status: [], tools: [] }, pend: pend.cards || [], skills: skills.skills || [], rules: rules.rules || [], changes: changes.changes || [], cfg: cfg || {} };
+  tab.brain = { conn: conn.connectors || [], gw: gw || { status: [], tools: [] }, pend: pend.cards || [], skills: skills.skills || [], rules: rules.rules || [], changes: changes.changes || [], cfg: cfg || {}, ledger: (ledger && ledger.months) || [] };
   renderBrain(tab);
 }
 
@@ -352,8 +353,12 @@ function renderBrainRail(tab, host, nodes) {
     return;
   }
   if (foc === "gate") {
-    // ----- Gate: pending approval cards; each Approve/Deny resolves then reloads the brain -----
-    html += '<h3 class="bh">You approve</h3><p class="bp">Anything outward or irreversible waits here for a human tap. Autonomy is something the gate grants, loop by loop.</p><div class="bmap" id="bm"></div><div class="bstat gate">the one place a human taps · the scarce unit is approval-hours</div>';
+    // ----- Gate: pending approval cards; each Approve/Deny resolves then reloads the brain.
+    // Below them, the Ledger: the company activity record (activity/YYYY-MM.md in the team brain) -
+    // this month's gated moments, one line each, newest first. Read-only here. -----
+    html += '<h3 class="bh">You approve</h3><p class="bp">Anything outward or irreversible waits here for a human tap. Autonomy is something the gate grants, loop by loop.</p><div class="bmap" id="bm"></div>' +
+      '<div class="bsub">Ledger · this month</div><div class="bmap" id="bml"></div>' +
+      '<div class="bstat gate">the one place a human taps · the scarce unit is approval-hours</div>';
     host.innerHTML = html;
     const bm = $("#bm", host);
     if (!d.pend.length) bm.innerHTML = '<div class="bempty">✓ All caught up - nothing waiting.</div>';
@@ -371,6 +376,18 @@ function renderBrainRail(tab, host, nodes) {
         loadBrain(tab);
       };
       bm.appendChild(card);
+    });
+    // The file appends newest at the END; a human scans newest first, so render reversed. Each line
+    // arrives as a markdown bullet; the "- " marker is a file convention, not display copy. Entries
+    // carry operator/agent-derived text, so they land via textContent - inert, never live markup.
+    const months = d.ledger || [],
+      cur = months.length ? months[0] : null,
+      bml = $("#bml", host);
+    if (!cur || !cur.entries.length) bml.innerHTML = '<div class="bempty">No gated moments yet this month.</div>';
+    else cur.entries.slice().reverse().forEach((line) => {
+      const row = elt("div", "bdm");
+      row.textContent = String(line).replace(/^-\s*/, "");
+      bml.appendChild(row);
     });
     $(".bback", host).onclick = () => {
       tab.focusKey = "";

@@ -1,7 +1,8 @@
 // Loops - what the operator schedules to run on its own. A loop is a prompt (or a verb) plus a
 // schedule; firing one spawns an ordinary agent session, so the transcript and the gate work
-// unchanged. NOT the company-level activity log invariant 5 calls for - that surface does not exist
-// yet, and a loop run is exactly the kind of unattended action it will need to carry.
+// unchanged. NOT the company-level activity ledger invariant 5 calls for - that is activity/ in the
+// team brain (brain/ledger.ts): a loop run's gated moments land there as the broker resolves them,
+// while what lives here is only the schedule and its local run state.
 //
 // Definitions live in a COMMITTED loops.yaml (invariant 2): reviewable in history, and they follow
 // the operator to a new machine. Run state - last run, status, the session it produced - lives in an

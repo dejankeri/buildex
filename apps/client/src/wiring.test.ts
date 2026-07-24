@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildClientHandler } from "./wiring.js";
 import type { SyncScheduler } from "./sync/scheduler.js";
+import type { ApprovalBroker } from "./gate/approval.js";
 
 // Escaping DIRECTORY link via each platform's real, unprivileged primitive: a junction on Windows
 // (skills are materialized as junctions - the actual Windows attack surface - needing no elevation),
@@ -324,6 +325,33 @@ describe("buildClientHandler - the client composition root", () => {
     const yaml = readFileSync(join(ws, "team", "loops.yaml"), "utf8");
     expect(yaml).toContain("name: sweep");
     expect(yaml).not.toContain("runs");
+  });
+
+  it("records a resolved card on the company activity ledger and serves it back (GET /api/ledger)", async () => {
+    let broker!: ApprovalBroker;
+    const app = buildClientHandler({
+      workspace: ws,
+      roots: [{ name: "team", dir: join(ws, "team") }],
+      preset: { allow: ["Read"], ask: ["Bash"], deny: [], default: "ask" },
+      claudeBin: "claude",
+      onScheduler: (s) => schedulers.push(s),
+      onBroker: (b) => (broker = b),
+    });
+    // The same card shape a gated gateway send raises (brokerApprover), resolved through the same
+    // route the console taps - so this is the whole invariant-5 loop: gate → tap → ledger line.
+    const { card, decision } = broker.request({ name: "mcp:slack.post_message", input: { connector: "slack", summary: "post a message to #general" } });
+    await app(new Request("http://127.0.0.1/api/approve", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: card.id, verdict: "approve" }) }));
+    expect(await decision).toBe("approve");
+
+    // On disk in the TEAM brain - plain markdown that commits and syncs like any other brain file.
+    const month = new Date().toISOString().slice(0, 7);
+    const file = readFileSync(join(ws, "team", "activity", `${month}.md`), "utf8");
+    expect(file).toMatch(/^- \d{4}-\d{2}-\d{2} \d{2}:\d{2} · approved by operator · slack: post a message to #general\n$/);
+
+    // And back out through the read-only console surface.
+    const { months } = (await (await app(new Request("http://127.0.0.1/api/ledger"))).json()) as { months: { month: string; entries: string[] }[] };
+    expect(months[0]!.month).toBe(month);
+    expect(months[0]!.entries).toHaveLength(1);
   });
 
   it("rejects a junk project item (400, nothing persisted)", async () => {

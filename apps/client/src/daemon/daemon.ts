@@ -168,6 +168,10 @@ export interface DaemonDeps {
   buildMap: () => Graph;
   /** Recent repo-wide commits (newest first) - powers the Brain view's "Learning" surface. Read-only. */
   recentChanges?: () => ChangeEntry[];
+  /** The company activity ledger (the gated moments of invariant 5), read for the Brain view's Gate
+   *  rail: the current + previous month's entries, current month first. Read-only and deterministic -
+   *  straight from the committed activity/ files, zero LLM (invariant 9). */
+  ledgerView?: () => { month: string; entries: string[] }[];
   syncFn: () => Promise<string>;
   /** Current background-sync status for the header dot: "ok" | "busy" | "queued" | "needs-help" |
    *  "reconnect" (account revoked - reconnect). */
@@ -362,6 +366,8 @@ export function createDaemon(deps: DaemonDeps): Handler {
     if (method === "GET" && path === "/api/map") return json(deps.buildMap());
     if (method === "GET" && deps.recentChanges && path === "/api/changes")
       return json({ changes: deps.recentChanges() });
+    if (method === "GET" && deps.ledgerView && path === "/api/ledger")
+      return json({ months: deps.ledgerView() });
     if (method === "GET" && path === "/api/pending") return json({ cards: deps.broker.pending() });
     // Live approval feed (SSE). The console opens one EventSource and routes each event to the chat
     // whose session matches the card's origin (inline approval), while the tray still lists them all.

@@ -86,6 +86,23 @@ describe("healthz + map", () => {
     const { app } = makeDaemon();
     expect((await app(new Request("http://127.0.0.1/api/changes"))).status).toBe(404);
   });
+  it("serves the activity ledger when the dep is wired (Brain view's Gate rail)", async () => {
+    const { app } = makeDaemon({
+      ledgerView: () => [
+        { month: "2026-07", entries: ["- 2026-07-24 14:02 · approved by operator · slack: post a message to #general (chat)"] },
+        { month: "2026-06", entries: [] },
+      ],
+    });
+    const res = await app(new Request("http://127.0.0.1/api/ledger"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { months: { month: string; entries: string[] }[] };
+    expect(body.months.map((m) => m.month)).toEqual(["2026-07", "2026-06"]);
+    expect(body.months[0]!.entries[0]).toContain("approved by operator");
+  });
+  it("404s /api/ledger when the dep is absent (a boot without a team root wires none)", async () => {
+    const { app } = makeDaemon();
+    expect((await app(new Request("http://127.0.0.1/api/ledger"))).status).toBe(404);
+  });
 });
 
 describe("/api/prompt - SSE stream survives a mid-turn gap", () => {
