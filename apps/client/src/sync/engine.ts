@@ -239,9 +239,13 @@ export class SyncEngine {
     }
 
     await this.git(["reset", "--hard", "origin/main"], dir);
+    // APPEND, never overwrite: a second conflict can land before the operator has looked at the
+    // first, and the recovery surface (sync/conflicts.ts) lists backups from these lines - an
+    // overwrite would leave the earlier backup on disk but unreachable from the console.
     writeFileSync(
       join(dir, ".sync-needs-help"),
       `Conflict at ${stamp}. Your version was saved under .conflicts/${stamp}/ - nothing was lost.\n`,
+      { flag: "a" },
     );
     return "needs-help";
   }

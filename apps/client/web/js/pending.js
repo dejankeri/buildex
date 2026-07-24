@@ -14,6 +14,11 @@ const DAY_MS = 86400000;
 // with it) while a fresh count is still being read off disk. null until the first one lands.
 let lastSync = null;
 
+// The last /api/conflicts response - the kept-work backups still waiting on the operator. Kept
+// current by the same 4s poll as the save card; boot.js reads it to route the "needs attention"
+// dot click into this tray (the card IS the recovery surface) rather than the change log.
+let lastConflicts = [];
+
 // One pinned card above the approvals. Sending work to the company is an outward action, so this is
 // the right tray for it (invariant 5) - but it is a single action with no decline, so it is shaped
 // differently from the Approve/Deny pairs.
@@ -71,12 +76,14 @@ function saveCardHtml(sync, connected, signInAvailable) {
  * @returns {Promise<void>}
  */
 async function rPending() {
-  const [cards, sync] = await Promise.all([
+  const [cards, sync, kept] = await Promise.all([
     getJSON("/api/pending").then((d) => d.cards).catch(() => []),
     getJSON("/api/sync").catch(() => null),
+    getJSON("/api/conflicts").then((d) => d.conflicts).catch(() => null),
   ]);
   if (sync) lastSync = sync;
-  renderPending(cards, sync);
+  if (kept) lastConflicts = kept;
+  renderPending(cards, sync, kept);
 }
 
 /**
@@ -115,12 +122,13 @@ function humanizeCard(name, input) {
 }
 
 /**
- * Render the save card + approval cards into the right panel — but only while the "pending" tab is
- * active.
+ * Render the save card + kept-work cards + approval cards into the right panel — but only while
+ * the "pending" tab is active.
  * @param {Array<object>} cards - pending approval cards from the daemon.
  * @param {object|null} sync - the `/api/sync` response (null if the fetch failed).
+ * @param {Array<object>|null} [kept] - the `/api/conflicts` response (falls back to the cached one).
  */
-function renderPending(cards, sync) {
+function renderPending(cards, sync, kept) {
   if (S.rightTab !== "pending") return;
   const p = $("#rpanel");
   // Built with el() (the safe DOM builder, dom.js) - text is set via textContent and clicks are wired
@@ -137,6 +145,10 @@ function renderPending(cards, sync) {
   const saveHtml = sync ? saveCardHtml(sync, !!(sync.unsaved && sync.unsaved.connected), !!sync.signInAvailable) : "";
   const kids = [];
   if (saveHtml) kids.push(el("div", { id: "savecard", html: saveHtml }));
+  // Kept-work cards, pinned beside the save card: one per backup, built with el() throughout -
+  // the file names (and, in the compare view, the content) come from workspace files an agent can
+  // write, so they are attacker-influenceable and must only ever land as text, never markup.
+  ((kept || lastConflicts) || []).forEach((k) => kids.push(keptCard(k)));
   kids.push(
     el("h4", { text: "Pending - outward actions wait for you" }),
     el("div", { id: "rl", role: "region", "aria-label": "Pending approvals", "aria-live": "polite" }),
@@ -197,6 +209,7 @@ async function refreshPending() {
   // no longer needs a second, separate render to fold that count in.
   const cardsP = getJSON("/api/pending").then((d) => d.cards).catch(() => null);
   const syncP = getJSON("/api/sync").catch(() => null);
+  const keptP = getJSON("/api/conflicts").then((d) => d.conflicts).catch(() => null);
   const cards = await cardsP;
   if (cards === null) return;
   const b = $("#pbadge");
@@ -213,10 +226,12 @@ async function refreshPending() {
   }
   const sync = await syncP;
   if (sync) lastSync = sync;
+  const kept = await keptP;
+  if (kept) lastConflicts = kept;
   // Render exactly once per poll. Rendering twice (once from cached lastSync, once from the fresh
   // fetch) rebuilt the whole tray twice on every tick - including a Save button that was mid-POST,
   // which reset it back to its idle label out from under the operator's own click.
-  if (S.rightTab === "pending") renderPending(cards, sync || lastSync);
+  if (S.rightTab === "pending") renderPending(cards, sync || lastSync, kept || lastConflicts);
 }
 
 /**
@@ -258,4 +273,161 @@ function wireSaveCard() {
 async function resolveCard(id, verdict) {
   await postJSON("/api/approve", { id, verdict });
   refreshPending();
+}
+
+// --- Kept-work cards --------------------------------------------------------------------------
+// When two machines change the same document, the daemon keeps the operator's version and lets the
+// team's win; these cards are how the operator gets theirs back. Vocabulary is theirs, not git's:
+// "we kept your version" / "the team's version won" - never conflict/merge/rebase. Every string
+// that reaches the DOM here goes through el()'s textContent path: file names and file content are
+// workspace data an agent can write, so they must render as inert text.
+
+/**
+ * The card's explanatory line, phrased by how much is still waiting to be brought back.
+ * @param {object} k - one `/api/conflicts` backup ({root, stamp, at, files}).
+ * @param {number} left - how many files still differ from the current version.
+ * @returns {string}
+ */
+function keptLine(k, left) {
+  const when = k.at ? ago(k.at) : "";
+  const won = "The team's version won" + (when && when !== "now" ? " " + when + " ago" : " just now") + ".";
+  if (left === 0) return won + " Everything here now matches your current files - nothing left to copy back.";
+  const yours = k.files.length === 1 ? "Yours is safe here" : "Yours are safe here";
+  return won + " " + yours + " - compare the two, or copy yours back.";
+}
+
+/**
+ * One kept file's row: the name, a View (side-by-side) action, and Copy back while the kept bytes
+ * still differ from the current file.
+ * @param {object} k - the backup the file belongs to.
+ * @param {object} f - one file entry ({path, differs}).
+ * @returns {HTMLElement}
+ */
+function keptFileRow(k, f) {
+  return el(
+    "div",
+    { class: "kfile" },
+    el("span", { class: "kname", text: f.path, title: f.path }),
+    el(
+      "span",
+      { class: "ka" },
+      el("button", { class: "mini ghost", text: "View", "aria-label": "View your kept version of " + f.path, onClick: () => viewKept(k.root, k.stamp, f.path) }),
+      f.differs
+        ? el("button", { class: "mini", text: "Copy back", "aria-label": "Copy your version of " + f.path + " back", onClick: () => copyBackKept(k.root, k.stamp, f.path) })
+        : el("span", { class: "kdone", text: "Same as current" }),
+    ),
+  );
+}
+
+/**
+ * One backup's card: "We kept your version of …" with per-file View / Copy back, and - once
+ * nothing differs any more - a Dismiss that clears the card (the kept copy stays on disk).
+ * @param {object} k - one `/api/conflicts` backup.
+ * @returns {HTMLElement}
+ */
+function keptCard(k) {
+  const files = k.files || [];
+  const what = files.length === 1 ? (files[0].path.split("/").pop() || files[0].path) : files.length + " files";
+  const left = files.filter((f) => f.differs).length;
+  return el(
+    "div",
+    { class: "pcard kept", role: "group", "aria-label": "Your kept work" },
+    el("b", { text: "We kept your version of " + what }),
+    el("p", { text: keptLine(k, left) }),
+    el("div", { class: "kfiles" }, files.map((f) => keptFileRow(k, f))),
+    left === 0
+      ? el("button", { class: "mini ghost kdismiss", text: "Got it", onClick: () => dismissKept(k.root, k.stamp) })
+      : null,
+  );
+}
+
+/**
+ * Open the read-only side-by-side look at one kept file: your version next to the current one, on
+ * the console's own overlay (same idiom as confirmAction - Esc, the backdrop, and Close all leave
+ * everything untouched). Content lands via textContent only.
+ * @param {string} root - the repo the file lives in.
+ * @param {string} stamp - the backup's stamp.
+ * @param {string} file - the repo-relative file path.
+ * @returns {Promise<void>}
+ */
+async function viewKept(root, stamp, file) {
+  let d;
+  try {
+    d = await getJSON(
+      "/api/conflicts/file?root=" + encodeURIComponent(root) + "&stamp=" + encodeURIComponent(stamp) + "&file=" + encodeURIComponent(file),
+    );
+  } catch (e) {
+    toast("Couldn't open your kept version", true);
+    return;
+  }
+  const bd = el("div", { class: "ovbackdrop" });
+  const close = () => {
+    bd.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = (e) => {
+    if (e.key === "Escape") close();
+  };
+  document.addEventListener("keydown", onKey);
+  bd.onclick = (e) => {
+    if (e.target === bd) close();
+  };
+  bd.appendChild(
+    el(
+      "div",
+      { class: "ovcard kview" },
+      el("h3", { class: "ovh", text: file }),
+      el(
+        "div",
+        { class: "kpanes" },
+        el("div", { class: "kpane" }, el("h4", { text: "Your version (kept)" }), el("pre", { text: d.kept })),
+        el(
+          "div",
+          { class: "kpane" },
+          el("h4", { text: "Current version" }),
+          el("pre", { text: d.current == null ? "(this file no longer exists)" : d.current }),
+        ),
+      ),
+      el("div", { class: "ovrow" }, el("button", { class: "mini ghost ovno", text: "Close", onClick: close })),
+    ),
+  );
+  document.body.appendChild(bd);
+}
+
+/**
+ * Copy the kept version back over the current file. An ordinary edit on the daemon side - it saves
+ * like any other change - so no confirmation is needed: nothing is destroyed, and the team's
+ * version stays in history. Re-renders the tray so the row flips to "Same as current".
+ * @param {string} root
+ * @param {string} stamp
+ * @param {string} file
+ * @returns {Promise<void>}
+ */
+async function copyBackKept(root, stamp, file) {
+  try {
+    const r = await postJSON("/api/conflicts/restore", { root: root, stamp: stamp, file: file });
+    if (r && r.error) throw new Error(r.error);
+  } catch (e) {
+    toast("Couldn't copy your version back", true);
+    return;
+  }
+  rPending();
+}
+
+/**
+ * Clear one kept-work card (the operator has decided). Only the attention flag goes; the kept copy
+ * itself stays on disk, so this is never a "delete".
+ * @param {string} root
+ * @param {string} stamp
+ * @returns {Promise<void>}
+ */
+async function dismissKept(root, stamp) {
+  try {
+    const r = await postJSON("/api/conflicts/dismiss", { root: root, stamp: stamp });
+    if (r && r.error) throw new Error(r.error);
+  } catch (e) {
+    toast("Couldn't clear the card", true);
+    return;
+  }
+  rPending();
 }

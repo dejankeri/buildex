@@ -28,7 +28,9 @@ function setSync(state) {
       // coming back online does nothing on its own. Never promise an automatic retry here; say
       // only what stays true either way: the work is safe on this machine, waiting to be sent.
       queued: "Saved on this machine - click Save again to send it",
-      help: "Needs attention - a change couldn't sync automatically",
+      // The click routes to the kept-work card when one is waiting (boot.js), so the copy invites
+      // it without promising a specific destination - a needs-help with nothing kept opens the map.
+      help: "Needs attention - a change couldn't sync automatically · click to review",
       // "local" only ever paints once syncDotState (projects.js) has decided there's no connected
       // account - so this copy retires on its own the moment the operator connects one; it must never
       // claim accounts are still "coming", since that's exactly what this state means. Its click opens
@@ -37,10 +39,13 @@ function setSync(state) {
       unsaved: "You have unsaved work · click to save",
       reconnect: "Your account can’t sync right now - click to reconnect",
     }[state] || "Synced";
-  // "unsaved" already tells the operator what the click does (save) and "local" what it does (connect);
-  // "reconnect" likewise invites the click, so none of the three get the generic suffix - otherwise
-  // the tooltip would say both.
-  dot.title = state === "unsaved" || state === "local" || state === "reconnect" ? label : label + " · click for recent changes";
+  // "unsaved" already tells the operator what the click does (save), "local" what it does (connect),
+  // "reconnect" and "help" likewise invite the click, so none of the four get the generic suffix -
+  // otherwise the tooltip would say both.
+  dot.title =
+    state === "unsaved" || state === "local" || state === "reconnect" || state === "help"
+      ? label
+      : label + " · click for recent changes";
   // a11y: #sync is a role="status" live region, so a state change is announced (the dot itself
   // carries no text). Keep the accessible name in step with the state.
   dot.setAttribute("aria-label", "Sync status: " + label);

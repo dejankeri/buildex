@@ -66,6 +66,10 @@ async function boot() {
   $("#sync").onclick = () => {
     const dot = $("#sync");
     if (dot.classList.contains("local") || dot.classList.contains("reconnect")) { openConnectAccount(); return; }
+    // "Needs attention" with kept work waiting: land on the kept-work card itself (the pending
+    // tray) - the click must open the thing the operator can act on, not a log about it. A
+    // needs-help with no kept work (a save that failed outright) still falls through to the map.
+    if (dot.classList.contains("help") && lastConflicts && lastConflicts.length) { switchRight("pending"); return; }
     // Unsaved work and "what synced?" both live in the brain map now (the Gate holds the save card's
     // sibling approvals; Learning is the change log) — the dot opens the map rather than a lone panel.
     switchRight("brain");

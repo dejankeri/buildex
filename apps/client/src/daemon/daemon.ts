@@ -284,6 +284,18 @@ export interface DaemonDeps {
    *  must exist - e.g. absent for the sandbox), so `POST /api/logout` simply isn't wired for an org
    *  with nothing to disconnect and the request falls through to the daemon's terminal 404. */
   logout?: () => Promise<{ state: "local" }>;
+  /** Kept-work recovery (sync/conflicts.ts): the backups the sync engine takes when the team's
+   *  version wins, surfaced so the operator can see, compare, copy back, and dismiss from the
+   *  console. Contract: null/false means "no such kept version" (the routes' 404); a throw means
+   *  the request itself was bad - above all a path trying to escape (400). `restore` is an ordinary
+   *  workspace edit (it flows through the normal checkpoint/save path); `dismiss` clears only the
+   *  attention flag - a backup is never deleted. */
+  conflicts?: {
+    list(): { root: string; stamp: string; at: number; files: { path: string; differs: boolean }[] }[];
+    read(root: string, stamp: string, file: string): { kept: string; current: string | null } | null;
+    restore(root: string, stamp: string, file: string): boolean;
+    dismiss(root: string, stamp: string): boolean;
+  };
 }
 
 export interface TreeNode {
@@ -775,6 +787,49 @@ export function createDaemon(deps: DaemonDeps): Handler {
         signInAvailable: !!deps.signIn,
         ...(deps.perRootStatus ? { perRoot: deps.perRootStatus() } : {}),
       });
+    }
+    // Kept-work recovery. Wire shape is root/stamp/file throughout; the operator vocabulary ("we
+    // kept your version") lives in the console. Not-found → 404; a refused path (the dep throws,
+    // e.g. a traversal attempt) → a terse 400, never a raw 500.
+    if (deps.conflicts) {
+      const conflicts = deps.conflicts;
+      const refused = (e: unknown): Response => json({ error: e instanceof Error ? e.message : "refused" }, 400);
+      if (method === "GET" && path === "/api/conflicts") {
+        return json({ conflicts: conflicts.list() });
+      }
+      if (method === "GET" && path === "/api/conflicts/file") {
+        const root = url.searchParams.get("root");
+        const stamp = url.searchParams.get("stamp");
+        const file = url.searchParams.get("file");
+        if (!root || !stamp || !file) return json({ error: "missing root/stamp/file" }, 400);
+        try {
+          const r = conflicts.read(root, stamp, file);
+          if (!r) return json({ error: "no kept version found" }, 404);
+          return json({ root, stamp, file, ...r });
+        } catch (e) {
+          return refused(e);
+        }
+      }
+      if (method === "POST" && path === "/api/conflicts/restore") {
+        const b = await body<{ root: string; stamp: string; file: string }>(req, {
+          root: "string!", stamp: "string!", file: "string!",
+        });
+        try {
+          if (!conflicts.restore(b.root, b.stamp, b.file)) return json({ error: "no kept version found" }, 404);
+          return json({ ok: true });
+        } catch (e) {
+          return refused(e);
+        }
+      }
+      if (method === "POST" && path === "/api/conflicts/dismiss") {
+        const b = await body<{ root: string; stamp: string }>(req, { root: "string!", stamp: "string!" });
+        try {
+          if (!conflicts.dismiss(b.root, b.stamp)) return json({ error: "no such backup" }, 404);
+          return json({ ok: true });
+        } catch (e) {
+          return refused(e);
+        }
+      }
     }
     if (method === "POST" && deps.openAccount && path === "/api/account") {
       const b = await body<{ baseUrl: string; setupToken: string }>(req, { baseUrl: "string!", setupToken: "string!" });

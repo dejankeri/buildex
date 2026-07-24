@@ -38,8 +38,11 @@ approval history stay on your machine.
 
 The rule is: **an operator's work is never silently discarded.** If two people changed the same
 document and the versions can't be combined cleanly, the team's version wins so nobody is blocked —
-and your version is kept safe on your machine and flagged for you. A card shows you what was kept:
-view it side by side, or copy your text back in with one tap. Nothing is lost, ever.
+and your version is kept safe on your machine and flagged for you. A card in the Pending tray shows
+you what was kept: view it side by side with the current version, or copy your text back in with one
+tap (the copy-back saves like any ordinary edit, so it shows up in History too). When you've
+decided, tap **Got it** — the card clears, and the kept copy still stays on your machine. Nothing is
+lost, ever.
 
 ## Backup, in practice
 

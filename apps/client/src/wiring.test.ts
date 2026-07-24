@@ -442,3 +442,59 @@ describe("buildClientHandler - the client composition root", () => {
     expect(await signInAvailable(withAccount({ sandbox: true }))).toBe(false);
   });
 });
+
+describe("kept-work recovery wiring - marker-driven status, restore as an ordinary edit", () => {
+  const handler = () =>
+    buildClientHandler({
+      workspace: ws,
+      roots: [{ name: "team", dir: join(ws, "team") }],
+      preset: { allow: ["Read"], ask: ["Bash"], deny: [], default: "ask" },
+      claudeBin: "claude",
+      onScheduler: (s) => schedulers.push(s),
+    });
+  const status = async (app: ReturnType<typeof buildClientHandler>) =>
+    ((await (await app(new Request("http://127.0.0.1/api/sync"))).json()) as { status: string }).status;
+  const post = (app: ReturnType<typeof buildClientHandler>, r: string, b: unknown) =>
+    app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
+
+  /** A backup + marker exactly as the engine leaves them after a conflict. */
+  const seedKept = () => {
+    mkdirSync(join(ws, "team", ".conflicts", "1700"), { recursive: true });
+    writeFileSync(join(ws, "team", ".conflicts", "1700", "doc.md"), "operator version\n");
+    writeFileSync(join(ws, "team", "doc.md"), "team version\n");
+    writeFileSync(
+      join(ws, "team", ".sync-needs-help"),
+      "Conflict at 1700. Your version was saved under .conflicts/1700/ - nothing was lost.\n",
+    );
+  };
+
+  it("boots into needs-help while the marker is on disk; dismiss returns the status to ok", async () => {
+    seedKept();
+    const app = handler();
+    expect(await status(app)).toBe("needs-help"); // survives a daemon restart - the marker persists it
+
+    const list = (await (await app(new Request("http://127.0.0.1/api/conflicts"))).json()) as {
+      conflicts: { root: string; stamp: string; files: { path: string; differs: boolean }[] }[];
+    };
+    expect(list.conflicts).toEqual([
+      { root: "team", stamp: "1700", at: 1700, files: [{ path: "doc.md", differs: true }] },
+    ]);
+
+    expect((await post(app, "/api/conflicts/dismiss", { root: "team", stamp: "1700" })).status).toBe(200);
+    expect(await status(app)).toBe("ok");
+    // The flag is gone; the kept work is not (invariant 8).
+    expect(existsSync(join(ws, "team", ".sync-needs-help"))).toBe(false);
+    expect(readFileSync(join(ws, "team", ".conflicts", "1700", "doc.md"), "utf8")).toBe("operator version\n");
+  });
+
+  it("restore copies the kept bytes over the workspace file - a plain edit, no git surgery", async () => {
+    seedKept();
+    const app = handler();
+    expect((await post(app, "/api/conflicts/restore", { root: "team", stamp: "1700", file: "doc.md" })).status).toBe(200);
+    expect(readFileSync(join(ws, "team", "doc.md"), "utf8")).toBe("operator version\n");
+  });
+
+  it("boots into ok when no marker is on disk", async () => {
+    expect(await status(handler())).toBe("ok");
+  });
+});

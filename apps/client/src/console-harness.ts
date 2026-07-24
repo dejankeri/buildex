@@ -106,6 +106,8 @@ const EXPOSE = [
   // Notifications: the mechanism, the preference, and the two surfaces that configure it.
   "NOTIFY_KINDS", "notifySupported", "notifyPermission", "notifyPrefs", "setNotifyPref", "enableNotifications",
   "notifyOperator", "notifyNudge", "openNotifySettings", "notifySettingsBody",
+  // Kept-work recovery cards in the pending tray (conflict backups the operator can bring back).
+  "lastConflicts", "keptLine", "keptFileRow", "keptCard", "viewKept", "copyBackKept", "dismissKept",
   // Agent Context viewer ("what my agent sees").
   "openAgentContextTab", "loadAgentContext", "renderAgentContext", "regenAgentContext", "actxGroup", "actxRow", "actxSelectFile",
 ];

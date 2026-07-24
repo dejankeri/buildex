@@ -154,6 +154,14 @@
   .toast{position:fixed;left:50%;bottom:34px;transform:translateX(-50%);z-index:300;background:var(--elevate);border:1px solid var(--line-2);border-radius:9px;padding:9px 15px;font-size:12.5px;color:var(--ink);box-shadow:0 10px 28px rgba(0,0,0,.42);max-width:min(420px,80vw);}
   .toast.bad{border-color:color-mix(in srgb,var(--crit) 55%,transparent);color:var(--crit);}
 
+  /* Kept-work compare (pending.js viewKept): your kept version next to the current one, read-only.
+     Wide-ish for two panes; each pane scrolls on its own so a long document never grows the card. */
+  .ovcard.kview{max-width:min(720px,90vw);}
+  .kpanes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 14px;}
+  .kpane{min-width:0;}
+  .kpane h4{margin:0 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:700;}
+  .kpane pre{margin:0;background:var(--bg);border:1px solid var(--line-2);border-radius:8px;padding:9px 11px;font-family:var(--mono);font-size:11.5px;line-height:1.55;max-height:50vh;overflow:auto;white-space:pre-wrap;word-break:break-word;}
+
   /* Per-app settings dialog (js/app-settings.js): one place for connection, key, details, removal.
      Reached from the ⚙ on a rail row in Edit mode and the ⚙ on an installed Store card. */
   .ovcard.appset{max-width:420px;}

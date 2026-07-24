@@ -38,6 +38,7 @@ import { buildGraph, type Root } from "./brain/graph.js";
 import { recentChanges } from "./brain/history.js";
 import { fileHistory, fileAtCommit } from "./brain/history.js";
 import { SyncEngine } from "./sync/engine.js";
+import { Conflicts } from "./sync/conflicts.js";
 import {
   SyncScheduler,
   saveResultStatus,
@@ -455,9 +456,17 @@ export function buildClientHandler(config: ClientConfig): Handler {
   // keeps a leftover direct pin until the next install/sync.
   regenConfig();
 
+  // Kept-work recovery: the surface over the engine's `.conflicts/<stamp>/` backups, scoped to the
+  // writable roots (core is reset without backup - it has no operator work to keep).
+  const conflicts = new Conflicts({
+    roots: config.roots.filter((r) => slotOf(r.name) !== "core").map((r) => ({ name: r.name, dir: r.dir })),
+  });
+
   // Now that regenConfig exists, build the background sync loop and hand it to the runner (start/stop).
   // The latest status drives the header dot via GET /api/sync (needs-help when a conflict was backed up).
-  let lastSyncStatus: SyncStatus = "ok";
+  // Seeded from the on-disk attention marker, not a blank "ok": a conflict kept before the last
+  // shutdown must still show as needing help on the next boot - the marker is what persists it.
+  let lastSyncStatus: SyncStatus = conflicts.hasAttention() ? "needs-help" : "ok";
   scheduler = new SyncScheduler({
     engine: sync,
     writableRoots: writableDirs,
@@ -1052,6 +1061,25 @@ export function buildClientHandler(config: ClientConfig): Handler {
     syncStatus: () => lastSyncStatus,
     // Per-root status of the last publish - lets the console say WHICH root is stuck.
     perRootStatus: () => scheduler.perRoot(),
+    // Kept-work recovery (the pending tray's "we kept your version" cards). Restoring is an
+    // ordinary edit: the module copies the bytes and the scheduler's touch sends them down the
+    // normal checkpoint/save path - no git surgery. Dismissing clears only the attention flag;
+    // once no root is flagged any more, the dot's needs-help state retires with it (the backups
+    // themselves stay on disk - invariant 8).
+    conflicts: {
+      list: () => conflicts.list(),
+      read: (root, stamp, file) => conflicts.read(root, stamp, file),
+      restore: (root, stamp, file) => {
+        const r = conflicts.restore(root, stamp, file);
+        if (r) scheduler.touch(r.dir);
+        return r !== null;
+      },
+      dismiss: (root, stamp) => {
+        const ok = conflicts.dismiss(root, stamp);
+        if (ok && lastSyncStatus === "needs-help" && !conflicts.hasAttention()) lastSyncStatus = "ok";
+        return ok;
+      },
+    },
     // What is waiting to be saved, for the pending tray's one card. The staleness comparison
     // happens here, once, against the real clock - the browser is never handed a comparison to make.
     // `connected` is derived from the REPOSITORIES, not from the last sync status: that status
