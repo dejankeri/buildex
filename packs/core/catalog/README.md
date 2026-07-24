@@ -44,13 +44,15 @@ is non-destructive - the connection simply fails until corrected. Endpoints here
 | canva    | ✓ | ✓ | ✓ | `https://mcp.canva.com/mcp` - Canva's official hosted MCP (OAuth DCR) |
 | heygen   | ✓ | ✓ | ✓ | `https://mcp.heygen.com/mcp/v1/` - HeyGen's official hosted MCP (OAuth); renders cost credits |
 | calendly | ✓ | ✓ | ✓ | `https://mcp.calendly.com` - Calendly's official hosted MCP (OAuth 2.1 DCR) |
-| gmail    | ✓ | ✓ | ✓ | `https://gmailmcp.googleapis.com/mcp/v1` - Google first-party, **Developer Preview**; needs a Google Cloud OAuth client (not DCR) |
-| google-calendar | ✓ | ✓ | ✓ | `https://calendarmcp.googleapis.com/mcp/v1` - Google first-party, **Developer Preview**; same OAuth-client requirement as gmail |
-| google-drive | ✓ | ✓ | ✓ | `https://drivemcp.googleapis.com/mcp/v1` - Google first-party, **Developer Preview**; same OAuth-client requirement as gmail |
+| gmail    | - | - | - | **not built** - Google first-party MCP (`https://gmailmcp.googleapis.com/mcp/v1`) is Developer Preview and needs a Google Cloud OAuth client (not DCR); build the pack when a static-client path lands |
+| google-calendar | - | - | - | **not built** - same first-party-preview + OAuth-client situation as gmail |
+| google-drive | - | - | - | **not built** - same first-party-preview + OAuth-client situation as gmail |
 | slack    | ✓ | ✓ | - | no verified first-party hosted MCP yet - add the `mcp` face once an endpoint is confirmed |
 | manychat | - | - | - | **not built** - no first-party hosted MCP; only aggregator (Zapier/Pipedream) or a stdio wrapper needing `MANYCHAT_API_TOKEN`. Deferred pending a token-handling decision (invariants #4/#8) |
 
-**Policy hints are intentionally omitted in v1.** The base preset default is `ask`, so every pinned
-MCP tool prompts the operator (safe, if slightly verbose). Once a pack's MCP is pinned live and its
-actual tool-name prefix is observed (`mcp__<serverKey>__<tool>`), add `policy.allow` for the obvious
-read tools so reads flow freely - a fast-follow, not a v1 blocker.
+**Policy hints are targeted, not blanket.** The base preset is wide-allow by design - autonomy is
+the default, and gating happens by intent: a pack's `basePolicy` (and its `gated`/`when` rules)
+marks the money / outbound-to-people / destructive tools that must wait for a human tap, and the
+connector gateway enforces those marks on every call. When a pack's MCP is pinned live and its
+actual tool-name prefix is observed (`mcp__<serverKey>__<tool>`), tighten the pack's rules to match
+the real names - the operator's own overrides can only tighten further, never loosen.

@@ -1,47 +1,55 @@
-# How sync, backup, and never-lose-work behave
+# How saving, sync, and never-lose-work behave
 
-BuildEx treats **git as the database**. There's no shadow store — your company's brain *is* a set of
-git repositories on your machine. That single choice is what makes sync, history, and backup simple
-and trustworthy.
+Your company's brain is a set of plain files on your machine, versioned forever. Nothing lives in a
+hidden database — that single choice is what makes saving, history, and backup simple and
+trustworthy.
 
-## Every change is a commit
+## Two layers of safety: checkpoints and saves
 
-When the agent (or you) edits a document, that's a commit. So you get, for free:
+- **Checkpoints are automatic.** As you and the agent work, every change is checkpointed on your
+  machine within moments. Checkpoints are the safety net — a crash, a bad edit, a mistake can always
+  be walked back. You never think about them.
+- **Saves are deliberate.** When a piece of work is ready — a revised strategy, an updated client
+  ledger, a new decision — you **Save**. A save bundles everything since the last save into one
+  named version with a short summary of what changed. Saves are what **History** shows, what syncs
+  to your team, and what you can restore to.
 
-- **Full history** on every document — open the **History** on any doc to see each version, who made
-  it, and when.
+So History reads like a changelog of the company — "Repriced the Pro tier; updated two client
+ledgers" — not a firehose of tiny edits. One version per meaningful moment.
+
+- **Full history** on every document — open **History** on any doc to see each saved version, who
+  made it, and when.
 - **One-tap restore** — pick an earlier version and **Restore** it. The restore is itself a new
-  commit, so nothing is destroyed; the version you replaced is still in history.
-- **Real diffs and review** — because it's git, a teammate can review a change like any pull request.
+  save, so nothing is destroyed; the version you replaced is still in history.
 
-## Sync only moves commits
+## Sync only moves saves
 
-Sync pulls and pushes commits between your machines and your teammates on a background interval. It
-runs off the main loop with timeouts, so a slow or unreachable remote degrades gracefully to
-*offline* — it never freezes the app or your agent.
+Sync shares your saves with your teammates and your other machines in the background. A slow or
+unreachable connection degrades gracefully to *offline* — it never freezes the app or your agent,
+and your work keeps checkpointing locally. When you're back online, your saves flow.
 
-What sync **cannot** do: read your brain or your model traffic. It moves git objects between repos
-*you* control. The cloud is a relay, not a reader.
+What sync **cannot** do: read your brain or your AI traffic. It relays your saved versions between
+machines *you* control. The cloud is a relay, not a reader.
 
 Some things are deliberately **never synced** — your local sessions, in-flight agent state, and
 approval history stay on your machine.
 
 ## Never lose your work
 
-The rule is: **an operator's work is never silently discarded.** If content can't be cleanly
-committed — a conflict, a half-written file, something unexpected — BuildEx backs it up locally and
-flags it for you rather than dropping it. A corrupt file in a list is quarantined and skipped, so one
-bad file never bricks the view. You resolve it when you're ready; nothing is lost in the meantime.
+The rule is: **an operator's work is never silently discarded.** If two people changed the same
+document and the versions can't be combined cleanly, the team's version wins so nobody is blocked —
+and your version is kept safe on your machine and flagged for you. A card shows you what was kept:
+view it side by side, or copy your text back in with one tap. Nothing is lost, ever.
 
 ## Backup, in practice
 
-Because each brain is a git repo with a remote you control, your backup is your git host — push and
-your history is off-machine. Want a local archive? It's a folder of markdown and a `.git`; copy it
-like any directory. There's no proprietary format to export from and no database to dump.
+Every save is stored both on your machine and, once synced, off it. Want a local archive? Your brain
+is a folder of plain documents — copy it like any folder. There's no proprietary format to export
+from and no database to dump; if you ever leave, you take everything with you as-is.
 
 ## The short version
 
-- Your files, on your machine, in git.
-- Every change committed; full history; one-tap restore.
-- Sync relays commits and can't read them.
-- Unclean work is backed up and flagged, never discarded.
+- Your files, on your machine, versioned forever.
+- Changes checkpoint automatically; you save deliberately; History shows named versions.
+- Sync relays your saves and can't read them.
+- Conflicting work is kept and shown to you, never discarded.

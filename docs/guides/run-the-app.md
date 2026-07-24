@@ -1,9 +1,13 @@
 # Run the app
 
-BuildEx runs on your machine. There's no account and nothing to sign up for to try it — the demo
-provisions a throwaway company and opens the console.
+BuildEx runs on your machine. There's no account and nothing to sign up for to try it.
 
-## Prerequisites
+**The easiest path is the packaged desktop app** — download the installer and open it; first-run
+walks you through connecting your agent (see `docs/package-macos.md` / `docs/package-windows.md` to
+build one until signed downloads ship). The path below is the developer demo — it runs the same
+product from a source checkout and seeds a throwaway company to explore.
+
+## Prerequisites (developer demo)
 
 - **macOS**, or **Windows 10/11** (Linux is on the roadmap)
 - **Node 22+**

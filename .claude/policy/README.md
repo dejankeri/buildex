@@ -13,7 +13,8 @@ The three tiers, and how they map to invariant 5 ("wide autonomy, few gates"):
   work is happening. Outward provider (MCP) calls are gated by intent at the connector gateway
   (`apps/connectors`), not by tool name here. This is the same allow/ask/deny preset the product
   ships into every workspace (`packs/core/policy/`, part of the core content pack) - here it guards
-  the build itself. Every outward action is recorded on the company activity log.
+  the build itself. Every gated action - approval, denial, outward send - is recorded on the
+  company activity ledger.
 - **deny** - empty by default; the operator can add hard refusals, and can widen or tighten any
   gate. Autonomy is configured, not assumed.
 

@@ -20,14 +20,17 @@ living maps, and an allow/ask/deny policy (`.claude/`).
 ## The 10 invariants (never weaken)
 
 1. **Local-first** - the agent works on files on the operator's machine; the cloud syncs, never thinks.
-2. **Git is the database** - every artifact is plain files; every change a commit; no shadow DB.
+2. **Git is the database** - every artifact is plain files; every change is checkpointed locally,
+   and company history is deliberate, named saves (one meaningful snapshot per save); no shadow DB.
 3. **Documents are plain markdown** - rendered views derived on demand, never committed.
 4. **Conductor bright-lines** - never read any agent's credential store, never proxy model tokens,
    never set provider API keys, never render provider sign-in.
 5. **Wide autonomy, few gates** - the agent acts autonomously by default across local files, web,
    and connected tools; a small, operator-configurable set of *money / outbound-to-people /
    irreversible* actions waits for a human tap, surfaced inline where the work is happening. Every
-   outward action is recorded on a company-level activity log.
+   gated action - approval, denial, outward send - is recorded on a company-level activity ledger;
+   routine autonomous work is not logged (git history covers the files, the ledger covers the
+   consequential moments).
 6. **Hard company isolation** - per-company repos; server-side permission matrix; per-machine tokens.
 7. **Identity from JWT only** - setup tokens minted S2S; loopback redirects validated; state one-time, short TTL.
 8. **Never lose an operator's work** - unclean content is backed up locally and flagged, never discarded.

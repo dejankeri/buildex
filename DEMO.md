@@ -74,8 +74,8 @@ In the chat, ask:
 - *"What did we decide about our niche, and why?"*  (it reads `decisions/log.md`)
 - *"Draft this week's review from the brain and save it to `team-acme/meetings/`."*  (watch it write a file)
 - *"What does the Globex kickoff email ask us to send?"*  (it reads the Gmail source)
-- *"Look up what's at buildex.dev and summarize the homepage."*  (an outward `WebFetch` - it stops at
-  the **Pending** tray for your approval before it touches the network)
+- *"Look up what's at buildex.dev and summarize the homepage."*  (reads and research flow freely -
+  the agent works autonomously; only consequential actions wait for you)
 
 The demo also boots with one approval already waiting in the **Pending** tray - a drafted reply to
 Globex's Dana that would send email outward. Approve or deny it to watch the gate close the loop.
@@ -116,8 +116,10 @@ The demo lives entirely under `~/.buildex-demo/` - delete that folder to remove 
 - **The approval gate is real, and it is on in this demo.** `npm run demo` threads a live PreToolUse
   hook (`apps/client/scripts/gate-hook.mjs`) into the agent's workspace `.claude/settings.json`:
   before every tool call, the hook relays the tool to the daemon's gate at **`POST /api/gate`**, which
-  applies the allow/ask/deny policy. Reads and local edits flow through; an ask-tier action (an
-  outward send, a `WebFetch`, an arbitrary shell command) blocks and raises an approval card. The
+  applies the allow/ask/deny policy. Autonomy is wide by default - reads, edits, web research, and
+  routine shell all flow through. What blocks and raises an approval card: destructive operations
+  (force-deletes, history rewrites) natively, and money / outbound-to-people provider actions at the
+  connector gateway, gated by intent. The
   console reads the queue from **`GET /api/pending`** and posts your verdict to **`POST /api/approve`**.
   Nothing is faked - the daemon gate, not Claude's native prompt, is the single source of truth, and
   on any failure the hook fails closed (denies).
