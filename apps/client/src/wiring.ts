@@ -188,7 +188,20 @@ export function buildClientHandler(config: ClientConfig): Handler {
     setTimer: (fn, ms) => realClock.setTimer(fn, ms),
     clearTimer: (h) => realClock.clearTimer(h as TimerHandle),
     ...(ledger && ledgerRoot
-      ? { ledger: { record: (e) => { ledger.record(e); scheduler.touch(ledgerRoot.dir); } } }
+      ? {
+          ledger: {
+            record: (e) => {
+              ledger.record(e);
+              // The touch checkpoints the entry (crash safety, and the whole story for a remoteless
+              // workspace). The scoped save is the record surface's permanence: a gated moment
+              // shouldn't wait for a manual save to reach the company - but it runs ONLY when
+              // nothing outside activity/ is waiting, so it can never publish work the operator
+              // hasn't decided to share.
+              scheduler.touch(ledgerRoot.dir);
+              void scheduler.saveScoped(ledgerRoot.dir, "activity/", "Activity ledger update");
+            },
+          },
+        }
       : {}),
   });
   config.onBroker?.(broker);
@@ -1054,8 +1067,10 @@ export function buildClientHandler(config: ClientConfig): Handler {
     // entries, straight off the committed activity/ files (deterministic, invariant 9). Only wired
     // when a team root exists, exactly like the ledger itself.
     ...(ledger ? { ledgerView: () => ledger.recent() } : {}),
-    // "Save now" (POST /api/sync) - the operator's explicit decision to send everything.
-    syncFn: async () => saveResultStatus(await scheduler.publishAll()),
+    // "Save now" (POST /api/sync) - the operator's explicit decision to bundle everything since the
+    // last save into one named version and send it. Their message names it; blank falls back to the
+    // engine's deterministic summary.
+    syncFn: async (message) => saveResultStatus(await scheduler.saveAll(message)),
     // The dot's live status (GET /api/sync) - "local" (no account yet) / "queued" (offline) /
     // "needs-help" (conflict backed up) / "reconnect" (account revoked - reconnect).
     syncStatus: () => lastSyncStatus,

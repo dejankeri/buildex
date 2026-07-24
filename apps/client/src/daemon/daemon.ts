@@ -172,7 +172,9 @@ export interface DaemonDeps {
    *  rail: the current + previous month's entries, current month first. Read-only and deterministic -
    *  straight from the committed activity/ files, zero LLM (invariant 9). */
   ledgerView?: () => { month: string; entries: string[] }[];
-  syncFn: () => Promise<string>;
+  /** "Save now" (POST /api/sync): squash-name-send everything, under the operator's message when
+   *  they typed one. */
+  syncFn: (message?: string) => Promise<string>;
   /** Current background-sync status for the header dot: "ok" | "busy" | "queued" | "needs-help" |
    *  "reconnect" (account revoked - reconnect). */
   syncStatus?: () => string;
@@ -184,7 +186,7 @@ export interface DaemonDeps {
    *  anywhere to save TO yet (any writable root with a remote): with no account, work waiting is not
    *  a nudge to act, it is a fact to state. Optional, and a throwing implementation degrades to
    *  "nothing waiting" - counting must never be the reason the status poll fails. */
-  unsavedFn?: () => Promise<{ files: number; oldestAt: number | null; stale: boolean; connected: boolean; incomplete?: boolean }>;
+  unsavedFn?: () => Promise<{ files: number; oldestAt: number | null; stale: boolean; connected: boolean; suggestion?: string | null; incomplete?: boolean }>;
   /** Clock for the unsaved-count cache TTL. Injected ONLY so the cache's expiry is deterministically
    *  testable; production leaves it unset and it falls back to Date.now. Nothing else in the daemon
    *  needs an injected clock, so this stays scoped to the one place a test must control time. */
@@ -774,8 +776,13 @@ export function createDaemon(deps: DaemonDeps): Handler {
       return json({ ok: deps.broker.resolve(id, verdict) });
     }
     // "Save now" - the operator's explicit decision to send everything. The only path that pushes.
+    // The body is optional (the card has always been able to post bare): when present, `message` is
+    // the operator's name for the save. Parsed leniently - a missing/malformed body is a nameless
+    // save, never a 400 that blocks saving.
     if (method === "POST" && path === "/api/sync") {
-      return json({ result: await deps.syncFn() });
+      const b = await body<{ message?: unknown }>(req).catch(() => ({}) as { message?: unknown });
+      const message = typeof b.message === "string" && b.message.trim() ? b.message.trim() : undefined;
+      return json({ result: await deps.syncFn(message) });
     }
     if (method === "GET" && path === "/api/sync") {
       return json({

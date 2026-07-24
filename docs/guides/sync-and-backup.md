@@ -11,16 +11,19 @@ trustworthy.
   be walked back. You never think about them.
 - **Saves are deliberate.** When a piece of work is ready — a revised strategy, an updated client
   ledger, a new decision — you **Save**. A save bundles everything since the last save into one
-  named version with a short summary of what changed. Saves are what **History** shows, what syncs
-  to your team, and what you can restore to.
+  named version with a short summary of what changed; BuildEx suggests one from the files you
+  touched, and you can keep or rewrite it. Saves are what **History** shows, what syncs to your
+  team, and what you can restore to.
 
 So History reads like a changelog of the company — "Repriced the Pro tier; updated two client
-ledgers" — not a firehose of tiny edits. One version per meaningful moment.
+ledgers" — not a firehose of tiny edits. One version per meaningful moment. Anything you haven't
+saved yet appears as a single *Unsaved changes* entry at the top, so nothing is ever invisible.
 
 - **Full history** on every document — open **History** on any doc to see each saved version, who
   made it, and when.
-- **One-tap restore** — pick an earlier version and **Restore** it. The restore is itself a new
-  save, so nothing is destroyed; the version you replaced is still in history.
+- **One-tap restore** — pick an earlier version and **Restore** it. The restore is an ordinary
+  change — checkpointed at once and part of your next save — so nothing is destroyed; the version
+  you replaced is still in history.
 
 ## Sync only moves saves
 
@@ -40,7 +43,8 @@ The rule is: **an operator's work is never silently discarded.** If two people c
 document and the versions can't be combined cleanly, the team's version wins so nobody is blocked —
 and your version is kept safe on your machine and flagged for you. A card in the Pending tray shows
 you what was kept: view it side by side with the current version, or copy your text back in with one
-tap (the copy-back saves like any ordinary edit, so it shows up in History too). When you've
+tap (the copy-back is an ordinary edit — checkpointed at once, part of your next save, and in
+History from then on). When you've
 decided, tap **Got it** — the card clears, and the kept copy still stays on your machine. Nothing is
 lost, ever.
 

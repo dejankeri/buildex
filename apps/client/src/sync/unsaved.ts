@@ -19,16 +19,25 @@ export interface Unsaved {
   files: number;
   /** Epoch ms of the oldest unsaved checkpoint, or null when nothing is waiting. Drives the nudge. */
   oldestAt: number | null;
+  /** The waiting files themselves (repo-relative, the set `files` counts) - what the aggregate's
+   *  save-note suggestion is written from. */
+  paths: string[];
 }
 
-export interface UnsavedAggregate extends Unsaved {
+export interface UnsavedAggregate {
+  files: number;
+  oldestAt: number | null;
+  /** A deterministic prefilled save note derived from the waiting files ("Updated pricing.md and
+   *  2 more in clients/"), or null when nothing is waiting. The Save card prefills its message
+   *  input with this; the operator keeps or edits it. */
+  suggestion: string | null;
   /** True when at least one root's count threw and was skipped (e.g. a transient git `index.lock`
    *  race). The tally is then a FLOOR, not the truth: a caller must not read a possibly-lower number
    *  as "nothing changed" and blank the card - that would breach invariant 8 for a moment. */
   incomplete: boolean;
 }
 
-const NOTHING: Unsaved = { files: 0, oldestAt: null };
+const NOTHING: Unsaved = { files: 0, oldestAt: null, paths: [] };
 
 /** How long work may sit unsaved before the card stops reporting a number and starts stating the
  *  stakes. Saving is fully manual by design, so this nudge is the only thing between an operator and
@@ -151,7 +160,11 @@ export async function unsavedIn(dir: string): Promise<Unsaved> {
   for (const rel of [...dirtyPaths]) if (isInternal(rel)) dirtyPaths.delete(rel);
   if (paths.size === 0) return NOTHING;
 
-  return { files: paths.size, oldestAt: await oldestUnsavedAt(dir, committed, upstream, dirtyPaths) };
+  return {
+    files: paths.size,
+    oldestAt: await oldestUnsavedAt(dir, committed, upstream, dirtyPaths),
+    paths: [...paths].sort(), // sorted so the same waiting set always reads the same (invariant 9)
+  };
 }
 
 /** The oldest moment any unsaved work has been waiting, from whichever of its two sources exist:
@@ -206,5 +219,25 @@ export async function unsavedAcross(dirs: string[]): Promise<UnsavedAggregate> {
   );
   const files = each.reduce((n, u) => n + u.files, 0);
   const dates = each.map((u) => u.oldestAt).filter((d): d is number => d !== null);
-  return { files, oldestAt: dates.length > 0 ? Math.min(...dates) : null, incomplete };
+  return {
+    files,
+    oldestAt: dates.length > 0 ? Math.min(...dates) : null,
+    suggestion: suggestSaveMessage(each.flatMap((u) => u.paths)),
+    incomplete,
+  };
+}
+
+/** The prefilled save note, in the operator's vocabulary and derived only from the waiting file
+ *  set - deterministic (invariant 9): paths are de-duplicated and sorted, so the same waiting work
+ *  always yields the same words. Null when nothing is waiting, so the card can simply not prefill. */
+export function suggestSaveMessage(paths: string[]): string | null {
+  const sorted = [...new Set(paths)].sort();
+  if (sorted.length === 0) return null;
+  const name = (p: string) => p.split("/").pop() || p;
+  if (sorted.length === 1) return `Updated ${name(sorted[0]!)}`;
+  if (sorted.length === 2) return `Updated ${name(sorted[0]!)} and ${name(sorted[1]!)}`;
+  // Three or more: name the first, count the rest, and place them when they all share one folder.
+  const tops = new Set(sorted.map((p) => (p.includes("/") ? p.split("/")[0]! : "")));
+  const where = !tops.has("") && tops.size === 1 ? ` in ${[...tops][0]}/` : "";
+  return `Updated ${name(sorted[0]!)} and ${sorted.length - 1} more${where}`;
 }

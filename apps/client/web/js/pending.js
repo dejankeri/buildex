@@ -61,10 +61,16 @@ function saveCardHtml(sync, connected, signInAvailable) {
     ? "This work has been on this machine for " + days + " day" + (days === 1 ? "" : "s") +
       ". It exists nowhere else."
     : n + " " + noun + " on this machine " + have + " been saved to your company yet.";
+  // The save's name, prefilled with the daemon's suggestion. The suggestion is derived from FILE
+  // NAMES - workspace data an agent can write, so attacker-influenceable - and must only ever land
+  // through escAttr, never as markup.
+  const suggestion = sync.unsaved.suggestion || "";
   return (
     '<div class="pcard save' + (stale ? " stale" : "") + '">' +
     "<b>Save your work</b>" +
     "<p>" + line + "</p>" +
+    '<input class="savemsg" id="save-msg" type="text" maxlength="120" ' +
+    'placeholder="Name this save" aria-label="Name this save" value="' + escAttr(suggestion) + '">' +
     '<button class="pbtn" id="save-now">Save now</button>' +
     "</div>"
   );
@@ -131,11 +137,19 @@ function humanizeCard(name, input) {
 function renderPending(cards, sync, kept) {
   if (S.rightTab !== "pending") return;
   const p = $("#rpanel");
+  // The tray re-renders on every 4s poll, which would wipe a save name the operator is mid-typing.
+  // Capture their edit (a value that differs from the prefill it was rendered with) plus focus and
+  // caret before rebuilding, and put all three back after.
+  const prevMsg = $("#save-msg");
+  const typedMsg = prevMsg && prevMsg.value !== prevMsg.defaultValue ? prevMsg.value : null;
+  const msgFocused = !!prevMsg && document.activeElement === prevMsg;
+  const msgCaret = msgFocused ? [prevMsg.selectionStart, prevMsg.selectionEnd] : null;
   // Built with el() (the safe DOM builder, dom.js) - text is set via textContent and clicks are wired
   // inline, so a tool name/input can never inject markup (this is the reference surface
   // for the innerHTML→builder migration, pinned by console-render.test.ts). The save card's markup
-  // (saveCardHtml) interpolates only numbers computed from the daemon's response, never
-  // operator/agent-supplied strings, so it's safe to hand to el()'s `html` escape hatch.
+  // (saveCardHtml) interpolates only numbers computed from the daemon's response - plus the save-name
+  // suggestion, which is agent-influenceable and therefore goes through escAttr - so it's safe to
+  // hand to el()'s `html` escape hatch.
   // a11y: the tray is a live region so a screen reader announces a new approval card the moment
   // it arrives - the human gate (invariant 5) must be perceivable, not just visible. The approve/deny
   // buttons are named per tool so their purpose is clear out of visual context.
@@ -154,6 +168,12 @@ function renderPending(cards, sync, kept) {
     el("div", { id: "rl", role: "region", "aria-label": "Pending approvals", "aria-live": "polite" }),
   );
   p.replaceChildren(...kids);
+  const msgNow = $("#save-msg");
+  if (msgNow && typedMsg !== null) msgNow.value = typedMsg;
+  if (msgNow && msgFocused) {
+    msgNow.focus();
+    if (msgCaret && msgCaret[0] != null) msgNow.setSelectionRange(msgCaret[0], msgCaret[1]);
+  }
   wireSaveCard();
   const host = $("#rl");
   if (!cards.length) {
@@ -235,9 +255,10 @@ async function refreshPending() {
 }
 
 /**
- * Wire the save card's button (present only when there is somewhere to save to): post the save and
- * re-render. A failure restores the button rather than leaving it stuck on "Saving…" - the operator
- * must always be able to try again.
+ * Wire the save card's button (present only when there is somewhere to save to): post the save -
+ * named by the message input, prefilled with the daemon's suggestion - and re-render. A failure
+ * restores the button rather than leaving it stuck on "Saving…" - the operator must always be able
+ * to try again.
  */
 function wireSaveCard() {
   const saveBtn = $("#save-now");
@@ -246,8 +267,10 @@ function wireSaveCard() {
       const label = saveBtn.textContent;
       saveBtn.disabled = true;
       saveBtn.textContent = "Saving…";
+      const msgInput = $("#save-msg");
+      const message = msgInput && msgInput.value.trim() ? msgInput.value.trim() : "";
       try {
-        await fetch("/api/sync", { method: "POST" });
+        await postJSON("/api/sync", message ? { message: message } : {});
       } catch (e) {
         // The save never reached the daemon. Leave the card exactly as it was, with a working
         // button - re-rendering here would drop the card on the failed poll that follows.

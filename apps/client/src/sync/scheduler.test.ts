@@ -39,21 +39,27 @@ class FakeClock {
   }
 }
 
-/** A fake SyncEngine: records the dirs asked of each operation separately (checkpoint/receive/publish
- *  never fold into one bucket now - the whole point of this task is that they have different callers).
- *  Each operation's result can be pre-loaded as a queue (shifted per call, for per-root scripting), and
- *  `publishResult` is a simpler steerable default for tests that just need to flip one behavior. */
+/** A fake SyncEngine: records the dirs asked of each operation separately (checkpoint/receive/save
+ *  never fold into one bucket - they have different callers). `messages` records what each save was
+ *  named. Each operation's result can be pre-loaded as a queue (shifted per call, for per-root
+ *  scripting), and `saveResult` is a simpler steerable default for tests that flip one behavior. */
 class FakeEngine {
-  calls: { checkpoint: string[]; receive: string[]; publish: string[]; syncReadonly: string[] } = {
+  calls: { checkpoint: string[]; receive: string[]; save: string[]; pushSave: string[]; saveScoped: string[]; syncReadonly: string[] } = {
     checkpoint: [],
     receive: [],
-    publish: [],
+    save: [],
+    pushSave: [],
+    saveScoped: [],
     syncReadonly: [],
   };
+  messages: (string | undefined)[] = [];
   checkpointResults: CheckpointResult[] = [];
   receiveResults: ReceiveResult[] = [];
-  publishResults: SyncResult[] = [];
-  publishResult: SyncResult = "ok";
+  saveResults: SyncResult[] = [];
+  saveResult: SyncResult = "ok";
+  pushSaveResults: SyncResult[] = [];
+  pushSaveResult: SyncResult = "ok";
+  saveScopedResult: SyncResult = "ok";
 
   async checkpoint(dir: string): Promise<CheckpointResult> {
     this.calls.checkpoint.push(dir);
@@ -63,9 +69,18 @@ class FakeEngine {
     this.calls.receive.push(dir);
     return this.receiveResults.shift() ?? "ok";
   }
-  async publish(dir: string): Promise<SyncResult> {
-    this.calls.publish.push(dir);
-    return this.publishResults.shift() ?? this.publishResult;
+  async save(dir: string, message?: string): Promise<SyncResult> {
+    this.calls.save.push(dir);
+    this.messages.push(message);
+    return this.saveResults.shift() ?? this.saveResult;
+  }
+  async pushSave(dir: string): Promise<SyncResult> {
+    this.calls.pushSave.push(dir);
+    return this.pushSaveResults.shift() ?? this.pushSaveResult;
+  }
+  async saveScoped(dir: string): Promise<SyncResult> {
+    this.calls.saveScoped.push(dir);
+    return this.saveScopedResult;
   }
   async syncReadonly(dir: string): Promise<void> {
     this.calls.syncReadonly.push(dir);
@@ -110,29 +125,29 @@ describe("SyncScheduler - debounce", () => {
 });
 
 describe("SyncScheduler - status", () => {
-  it("emits busy then the worst status when the operator publishes", async () => {
+  it("emits busy then the worst status when the operator saves", async () => {
     const { statuses, scheduler } = make({ roots: ["/team"] });
     scheduler.touch("/team");
-    await scheduler.publishAll();
+    await scheduler.saveAll();
     expect(statuses).toEqual(["busy", "ok"]);
   });
 
-  it("reports needs-help when a root's publish needs attention", async () => {
+  it("reports needs-help when a root's save needs attention", async () => {
     const engine = new FakeEngine();
-    engine.publishResults = ["needs-help"];
+    engine.saveResults = ["needs-help"];
     const { statuses, scheduler } = make({ engine, roots: ["/team"] });
     scheduler.touch("/team");
-    await scheduler.publishAll();
+    await scheduler.saveAll();
     expect(statuses).toEqual(["busy", "needs-help"]);
   });
 
   it("takes the worst status across multiple roots", async () => {
     const engine = new FakeEngine();
-    engine.publishResults = ["ok", "queued"]; // /team ok, /private offline
+    engine.saveResults = ["ok", "queued"]; // /team ok, /private offline
     const { statuses, scheduler } = make({ engine, roots: ["/team", "/private"] });
     scheduler.touch("/team");
     scheduler.touch("/private");
-    await scheduler.publishAll();
+    await scheduler.saveAll();
     expect(statuses).toEqual(["busy", "queued"]);
   });
 
@@ -148,7 +163,13 @@ describe("SyncScheduler - status", () => {
         async receive(): Promise<ReceiveResult> {
           return "ok";
         },
-        async publish(): Promise<SyncResult> {
+        async save(): Promise<SyncResult> {
+          return "ok";
+        },
+        async pushSave(): Promise<SyncResult> {
+          return "ok";
+        },
+        async saveScoped(): Promise<SyncResult> {
           return "ok";
         },
         async syncReadonly(): Promise<void> {},
@@ -168,61 +189,65 @@ describe("SyncScheduler - status", () => {
 describe("SyncScheduler - local (unsynced) state", () => {
   it("reports 'local' when every root is local-only (no account/remote yet)", async () => {
     const engine = new FakeEngine();
-    engine.publishResults = ["local", "local"];
+    engine.saveResults = ["local", "local"];
     const { statuses, scheduler } = make({ engine, roots: ["/team", "/private"] });
     scheduler.touch("/team");
     scheduler.touch("/private");
-    await scheduler.publishAll();
+    await scheduler.saveAll();
     expect(statuses).toEqual(["busy", "local"]);
   });
 
   it("does not schedule a backoff retry for a local root (nothing to retry - it's local by design)", async () => {
     const engine = new FakeEngine();
-    engine.publishResults = ["local"];
+    engine.saveResults = ["local"];
     const { clock, scheduler } = make({ engine, roots: ["/team"] });
     scheduler.touch("/team");
-    await scheduler.publishAll();
+    await scheduler.saveAll();
     clock.advance(60000); // long idle - a local root must not trigger the offline backoff loop
     await tick();
-    expect(engine.calls.publish).toEqual(["/team"]);
+    expect(engine.calls.save).toEqual(["/team"]);
+    expect(engine.calls.pushSave).toEqual([]);
   });
 
   it("ranks a real problem above local: needs-help/queued win over a local root", async () => {
     const engine = new FakeEngine();
-    engine.publishResults = ["local", "queued"]; // one repo local, one has a remote but is offline
+    engine.saveResults = ["local", "queued"]; // one repo local, one has a remote but is offline
     const { statuses, scheduler } = make({ engine, roots: ["/team", "/private"] });
     scheduler.touch("/team");
     scheduler.touch("/private");
-    await scheduler.publishAll();
+    await scheduler.saveAll();
     expect(statuses).toEqual(["busy", "queued"]);
   });
 });
 
 describe("SyncScheduler - offline backoff", () => {
-  it("retries a queued (offline) root after the backoff delay, then settles", async () => {
+  it("retries a queued (offline) root after the backoff delay - pushing the NAMED save, never re-squashing", async () => {
     const engine = new FakeEngine();
-    engine.publishResults = ["queued", "ok"]; // offline once, then reconnects
+    engine.saveResults = ["queued"]; // offline at click time
+    engine.pushSaveResults = ["ok"]; // reconnects by the retry
     const { clock, statuses, scheduler } = make({ engine, roots: ["/team"] });
     scheduler.touch("/team");
-    await scheduler.publishAll(); // first publish → queued
-    expect(engine.calls.publish).toEqual(["/team"]);
+    await scheduler.saveAll(); // first save → queued
+    expect(engine.calls.save).toEqual(["/team"]);
     expect(statuses).toEqual(["busy", "queued"]);
 
     clock.advance(5000); // backoff elapses → retry, now succeeds
     await tick();
-    expect(engine.calls.publish).toEqual(["/team", "/team"]);
+    expect(engine.calls.pushSave).toEqual(["/team"]); // the retry is a push of the named save
+    expect(engine.calls.save).toEqual(["/team"]); // never a second squash
     expect(statuses).toEqual(["busy", "queued", "busy", "ok"]);
   });
 
-  it("does not keep retrying once a publish succeeds", async () => {
+  it("does not keep retrying once a save succeeds", async () => {
     const engine = new FakeEngine();
-    engine.publishResults = ["ok"];
+    engine.saveResults = ["ok"];
     const { clock, scheduler } = make({ engine, roots: ["/team"] });
     scheduler.touch("/team");
-    await scheduler.publishAll();
+    await scheduler.saveAll();
     clock.advance(60000); // long idle - no backoff retries should fire
     await tick();
-    expect(engine.calls.publish).toEqual(["/team"]);
+    expect(engine.calls.save).toEqual(["/team"]);
+    expect(engine.calls.pushSave).toEqual([]);
   });
 });
 
@@ -234,7 +259,8 @@ describe("SyncScheduler - pull tick", () => {
     await tick();
     expect([...engine.calls.receive].sort()).toEqual(["/private", "/team"]);
     expect(engine.calls.syncReadonly).toEqual(["/core"]);
-    expect(engine.calls.publish).toEqual([]); // the tick never sends
+    expect(engine.calls.save).toEqual([]); // the tick never sends
+    expect(engine.calls.pushSave).toEqual([]);
   });
 
   it("keeps ticking on the pull interval", async () => {
@@ -256,7 +282,7 @@ describe("SyncScheduler - stop", () => {
     scheduler.stop();
     await tick(); // the final flush is fire-and-forget (async checkpoint); let it settle
     expect(engine.calls.checkpoint).toEqual(["/team"]);
-    expect(engine.calls.publish).toEqual([]);
+    expect(engine.calls.save).toEqual([]);
     clock.advance(100000); // nothing should fire after stop
     await tick();
     expect(engine.calls.checkpoint).toEqual(["/team"]);
@@ -273,22 +299,67 @@ describe("SyncScheduler - writable guard", () => {
   });
 });
 
-describe("SyncScheduler - publishAll", () => {
-  it("publishes every writable root immediately and returns the worst status", async () => {
+describe("SyncScheduler - saveAll", () => {
+  it("saves every writable root immediately and returns the worst status", async () => {
     const engine = new FakeEngine();
-    engine.publishResults = ["ok", "queued"];
+    engine.saveResults = ["ok", "queued"];
     const { scheduler } = make({ engine, roots: ["/team", "/private"] });
-    const status = await scheduler.publishAll();
-    expect([...engine.calls.publish].sort()).toEqual(["/private", "/team"]);
+    const status = await scheduler.saveAll();
+    expect([...engine.calls.save].sort()).toEqual(["/private", "/team"]);
     expect(status).toBe("queued");
   });
 
-  it("records the per-root status of the last publish", async () => {
+  it("hands the operator's message through to every root's save", async () => {
     const engine = new FakeEngine();
-    engine.publishResults = ["ok", "queued"];
     const { scheduler } = make({ engine, roots: ["/team", "/private"] });
-    await scheduler.publishAll();
+    await scheduler.saveAll("Repriced the Pro tier");
+    expect(engine.messages).toEqual(["Repriced the Pro tier", "Repriced the Pro tier"]);
+  });
+
+  it("records the per-root status of the last save", async () => {
+    const engine = new FakeEngine();
+    engine.saveResults = ["ok", "queued"];
+    const { scheduler } = make({ engine, roots: ["/team", "/private"] });
+    await scheduler.saveAll();
     expect(scheduler.perRoot()).toEqual({ "/team": "ok", "/private": "queued" });
+  });
+});
+
+describe("SyncScheduler - saveScoped (the ledger's auto-save)", () => {
+  it("runs the engine's scoped save for the root", async () => {
+    const engine = new FakeEngine();
+    const { scheduler } = make({ engine, roots: ["/team"] });
+    await scheduler.saveScoped("/team", "activity/", "Activity ledger update");
+    expect(engine.calls.saveScoped).toEqual(["/team"]);
+  });
+
+  it("surfaces only the states the operator must act on", async () => {
+    const engine = new FakeEngine();
+    engine.saveScopedResult = "needs-help";
+    const { scheduler, statuses } = make({ engine, roots: ["/team"] });
+    await scheduler.saveScoped("/team", "activity/", "Activity ledger update");
+    expect(statuses).toEqual(["needs-help"]);
+  });
+
+  it("stays quiet on a skipped or offline auto-save - the entry rides the next manual save", async () => {
+    const engine = new FakeEngine();
+    engine.saveScopedResult = "queued";
+    const { scheduler, statuses } = make({ engine, roots: ["/team"] });
+    await scheduler.saveScoped("/team", "activity/", "Activity ledger update");
+    expect(statuses).toEqual([]);
+  });
+
+  it("never throws - a failed auto-save leaves the checkpointed entry for the next save", async () => {
+    const engine = {
+      async checkpoint(): Promise<CheckpointResult> { return "committed"; },
+      async receive(): Promise<ReceiveResult> { return "ok"; },
+      async save(): Promise<SyncResult> { return "ok"; },
+      async pushSave(): Promise<SyncResult> { return "ok"; },
+      async saveScoped(): Promise<SyncResult> { throw new Error("index.lock"); },
+      async syncReadonly(): Promise<void> {},
+    };
+    const s = new SyncScheduler({ engine, writableRoots: () => ["/team"], readonlyRoots: () => [], clock: new FakeClock() });
+    await expect(s.saveScoped("/team", "activity/", "x")).resolves.toBeUndefined();
   });
 });
 
@@ -305,7 +376,13 @@ describe("SyncScheduler - resilience", () => {
       async receive(): Promise<ReceiveResult> {
         return "ok";
       },
-      async publish(): Promise<SyncResult> {
+      async save(): Promise<SyncResult> {
+        return "ok";
+      },
+      async pushSave(): Promise<SyncResult> {
+        return "ok";
+      },
+      async saveScoped(): Promise<SyncResult> {
         return "ok";
       },
       async syncReadonly(): Promise<void> {},
@@ -323,7 +400,7 @@ describe("SyncScheduler - resilience", () => {
     expect([...calls].sort()).toEqual(["/bad", "/team"]);
   });
 
-  it("does not crash when one root's publish throws, and surfaces it as needing attention", async () => {
+  it("does not crash when one root's save throws, and surfaces it as needing attention", async () => {
     const calls: string[] = [];
     const engine = {
       async checkpoint(): Promise<CheckpointResult> {
@@ -332,9 +409,15 @@ describe("SyncScheduler - resilience", () => {
       async receive(): Promise<ReceiveResult> {
         return "ok";
       },
-      async publish(dir: string): Promise<SyncResult> {
+      async save(dir: string): Promise<SyncResult> {
         calls.push(dir);
         if (dir === "/bad") throw new Error("network error");
+        return "ok";
+      },
+      async pushSave(): Promise<SyncResult> {
+        return "ok";
+      },
+      async saveScoped(): Promise<SyncResult> {
         return "ok";
       },
       async syncReadonly(): Promise<void> {},
@@ -347,7 +430,7 @@ describe("SyncScheduler - resilience", () => {
       clock: new FakeClock(),
       onStatus: (s) => statuses.push(s),
     });
-    const status = await scheduler.publishAll();
+    const status = await scheduler.saveAll();
     expect([...calls].sort()).toEqual(["/bad", "/team"]);
     // A throw is a failure to send. Ranking it with "ok" would paint the dot green and tell the
     // operator their work reached the company when it never left the machine.
@@ -368,7 +451,7 @@ describe("manual save", () => {
     scheduler.touch("/w/team");
     await clock.advance(10_000);
     expect(engine.calls.checkpoint).toEqual(["/w/team"]);
-    expect(engine.calls.publish).toEqual([]);
+    expect(engine.calls.save).toEqual([]);
   });
 
   it("takes teammates' work in on the background tick, and still sends nothing", async () => {
@@ -380,21 +463,22 @@ describe("manual save", () => {
     await tick();
     expect(engine.calls.receive).toEqual(["/w/team", "/w/private"]);
     expect(engine.calls.syncReadonly).toEqual(["/w/core"]);
-    expect(engine.calls.publish).toEqual([]);
+    expect(engine.calls.save).toEqual([]);
+    expect(engine.calls.pushSave).toEqual([]);
   });
 
   it("sends everything only when the operator asks", async () => {
     const { scheduler, engine } = makeScheduler();
-    expect(await scheduler.publishAll()).toBe("ok");
-    expect(engine.calls.publish).toEqual(["/w/team", "/w/private"]);
+    expect(await scheduler.saveAll()).toBe("ok");
+    expect(engine.calls.save).toEqual(["/w/team", "/w/private"]);
   });
 
   it("never sends core, which is read-only", async () => {
     const { scheduler, engine } = makeScheduler();
     scheduler.touch("/w/core");
-    await scheduler.publishAll();
+    await scheduler.saveAll();
     expect(engine.calls.checkpoint).not.toContain("/w/core");
-    expect(engine.calls.publish).not.toContain("/w/core");
+    expect(engine.calls.save).not.toContain("/w/core");
   });
 
   it("records but does not send on shutdown - quitting must not publish", async () => {
@@ -402,16 +486,17 @@ describe("manual save", () => {
     scheduler.touch("/w/team");
     scheduler.stop();
     await Promise.resolve();
-    expect(engine.calls.publish).toEqual([]);
+    expect(engine.calls.save).toEqual([]);
+    expect(engine.calls.pushSave).toEqual([]);
   });
 
   it("retries a save that failed while offline", async () => {
     const { scheduler, engine, clock } = makeScheduler();
-    engine.publishResult = "queued";
-    expect(await scheduler.publishAll()).toBe("queued");
-    engine.publishResult = "ok";
+    engine.saveResult = "queued";
+    expect(await scheduler.saveAll()).toBe("queued");
     await clock.advance(5_000);
-    expect(engine.calls.publish.length).toBeGreaterThan(2);
+    await tick();
+    expect(engine.calls.pushSave.length).toBeGreaterThan(0); // the named saves went out on the retry
   });
 
   it("checkpoints each writable root BEFORE receiving it on the tick", async () => {
@@ -431,8 +516,15 @@ describe("manual save", () => {
           order.push("receive:" + dir);
           return "ok";
         },
-        async publish(): Promise<SyncResult> {
-          order.push("publish");
+        async save(): Promise<SyncResult> {
+          order.push("save");
+          return "ok";
+        },
+        async pushSave(): Promise<SyncResult> {
+          order.push("push-save");
+          return "ok";
+        },
+        async saveScoped(): Promise<SyncResult> {
           return "ok";
         },
         async syncReadonly(): Promise<void> {},
@@ -450,7 +542,7 @@ describe("manual save", () => {
       "checkpoint:/w/private",
       "receive:/w/private",
     ]);
-    expect(order).not.toContain("publish");
+    expect(order).not.toContain("save");
   });
 
   it("never runs a tick and a save against the same root at the same time", async () => {
@@ -471,7 +563,9 @@ describe("manual save", () => {
       engine: {
         checkpoint: () => slow<CheckpointResult>("committed"),
         receive: () => slow<ReceiveResult>("ok"),
-        publish: () => slow<SyncResult>("ok"),
+        save: () => slow<SyncResult>("ok"),
+        pushSave: () => slow<SyncResult>("ok"),
+        saveScoped: () => slow<SyncResult>("ok"),
         async syncReadonly(): Promise<void> {},
       },
       writableRoots: () => ["/w/team"],
@@ -479,7 +573,7 @@ describe("manual save", () => {
       clock,
     });
     scheduler.start();
-    const publishP = scheduler.publishAll(); // operator saves...
+    const publishP = scheduler.saveAll(); // operator saves...
     clock.advance(45_000); // ...and the tick fires while it is still in flight
     // Release every operation as it queues; nothing may ever be in flight two at a time.
     for (let i = 0; i < 20; i++) {
@@ -492,10 +586,11 @@ describe("manual save", () => {
 
   it("retries only the roots pending at click time, and never re-records newer work", async () => {
     // The operator saved, then kept working for an hour. When connectivity returns, the retry must
-    // send what they asked to send - not everything they have done since.
+    // send what they asked to send - not everything they have done since. The retry is a PUSH of
+    // the named save (never a fresh squash), so newer checkpoints cannot ride along.
     const { scheduler, engine, clock } = makeScheduler();
-    engine.publishResults = ["ok", "queued"]; // /w/team went out; /w/private was offline
-    await scheduler.publishAll();
+    engine.saveResults = ["ok", "queued"]; // /w/team went out; /w/private was offline
+    await scheduler.saveAll();
     expect(engine.calls.checkpoint).toEqual([]); // nothing was dirty at click time
 
     // The operator keeps working. This touch is still inside its 2s quiet window when the 5s
@@ -503,29 +598,30 @@ describe("manual save", () => {
     clock.advance(4_000);
     scheduler.touch("/w/team");
 
-    engine.calls.publish.length = 0;
     clock.advance(1_000); // connectivity returns; the retry fires at t=5s
     await tick();
-    expect(engine.calls.publish).toEqual(["/w/private"]); // only the root that was still pending
+    expect(engine.calls.pushSave).toEqual(["/w/private"]); // only the root that was still pending
+    expect(engine.calls.save).toEqual(["/w/team", "/w/private"]); // no re-squash on the retry
     expect(engine.calls.checkpoint).toEqual([]); // and nothing newer was recorded to be sent
   });
 
   it("gives up retrying while offline instead of re-running forever, leaving the state queued", async () => {
     const { scheduler, engine, clock, statuses } = makeScheduler();
-    engine.publishResult = "queued";
-    await scheduler.publishAll();
+    engine.saveResult = "queued";
+    engine.pushSaveResult = "queued";
+    await scheduler.saveAll();
     for (let i = 0; i < 12; i++) {
       clock.advance(200_000); // well past every doubling delay
       await tick();
     }
-    // 1 initial attempt + at most MAX_RETRIES (5) retries, over 2 roots.
-    expect(engine.calls.publish.length).toBeLessThanOrEqual(12);
+    // 1 initial attempt + at most MAX_RETRIES (5) push retries, over 2 roots.
+    expect(engine.calls.save.length + engine.calls.pushSave.length).toBeLessThanOrEqual(12);
     expect(statuses[statuses.length - 1]).toBe("queued"); // the operator can save again by hand
   });
 
   it("signals busy the instant the operator saves, even while a background tick holds the lease", async () => {
     // A save shares the per-root lease with the background receive tick. If the tick is mid network
-    // op, publishAll's flush queues behind it and can stall for seconds. The operator must see their
+    // op, saveAll's flush queues behind it and can stall for seconds. The operator must see their
     // click register immediately - the dot must go busy now, not only once the tick's receive returns.
     const clock = new FakeClock();
     const releaseReceive: (() => void)[] = [];
@@ -535,7 +631,13 @@ describe("manual save", () => {
       },
       receive: (): Promise<ReceiveResult> =>
         new Promise<ReceiveResult>((r) => releaseReceive.push(() => r("ok"))), // holds the lease open
-      async publish(): Promise<SyncResult> {
+      async save(): Promise<SyncResult> {
+        return "ok";
+      },
+      async pushSave(): Promise<SyncResult> {
+        return "ok";
+      },
+      async saveScoped(): Promise<SyncResult> {
         return "ok";
       },
       async syncReadonly(): Promise<void> {},
@@ -557,7 +659,7 @@ describe("manual save", () => {
     scheduler.touch("/team");
     expect(statuses).toEqual([]); // the tick emitted nothing; the dot is idle
 
-    const publishP = scheduler.publishAll(); // operator clicks Save while the tick is mid-flight
+    const publishP = scheduler.saveAll(); // operator clicks Save while the tick is mid-flight
     await tick();
     expect(statuses).toContain("busy"); // busy NOW - not blocked behind the receive still in flight
 
@@ -570,19 +672,18 @@ describe("manual save", () => {
 
   it("cancels a pending offline backoff retry on shutdown - quitting must never publish", async () => {
     const { scheduler, engine, clock } = makeScheduler();
-    engine.publishResult = "queued";
-    expect(await scheduler.publishAll()).toBe("queued"); // arms the 5s backoff retry
-    const publishCallsBeforeStop = engine.calls.publish.length;
+    engine.saveResult = "queued";
+    expect(await scheduler.saveAll()).toBe("queued"); // arms the 5s backoff retry
     scheduler.stop();
     clock.advance(30_000); // well past the 5s backoff - if the retry survived, it would fire in here
     await tick();
-    expect(engine.calls.publish.length).toBe(publishCallsBeforeStop); // no further publish after stop
+    expect(engine.calls.pushSave).toEqual([]); // no retry push after stop
   });
 });
 
 describe("saveResultStatus", () => {
   // Pins the POST /api/sync mapping for every SyncStatus. The regression this guards: a revoked
-  // account's publishAll() resolving to "reconnect" must never be reported back to the operator's
+  // account's saveAll() resolving to "reconnect" must never be reported back to the operator's
   // explicit "Save now" as a false "ok" - the old inline ternary in wiring.ts had no reconnect
   // branch and silently fell through to "ok".
   it("passes needs-help, reconnect, queued and local straight through", () => {
@@ -594,7 +695,7 @@ describe("saveResultStatus", () => {
 
   it("collapses ok and busy to ok", () => {
     expect(saveResultStatus("ok")).toBe("ok");
-    expect(saveResultStatus("busy")).toBe("ok"); // publishAll() never actually returns "busy"
+    expect(saveResultStatus("busy")).toBe("ok"); // saveAll() never actually returns "busy"
   });
 
   it("covers every SyncStatus member - fails to compile if a new one is added and unhandled", () => {

@@ -229,6 +229,31 @@ describe("/api/sync", () => {
     expect(called).toBe(true);
   });
 
+  it("hands the operator's save message through, trimmed", async () => {
+    let got: string | undefined;
+    const { app } = makeDaemon({ syncFn: async (message?: string) => { got = message; return "ok"; } });
+    await app(post("/api/sync", { message: "  Repriced the Pro tier  " }));
+    expect(got).toBe("Repriced the Pro tier");
+  });
+
+  it("treats an absent body, a blank message, or a mis-typed one as a nameless save - never a 400", async () => {
+    const seen: (string | undefined)[] = [];
+    const { app } = makeDaemon({ syncFn: async (message?: string) => { seen.push(message); return "ok"; } });
+    const bare = await app(new Request("http://127.0.0.1/api/sync", { method: "POST" })); // no body at all
+    expect(bare.status).toBe(200);
+    await app(post("/api/sync", { message: "   " }));
+    await app(post("/api/sync", { message: 7 }));
+    expect(seen).toEqual([undefined, undefined, undefined]);
+  });
+
+  it("GET carries the unsaved suggestion through for the save card's prefill", async () => {
+    const { app } = makeDaemon({
+      unsavedFn: async () => ({ files: 2, oldestAt: 1, stale: false, connected: true, suggestion: "Updated a.md and b.md" }),
+    });
+    const body = (await (await app(new Request("http://127.0.0.1/api/sync"))).json()) as { unsaved: { suggestion?: string } };
+    expect(body.unsaved.suggestion).toBe("Updated a.md and b.md");
+  });
+
   it("GET reports the current sync status for the dot (incl. needs-help)", async () => {
     const { app } = makeDaemon({ syncStatus: () => "needs-help" });
     const res = await app(new Request("http://127.0.0.1/api/sync"));

@@ -103,3 +103,64 @@ describe("recentChanges", () => {
     expect(ch[0]!.files).toEqual(["weird.md"]);
   });
 });
+
+// The two-layer model (invariant 2): checkpoints (marked subjects) are the automatic layer and
+// collapse; saves are the named layer History shows.
+describe("checkpoint collapsing - History shows saves", () => {
+  const checkpoint = (rel: string, body: string) => {
+    writeFileSync(join(dir, rel), body);
+    git(["add", "."], dir);
+    git(["commit", "-m", `~op: update ${rel}`], dir);
+  };
+  const save = (rel: string, body: string, subject: string) => {
+    writeFileSync(join(dir, rel), body);
+    git(["add", "."], dir);
+    git(["commit", "-m", subject], dir);
+  };
+
+  it("fileHistory collapses the checkpoints newer than the last save into one 'Unsaved changes' row", () => {
+    save("doc.md", "v1\n", "First save");
+    checkpoint("doc.md", "v2\n");
+    checkpoint("doc.md", "v3\n");
+    const hist = fileHistory(dir, "doc.md");
+    expect(hist.map((h) => h.subject)).toEqual(["Unsaved changes", "First save"]);
+    // The synthetic row anchors on the NEWEST checkpoint - viewing it shows the current content.
+    expect(fileAtCommit(dir, "doc.md", hist[0]!.sha)).toBe("v3\n");
+  });
+
+  it("fileHistory shows no synthetic row when a save is the tip", () => {
+    checkpoint("doc.md", "v1\n");
+    save("doc.md", "v2\n", "Named it");
+    expect(fileHistory(dir, "doc.md").map((h) => h.subject)).toEqual(["Named it"]);
+  });
+
+  it("fileHistory omits the synthetic row for a file the waiting checkpoints never touched", () => {
+    save("doc.md", "v1\n", "First save");
+    checkpoint("other.md", "x\n"); // the file-scoped log for doc.md never sees this
+    expect(fileHistory(dir, "doc.md").map((h) => h.subject)).toEqual(["First save"]);
+  });
+
+  it("recentChanges collapses leading checkpoints into one row carrying the union of their files", () => {
+    save("doc.md", "v1\n", "First save");
+    checkpoint("a.md", "a\n");
+    checkpoint("b.md", "b\n");
+    const ch = recentChanges(dir, 12);
+    expect(ch.map((c) => c.subject)).toEqual(["Unsaved changes", "First save"]);
+    expect(ch[0]!.files.sort()).toEqual(["a.md", "b.md"]);
+  });
+
+  it("drops checkpoint commits older than a save instead of showing them twice", () => {
+    checkpoint("doc.md", "v1\n"); // pre-save history (e.g. the root of a just-attached workspace)
+    save("doc.md", "v2\n", "Named it");
+    checkpoint("doc.md", "v3\n");
+    expect(recentChanges(dir, 12).map((c) => c.subject)).toEqual(["Unsaved changes", "Named it"]);
+    expect(fileHistory(dir, "doc.md").map((h) => h.subject)).toEqual(["Unsaved changes", "Named it"]);
+  });
+
+  it("stays deterministic: double-rendering the same repo state is byte-identical", () => {
+    save("doc.md", "v1\n", "First save");
+    checkpoint("doc.md", "v2\n");
+    expect(JSON.stringify(fileHistory(dir, "doc.md"))).toBe(JSON.stringify(fileHistory(dir, "doc.md")));
+    expect(JSON.stringify(recentChanges(dir, 12))).toBe(JSON.stringify(recentChanges(dir, 12)));
+  });
+});

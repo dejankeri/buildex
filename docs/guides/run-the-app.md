@@ -47,7 +47,9 @@ npm run demo:app
   brain), and **Skills** (verbs the agent can run). Apps are managed in the left rail and the
   ⊕ **Store** - there is no separate apps panel on the right.
 
-Open a session, edit a document, watch the **History** on any doc — every change is a git commit.
+Open a session, edit a document, watch the **History** on any doc — every change is checkpointed on
+your machine the moment it lands. History shows your named **saves**; anything newer sits under a
+single *Unsaved changes* entry until you **Save** it from the Pending tray.
 
 ## Let the agent run
 

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { unsavedIn, unsavedAcross, isStale, STALE_AFTER_MS } from "./unsaved.js";
+import { unsavedIn, unsavedAcross, isStale, suggestSaveMessage, STALE_AFTER_MS } from "./unsaved.js";
 import { pinnedGit } from "../lib/git-pin.js";
 
 const ENV = {
@@ -53,7 +53,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 describe("unsavedIn", () => {
   it("reports nothing when level with the remote", async () => {
     const dir = clone("a");
-    expect(await unsavedIn(dir)).toEqual({ files: 0, oldestAt: null });
+    expect(await unsavedIn(dir)).toEqual({ files: 0, oldestAt: null, paths: [] });
   });
 
   it("does not count a teammate's change as ours after a fetch that has not been rebased yet", async () => {
@@ -116,7 +116,7 @@ describe("unsavedIn", () => {
     writeFileSync(join(dir, ".sync-needs-help"), "flagged\n");
     mkdirSync(join(dir, ".sessions"), { recursive: true });
     writeFileSync(join(dir, ".sessions", "s1.json"), "{}\n");
-    expect(await unsavedIn(dir)).toEqual({ files: 0, oldestAt: null });
+    expect(await unsavedIn(dir)).toEqual({ files: 0, oldestAt: null, paths: [] });
   });
 
   it("treats everything as unsaved when there is no account yet", async () => {
@@ -136,7 +136,7 @@ describe("unsavedIn", () => {
     const dir = join(root, "empty");
     mkdirSync(dir, { recursive: true });
     git(["init", "--initial-branch=main", "."], dir);
-    expect(await unsavedIn(dir)).toEqual({ files: 0, oldestAt: null });
+    expect(await unsavedIn(dir)).toEqual({ files: 0, oldestAt: null, paths: [] });
   });
 
   it("counts a new untracked directory of 2 files as 2 documents, not 1", async () => {
@@ -238,7 +238,7 @@ describe("unsavedAcross", () => {
   });
 
   it("reports nothing across clean roots", async () => {
-    expect(await unsavedAcross([clone("a"), clone("b")])).toEqual({ files: 0, oldestAt: null, incomplete: false });
+    expect(await unsavedAcross([clone("a"), clone("b")])).toEqual({ files: 0, oldestAt: null, suggestion: null, incomplete: false });
   });
 
   it("ignores a root that is not a repository rather than failing the whole count", async () => {
@@ -266,5 +266,39 @@ describe("unsavedAcross", () => {
     commitFile(a, "one.md", "1\n");
     const u = await unsavedAcross([a, clone("b")]);
     expect(u.incomplete).toBe(false);
+  });
+});
+
+describe("suggestSaveMessage - the prefilled save note", () => {
+  it("names a single file by its basename", () => {
+    expect(suggestSaveMessage(["clients/pricing.md"])).toBe("Updated pricing.md");
+  });
+
+  it("names both files when there are two", () => {
+    expect(suggestSaveMessage(["b.md", "a.md"])).toBe("Updated a.md and b.md");
+  });
+
+  it("counts the rest beyond the first, placing them when they share one folder", () => {
+    expect(suggestSaveMessage(["clients/pricing.md", "clients/acme.md", "clients/beta.md"])).toBe(
+      "Updated acme.md and 2 more in clients/",
+    );
+  });
+
+  it("drops the folder suffix when the files span folders (or the root)", () => {
+    expect(suggestSaveMessage(["clients/a.md", "plans/b.md", "c.md"])).toBe("Updated c.md and 2 more");
+  });
+
+  it("is deterministic regardless of input order, and null for nothing", () => {
+    const a = suggestSaveMessage(["z.md", "a.md", "m.md"]);
+    const b = suggestSaveMessage(["m.md", "z.md", "a.md"]);
+    expect(a).toBe(b);
+    expect(suggestSaveMessage([])).toBeNull();
+  });
+
+  it("flows through unsavedAcross for the waiting files of every root", async () => {
+    const a = clone("a");
+    commitFile(a, "one.md", "1\n");
+    const u = await unsavedAcross([a, clone("b")]);
+    expect(u.suggestion).toBe("Updated one.md");
   });
 });

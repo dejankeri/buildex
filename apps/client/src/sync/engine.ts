@@ -22,6 +22,23 @@ const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 export type SyncResult = "ok" | "needs-help" | "reconnect" | "queued" | "no-change" | "local";
 /** Recording work locally. No network, so no offline case exists. */
 export type CheckpointResult = "committed" | "no-change";
+
+/** Every checkpoint's commit subject starts with this marker, so the two layers of history are
+ *  distinguishable forever after: checkpoints are the automatic crash-safety layer and History
+ *  collapses them; saves are the deliberate named layer History shows. One definition, imported by
+ *  the history renderer, rather than a second copy that could drift. */
+export const CHECKPOINT_MARK = "~";
+
+/** Whether a commit subject is a checkpoint's (vs a deliberate save's). */
+export function isCheckpointSubject(subject: string): boolean {
+  return subject.startsWith(CHECKPOINT_MARK);
+}
+
+/** Remembers the last deliberate save. When a remote exists, origin/main IS the last save by
+ *  construction (saves are the only pushes) - the ref is what covers a remoteless workspace, though
+ *  it is updated on every save either way so a workspace that later gains or loses its remote keeps
+ *  a correct base. A ref, not a file: it lives in .git/, so it can never be committed or synced. */
+const LAST_SAVE_REF = "refs/buildex/last-save";
 /** Taking other people's work in. Never sends anything. */
 export type ReceiveResult = "ok" | "needs-help" | "reconnect" | "offline" | "local";
 
@@ -139,6 +156,67 @@ export class SyncEngine {
     return "ok";
   }
 
+  /** The deliberate act (invariant 2): bundle every checkpoint since the last save into ONE named
+   *  commit, then send it. Checkpoints stay the automatic crash-safety layer and are NEVER pushed
+   *  as-is - the squash here is what turns a firehose of tiny edits into "one meaningful snapshot
+   *  per save". An empty `message` falls back to a deterministic summary of the changed files. */
+  async save(dir: string, message = ""): Promise<SyncResult> {
+    assertNotCloudSynced(dir);
+    // Record dirty work first: the receive below rebases, and a rebase refuses to start on a dirty
+    // tree - the engine would treat that as a conflict and hard-reset (invariant 8).
+    await this.checkpoint(dir);
+    // Bring the squash base current. On a real conflict the never-lose backup path has already run
+    // inside receive - the operator recovers from the kept copy; nothing is squashed over it.
+    const received = await this.receive(dir);
+    if (received === "needs-help" || received === "reconnect") return received;
+    // "ok"/"local"/"offline" all continue: the squash and the name are local acts; the push at the
+    // end reports whether the save also left the machine.
+    return this.squashAndSend(dir, message);
+  }
+
+  /** The retry half of a save that could not send: push the LAST NAMED SAVE and nothing newer. A
+   *  retry must send what the operator asked to send when they saved - never checkpoints (or a
+   *  fresh squash) of work they did afterwards. No-op ("no-change") before any save exists. */
+  async pushSave(dir: string): Promise<SyncResult> {
+    assertNotCloudSynced(dir);
+    if (!(await this.hasRemote(dir))) return "local";
+    let sha: string;
+    try {
+      sha = (await this.git(["rev-parse", "--verify", "--quiet", LAST_SAVE_REF], dir)).trim();
+    } catch {
+      return "no-change"; // nothing has ever been saved - there is nothing to retry
+    }
+    try {
+      await this.git(["push", "origin", `${sha}:refs/heads/main`], dir);
+    } catch (e) {
+      if (e instanceof AuthRevokedError) return "reconnect";
+      return "queued"; // still offline (or the remote moved) - the save stays safe locally
+    }
+    return "ok";
+  }
+
+  /** Auto-save for a record surface (the activity ledger): a save that runs only when EVERYTHING
+   *  waiting in the root lives under `prefix` - other unsaved work is the operator's to name and
+   *  send, so its presence turns this into a no-op and the record rides their next save. With no
+   *  remote there is nowhere to send to; the entry stays checkpointed (the caller's touch path). */
+  async saveScoped(dir: string, prefix: string, message: string): Promise<SyncResult> {
+    assertNotCloudSynced(dir);
+    if (!(await this.hasRemote(dir))) return "local";
+    await this.checkpoint(dir);
+    const received = await this.receive(dir);
+    if (received === "needs-help" || received === "reconnect") return received;
+    // Offline: nothing is squashed - the checkpointed entry goes out with the next save instead of
+    // arming a retry loop for a background record write.
+    if (received === "offline") return "queued";
+    const base = await this.saveBase(dir);
+    const changed = base
+      ? lines(await this.git(["diff", "--name-only", base, "HEAD"], dir))
+      : lines(await this.git(["ls-files"], dir));
+    if (changed.length === 0) return "no-change";
+    if (!changed.every((f) => f.startsWith(prefix))) return "no-change";
+    return this.squashAndSend(dir, message);
+  }
+
   /** Point (or re-point) a root's `origin` at `url`, idempotently. No fetch, no auth needed. */
   async addRemote(dir: string, url: string): Promise<void> {
     if (await this.hasRemote(dir)) await this.git(["remote", "set-url", "origin", url], dir);
@@ -205,7 +283,89 @@ export class SyncEngine {
   private commitMessage(files: string[]): string {
     const shown = files.slice(0, 5).join(", ");
     const more = files.length > 5 ? ` (+${files.length - 5} more)` : "";
-    return `${this.deps.actor}: update ${shown}${more}`;
+    return `${CHECKPOINT_MARK}${this.deps.actor}: update ${shown}${more}`;
+  }
+
+  /** The commit a save squashes onto: origin/main when the remote has one (post-receive it is an
+   *  ancestor of HEAD holding exactly what is already published), else the last-save ref (the
+   *  remoteless workspace), else null - a workspace that has never saved at all. */
+  private async saveBase(dir: string): Promise<string | null> {
+    if (await this.remoteMainExists(dir)) return (await this.git(["rev-parse", "origin/main"], dir)).trim();
+    try {
+      return (await this.git(["rev-parse", "--verify", "--quiet", LAST_SAVE_REF], dir)).trim();
+    } catch {
+      return null;
+    }
+  }
+
+  /** The squash-name-push tail shared by save() and saveScoped(). Runs on a clean tree (both
+   *  callers checkpoint first). `git reset --soft` moves HEAD only - the index still holds the
+   *  pre-squash tree, so the commit that follows carries every checkpoint's content in one named
+   *  snapshot; the checkpoint commits themselves drop out of the branch (they remain reachable from
+   *  the reflog, but History is the named layer from here on). */
+  private async squashAndSend(dir: string, message: string): Promise<SyncResult> {
+    // A save's subject must never read as a checkpoint - strip a leading marker rather than let a
+    // pasted "~..." message vanish from History.
+    const named = message.trim().replace(/^~+\s*/, "");
+    if (!(await this.hasAnyCommit(dir))) return "no-change"; // brand-new empty root - nothing at all
+    const base = await this.saveBase(dir);
+    const ahead = base
+      ? parseInt((await this.git(["rev-list", "--count", `${base}..HEAD`], dir)).trim(), 10)
+      : parseInt((await this.git(["rev-list", "--count", "HEAD"], dir)).trim(), 10);
+    if (ahead === 0) {
+      // Level with the base and (post-checkpoint) clean: nothing to save. Keep the ref current so a
+      // later disconnect leaves the remoteless workspace with the right base.
+      await this.git(["update-ref", LAST_SAVE_REF, "HEAD"], dir);
+      return "no-change";
+    }
+    // What this save will contain - computed BEFORE any ref moves, so a net-zero run of checkpoints
+    // (an edit made and undone) is detected while backing out is still trivial.
+    const changed = base
+      ? lines(await this.git(["diff", "--name-only", base, "HEAD"], dir))
+      : lines(await this.git(["ls-files"], dir));
+    if (changed.length === 0) {
+      if (base) {
+        // The checkpoints summed to no change - fold them away; HEAD lands exactly on the base.
+        await this.git(["reset", "--soft", base], dir);
+        await this.git(["update-ref", LAST_SAVE_REF, "HEAD"], dir);
+      }
+      return "no-change";
+    }
+    const tip = (await this.git(["log", "-1", "--format=%s"], dir)).trim();
+    // The one commit ahead is already a named save (an earlier save that could not send, being
+    // retried by hand) - keep it, name included, rather than re-squash it under a fallback subject.
+    // An explicit message wins: the operator is renaming the bundle now.
+    const keep = named === "" && ahead === 1 && !isCheckpointSubject(tip);
+    if (!keep) {
+      if (base) {
+        await this.git(["reset", "--soft", base], dir);
+      } else {
+        // The very first save of a workspace that has never had one: no base exists, so the save
+        // becomes the single root commit - everything before it was checkpoints.
+        const branch = (await this.git(["symbolic-ref", "--quiet", "HEAD"], dir)).trim();
+        await this.git(["update-ref", "-d", branch], dir);
+      }
+      await this.git(["commit", "-m", named || saveMessage(changed)], dir);
+    }
+    await this.git(["update-ref", LAST_SAVE_REF, "HEAD"], dir);
+    if (!(await this.hasRemote(dir))) return "local";
+    try {
+      await this.git(["push", "origin", "HEAD:main"], dir);
+    } catch (e) {
+      if (e instanceof AuthRevokedError) return "reconnect";
+      return "queued"; // the named save is retained locally and goes out on the next attempt
+    }
+    return "ok";
+  }
+
+  /** Whether the repo has any commit yet (a freshly-initialised root does not). */
+  private async hasAnyCommit(dir: string): Promise<boolean> {
+    try {
+      await this.git(["rev-parse", "--verify", "--quiet", "HEAD"], dir);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** Conflict path: abort, back up the local version byte-for-byte, reset to remote, flag. */
@@ -290,6 +450,15 @@ export class SyncEngine {
       throw e;
     }
   }
+}
+
+/** The fallback save subject when the operator leaves the message blank: a deterministic summary of
+ *  what the save contains, in their vocabulary (documents, not commits). */
+function saveMessage(files: string[]): string {
+  const noun = files.length === 1 ? "document" : "documents";
+  const shown = files.slice(0, 3).join(", ");
+  const more = files.length > 3 ? `, +${files.length - 3} more` : "";
+  return `Save: ${files.length} ${noun} updated (${shown}${more})`;
 }
 
 /** Split git's newline output into trimmed, non-empty entries. */

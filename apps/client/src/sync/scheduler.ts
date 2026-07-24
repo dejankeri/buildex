@@ -1,10 +1,12 @@
 // Background sync loop.
 // Owns *when* a sync runs; the SyncEngine primitive owns *how*. Debounces bursts of edits into a
 // single checkpoint, runs a background receive tick, retries offline sends with bounded backoff.
+// The background loop only records and receives - the ONE path that sends is the operator's save
+// (saveAll, from POST /api/sync), so outbound history is deliberate while pull stays automatic.
 // Deterministic: all timing goes through an injected clock so tests run on a fake clock with no
 // real timers.
 //
-// Mutual exclusion is PER ROOT, not per operation: checkpoint, receive and publish all run through
+// Mutual exclusion is PER ROOT, not per operation: checkpoint, receive and save all run through
 // `exclusive(dir, ...)`, which chains them on one promise per repository. Two git operations in one
 // worktree race on the index lock, and a rebase that fails because another operation held the lock
 // would trip the engine's conflict path - a spurious "needs help" plus a hard reset. The
@@ -26,7 +28,12 @@ export interface Clock {
 export interface SyncEngineLike {
   checkpoint(dir: string): Promise<CheckpointResult>;
   receive(dir: string): Promise<ReceiveResult>;
-  publish(dir: string): Promise<SyncResult>;
+  /** The deliberate act: squash the checkpoints since the last save into one named commit and send it. */
+  save(dir: string, message?: string): Promise<SyncResult>;
+  /** The retry half of a save that could not send: push the last NAMED save, nothing newer. */
+  pushSave(dir: string): Promise<SyncResult>;
+  /** Auto-save for a record surface - runs only when everything waiting lives under `prefix`. */
+  saveScoped(dir: string, prefix: string, message: string): Promise<SyncResult>;
   syncReadonly(dir: string): Promise<void>;
 }
 
@@ -63,8 +70,8 @@ export class SyncScheduler {
   private flushing = false;
   private rerun = false;
   private lastStatus: SyncStatus = "ok";
-  /** The per-root result of the last publish - lets the console say WHICH root is stuck, alongside
-   *  the collapsed worst status. Populated in `publishRoots`; `perRoot()` hands out a copy. */
+  /** The per-root result of the last save - lets the console say WHICH root is stuck, alongside
+   *  the collapsed worst status. Populated in `sendRoots`; `perRoot()` hands out a copy. */
   private lastPerRoot: Record<string, SyncStatus> = {};
   /** One promise chain per repository - the per-root mutex (see the file comment). */
   private readonly chain = new Map<string, Promise<unknown>>();
@@ -201,30 +208,45 @@ export class SyncScheduler {
     }
   }
 
-  /** Send everything the operator has. The one path that pushes, and only they trigger it
-   *  (POST /api/sync). */
-  async publishAll(): Promise<SyncStatus> {
+  /** Save everything the operator has: squash + name + send, per writable root. The one path that
+   *  pushes, and only they trigger it (POST /api/sync). `message` is the operator's name for this
+   *  save; the engine falls back to a deterministic summary when it is absent. */
+  async saveAll(message?: string): Promise<SyncStatus> {
     // Signal busy the INSTANT the operator clicks, before anything can block. The flush below, and
-    // the publish after it, both take the per-root lease - so a background receive tick that is mid
+    // the save after it, both take the per-root lease - so a background receive tick that is mid
     // network op can hold it and stall this call for seconds. Without this the dot would sit on its
     // old state through that whole wait and the click would look ignored. setStatus dedupes, so the
-    // busy that publishRoots sets next is not a second repaint.
+    // busy that sendRoots sets next is not a second repaint.
     this.setStatus("busy");
     await this.flush(); // record anything still in the debounce window first
-    return this.publishRoots(this.deps.writableRoots(), 0);
+    return this.sendRoots(this.deps.writableRoots(), 0, (dir) => this.deps.engine.save(dir, message));
   }
 
-  /** Send exactly `roots`. The retry path re-enters here with the roots that were pending AT CLICK
-   *  TIME and never re-flushes: an operator who saved while offline asked to send what existed then,
-   *  not an hour of work they did afterwards. Sending more than they asked for would break the one
-   *  rule this whole surface exists to keep. */
-  private async publishRoots(roots: string[], attempt: number): Promise<SyncStatus> {
+  /** Auto-save a record surface (the activity ledger): the engine's scoped save, under the per-root
+   *  lease so it can never race a tick or a manual save. Quiet on purpose - only the states the
+   *  operator must act on reach the dot; anything else leaves the entry checkpointed on disk, where
+   *  it rides the next save. */
+  async saveScoped(dir: string, prefix: string, message: string): Promise<void> {
+    try {
+      const r = await this.exclusive(dir, () => this.deps.engine.saveScoped(dir, prefix, message));
+      if (r === "needs-help" || r === "reconnect") this.setStatus(r);
+    } catch {
+      /* the entry is checkpointed on disk regardless - it goes out with the next save */
+    }
+  }
+
+  /** Send exactly `roots` via `send`. The retry path re-enters here with the roots that were
+   *  pending AT CLICK TIME, never re-flushes, and pushes only the NAMED save (engine.pushSave): an
+   *  operator who saved while offline asked to send what existed then, not an hour of work they did
+   *  afterwards. Sending more than they asked for would break the one rule this whole surface
+   *  exists to keep. */
+  private async sendRoots(roots: string[], attempt: number, send: (dir: string) => Promise<SyncResult>): Promise<SyncStatus> {
     this.setStatus("busy");
     const results = await Promise.all(
       roots.map((dir) =>
         this.exclusive(dir, async (): Promise<SyncResult> => {
           try {
-            return await this.deps.engine.publish(dir);
+            return await send(dir);
           } catch {
             // A throw is a FAILURE to send (a cloud-synced workspace, a corrupt repository, a git
             // timeout). It must never be laundered into "no-change", which ranks as success and
@@ -243,7 +265,7 @@ export class SyncScheduler {
       this.lastPerRoot[roots[i]!] = r === "no-change" ? "ok" : r;
     }
 
-    // Offline roots keep their checkpoints locally; retry those roots (only those) on a doubling
+    // Offline roots keep their named save locally; retry those roots (only those) on a doubling
     // delay, a bounded number of times. When the retries run out the status stays "queued" - the
     // work is safe on disk and saving again is one tap away.
     const queued = roots.filter((_, i) => results[i] === "queued");
@@ -253,7 +275,7 @@ export class SyncScheduler {
       this.backoffTimer = this.deps.clock.setTimer(
         () => {
           this.backoffTimer = null;
-          void this.publishRoots(queued, attempt + 1);
+          void this.sendRoots(queued, attempt + 1, (dir) => this.deps.engine.pushSave(dir));
         },
         BACKOFF_MS * 2 ** attempt,
       );
@@ -261,7 +283,7 @@ export class SyncScheduler {
     return status;
   }
 
-  /** The per-root status of the last publish, keyed by dir - a copy, never the internal object. */
+  /** The per-root status of the last save, keyed by dir - a copy, never the internal object. */
   perRoot(): Record<string, SyncStatus> {
     return { ...this.lastPerRoot };
   }
@@ -278,7 +300,7 @@ function worstStatus(results: SyncResult[]): SyncStatus {
   return "ok";
 }
 
-/** The status POST /api/sync reports back for an explicit "Save now". publishAll() never returns
+/** The status POST /api/sync reports back for an explicit "Save now". saveAll() never returns
  *  "busy" (it resolves to the final worstStatus), but map it explicitly so this stays exhaustive:
  *  every SyncStatus must have a case, so adding a new status forces a decision here. */
 export function saveResultStatus(s: SyncStatus): "ok" | "needs-help" | "reconnect" | "queued" | "local" {

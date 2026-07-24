@@ -28,4 +28,9 @@ The ledger is a plain document in your team's brain — one file per month under
 to your whole team like any other document, appears in your Files, and is versioned forever. Nothing
 hidden, no separate database: the record your team audits is a page anyone can read.
 
+Because it is a record, a new entry doesn't wait for your next save: when the ledger is the only
+thing that changed, it is saved to your team on its own the moment it lands. If other work of yours
+is still waiting to be named, the entry simply rides along with your next save instead — an
+automatic record never sends work you haven't decided to share.
+
 You'll also see the current month at a glance in the **Brain** view, under the Gate.
