@@ -395,7 +395,7 @@ describe("App Store - /api/catalog", () => {
   it("GET /api/catalog returns the pack list", async () => {
     const { app } = makeDaemon({
       packStore: {
-        list: () => [{ id: "notion", name: "Notion", installed: false, faces: { app: true, mcp: true, apiKey: false, provision: false, skills: 1 } }],
+        list: () => [{ id: "notion", name: "Notion", installed: false, faces: { app: true, mcp: true, apiKey: false, provision: false, sandbox: false, skills: 1 } }],
         install: okInstall,
         uninstall: okInstall,
         setApiKey: () => {},

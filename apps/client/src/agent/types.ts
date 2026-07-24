@@ -33,6 +33,18 @@ export interface RunPromptOpts {
   /** Extra text appended to the agent's system prompt (e.g. the workspace file map, so the agent can
    *  navigate by Read even where Glob/Grep/Bash are unavailable). Passed via --append-system-prompt. */
   systemPromptAppend?: string;
+  /** Permission rules pre-granted for this spawn (Claude Code --allowedTools). Headless sessions in
+   *  fresh, never-trusted workspaces (the e2e harness) need this: project settings.json permissions
+   *  only apply to trusted folders, and non-interactive runs cannot answer a trust or permission
+   *  prompt. */
+  allowedTools?: string[];
+  /** When set, spawn with `--strict-mcp-config --mcp-config <path>` so the agent uses ONLY this MCP
+   *  config file and ignores user, global, AND account-level (claude.ai) MCP configs. The harness
+   *  needs this: without it a spawned `claude` inherits the operator's own claude.ai connectors
+   *  (Gmail/Calendar/Drive), which are then reachable-until-denied by `allowedTools` rather than
+   *  never present. Strict-mcp is the first layer (can't see them), allowedTools the second (can't
+   *  call them). Model auth is unaffected - auth is the login, not MCP config. */
+  mcpConfigPath?: string;
   /** Abort the turn (kills the underlying process). */
   signal?: AbortSignal;
 }

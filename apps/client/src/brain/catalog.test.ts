@@ -48,7 +48,7 @@ describe("listPacks", () => {
     const packs = listPacks(source, roots);
     expect(packs).toHaveLength(1);
     expect(packs[0]!.id).toBe("notion");
-    expect(packs[0]!.faces).toEqual({ app: true, mcp: true, apiKey: false, provision: false, skills: 1 });
+    expect(packs[0]!.faces).toEqual({ app: true, mcp: true, apiKey: false, provision: false, sandbox: false, skills: 1 });
     expect(packs[0]!.installed).toBe(false);
   });
 

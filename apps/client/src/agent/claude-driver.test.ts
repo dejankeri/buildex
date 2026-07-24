@@ -71,6 +71,50 @@ describe("ClaudeCodeDriver.runPrompt", () => {
     expect(calls[0]!.args).not.toContain("--model");
   });
 
+  it("passes --allowedTools as one comma-joined value when given, and omits the flag otherwise", async () => {
+    const { spawn: s1, calls: c1 } = fakeSpawn(TRANSCRIPT);
+    const d1 = new ClaudeCodeDriver({ spawn: s1, bin: "claude" });
+    await collect(d1.runPrompt({ prompt: "go", workspace: "/ws", allowedTools: ["mcp__buildex-pack_acme", "WebFetch"] }));
+    const args = c1[0]!.args;
+    const i = args.indexOf("--allowedTools");
+    expect(i).toBeGreaterThan(-1);
+    expect(args[i + 1]).toBe("mcp__buildex-pack_acme,WebFetch");
+
+    const { spawn: s2, calls: c2 } = fakeSpawn(TRANSCRIPT);
+    const d2 = new ClaudeCodeDriver({ spawn: s2, bin: "claude" });
+    await collect(d2.runPrompt({ prompt: "go", workspace: "/ws" }));
+    expect(c2[0]!.args).not.toContain("--allowedTools");
+
+    const { spawn: s3, calls: c3 } = fakeSpawn(TRANSCRIPT);
+    const d3 = new ClaudeCodeDriver({ spawn: s3, bin: "claude" });
+    await collect(d3.runPrompt({ prompt: "go", workspace: "/ws", allowedTools: [] }));
+    expect(c3[0]!.args).not.toContain("--allowedTools");
+  });
+
+  it("rejects an allowedTools rule containing a comma - the comma-joined flag would silently split it into two broken rules", async () => {
+    const { spawn, calls } = fakeSpawn(TRANSCRIPT);
+    const driver = new ClaudeCodeDriver({ spawn, bin: "claude" });
+    await expect(collect(driver.runPrompt({ prompt: "go", workspace: "/ws", allowedTools: ["Bash(foo, bar)"] }))).rejects.toThrow(/comma/i);
+    expect(calls).toHaveLength(0); // refused before any spawn, like the model allowlist
+  });
+
+  it("passes --strict-mcp-config + --mcp-config when mcpConfigPath is set, and neither flag otherwise", async () => {
+    const { spawn: s1, calls: c1 } = fakeSpawn(TRANSCRIPT);
+    const d1 = new ClaudeCodeDriver({ spawn: s1, bin: "claude" });
+    await collect(d1.runPrompt({ prompt: "go", workspace: "/ws", mcpConfigPath: "/ws/.mcp.json" }));
+    const args = c1[0]!.args;
+    expect(args).toContain("--strict-mcp-config");
+    const i = args.indexOf("--mcp-config");
+    expect(i).toBeGreaterThan(-1);
+    expect(args[i + 1]).toBe("/ws/.mcp.json");
+
+    const { spawn: s2, calls: c2 } = fakeSpawn(TRANSCRIPT);
+    const d2 = new ClaudeCodeDriver({ spawn: s2, bin: "claude" });
+    await collect(d2.runPrompt({ prompt: "go", workspace: "/ws" }));
+    expect(c2[0]!.args).not.toContain("--strict-mcp-config");
+    expect(c2[0]!.args).not.toContain("--mcp-config");
+  });
+
   it("passes the workspace file map via --append-system-prompt when given", async () => {
     const { spawn, calls } = fakeSpawn(TRANSCRIPT);
     const driver = new ClaudeCodeDriver({ spawn, bin: "claude" });

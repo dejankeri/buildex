@@ -138,11 +138,19 @@ export class ClaudeStreamParser {
 function stringifyContent(content: unknown): string | undefined {
   if (content == null) return undefined;
   if (typeof content === "string") return content;
-  // Claude sometimes sends tool_result content as an array of blocks.
+  // Claude sometimes sends tool_result content as an array of blocks. A part with a string `text`
+  // field is a text block - use its text verbatim; any other part (a bare object - an image block,
+  // a structured payload, whatever) is JSON.stringify'd rather than String()-coerced, which would
+  // otherwise collapse it to the unreadable "[object Object]".
   if (Array.isArray(content)) {
     return content
-      .map((c) => (typeof c === "object" && c && "text" in c ? String((c as { text: unknown }).text) : String(c)))
-      .join("");
+      .map((c) => {
+        if (typeof c === "object" && c && "text" in c && typeof (c as { text: unknown }).text === "string") {
+          return (c as { text: string }).text;
+        }
+        return typeof c === "string" ? c : JSON.stringify(c);
+      })
+      .join("\n");
   }
   return JSON.stringify(content);
 }
