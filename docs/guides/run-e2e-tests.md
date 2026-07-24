@@ -93,6 +93,18 @@ A proof run writes to `~/.buildex-e2e/proof-runs/<timestamp>-<pack>-proof/`:
 Both reports are rendered deterministically — no model runs when they are built, so the same run
 data always produces byte-identical files, on any OS.
 
+## Which model runs
+
+The engine never chooses a model. It spawns your own agent CLI, and every spawned role — the
+scenario generator, the driven agent, the judge — runs on whatever model that CLI is configured
+to use as its default.
+
+A proof run is therefore a statement about the **pack and the model together**: a different model
+can generate different scenarios, drive them differently, and band the same transcript
+differently. Note the model alongside a run's results, and compare runs (including `--baseline`
+drift checks) only against runs made on the same model. The deterministic track's checks, the run
+gate, and both rendered reports do not vary with the model.
+
 ## Clean slate
 
 Every run provisions its own throwaway BuildEx workspace and deletes it at teardown; your real demo
