@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listApps, writeAppManifest, readAppFile } from "./apps.js";
+import { listApps, writeAppManifest, readAppFile, appGrants } from "./apps.js";
 import type { Root } from "./graph.js";
 
 let dir: string;
@@ -29,11 +29,38 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("listApps - the Apps surface catalog", () => {
-  it("lists a local app with a resolved entry and read flag", () => {
-    seedApp("team", "crm-demo", { name: "CRM Demo", icon: "🧪", kind: "local", data: { read: true } }, { "index.html": "<h1>hi</h1>" });
+  it("lists a local app with a resolved entry and closed-by-default grants", () => {
+    seedApp("team", "crm-demo", { name: "CRM Demo", icon: "🧪", kind: "local" }, { "index.html": "<h1>hi</h1>" });
     const apps = listApps(roots);
     expect(apps).toHaveLength(1);
-    expect(apps[0]).toMatchObject({ name: "crm-demo", title: "CRM Demo", repo: "team", kind: "local", entry: "index.html", dataRead: true, dataWrite: false });
+    expect(apps[0]).toMatchObject({ name: "crm-demo", title: "CRM Demo", repo: "team", kind: "local", entry: "index.html", origins: [], secrets: [] });
+  });
+
+  it("keeps well-formed origin/secret declarations and drops malformed ones (fail-closed)", () => {
+    seedApp("team", "crm-demo", {
+      name: "CRM Demo",
+      kind: "local",
+      origins: [
+        "https://api.example.com",          // exact origin - kept
+        "https://*.example.com",            // leading subdomain wildcard - kept
+        "https://api.example.com:8443",     // explicit port - kept
+        "http://api.example.com",           // not https - dropped
+        "https://api.example.com/v1",       // a path is not an origin - dropped
+        "https://*",                        // a bare wildcard grants everything - dropped
+        "https://api.*.example.com",        // wildcard not leading - dropped
+        42,                                 // not even a string - dropped
+      ],
+      secrets: [
+        { name: "api-key" },                          // kept, default header
+        { name: "api-key-2", header: "X-Api-Key" },   // kept, custom header
+        { name: "Bad Name" },                         // not kebab-case - dropped
+        { name: "bad-header", header: "X: evil" },    // not a header token - dropped
+        "api-key-3",                                  // not an object - dropped
+      ],
+    }, { "index.html": "x" });
+    const app = listApps(roots)[0]!;
+    expect(app.origins).toEqual(["https://api.example.com", "https://*.example.com", "https://api.example.com:8443"]);
+    expect(app.secrets).toEqual([{ name: "api-key" }, { name: "api-key-2", header: "X-Api-Key" }]);
   });
 
   it("lists an external app carrying its url and no entry", () => {
@@ -94,6 +121,17 @@ describe("writeAppManifest + readAppFile - create and path-confined read", () =>
     expect(() =>
       writeAppManifest(roots, { repo: "team", name: "bad-ext", manifest: { name: "Bad", kind: "external", url: "javascript:alert(1)" } }),
     ).toThrow(/http\(s\)|url/i);
+  });
+
+  it("appGrants resolves a local app's own folder + validated grants, and nothing else", () => {
+    seedApp("team", "crm-demo", { name: "CRM", kind: "local", origins: ["https://api.example.com"], secrets: [{ name: "api-key" }] }, { "index.html": "x" });
+    seedApp("team", "ext", { name: "Ext", kind: "external", url: "https://app.example.com" });
+    const g = appGrants(roots, "team", "crm-demo");
+    expect(g).toMatchObject({ appDir: join(dir, "team", "apps", "crm-demo"), origins: ["https://api.example.com"], secrets: [{ name: "api-key" }] });
+    expect(appGrants(roots, "team", "ext")).toBeUndefined(); // external apps have no local folder to serve
+    expect(appGrants(roots, "team", "nope")).toBeUndefined();
+    expect(appGrants(roots, "nope", "crm-demo")).toBeUndefined();
+    expect(appGrants(roots, "team", "../crm-demo")).toBeUndefined(); // name is shape-checked, not joined
   });
 
   it("writes and lists a valid https external app", () => {

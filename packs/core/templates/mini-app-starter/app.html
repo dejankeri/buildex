@@ -1,8 +1,10 @@
 <!--
   Mini-app starter. A mini-app is a small, self-contained HTML view the agent can open inside
   the workspace to show something visual - a dashboard, a live venture view, a form. It runs in a
-  sandboxed iframe and talks to the app only through the injected bridge (window.buildex.*), never to
-  the network directly. Copy this into team/.apps/<name>/app.html and edit.
+  sandboxed iframe and talks to the app only through the injected bridge (window.buildex.*): reads
+  stay inside the app's own folder, and the network is closed except https origins the app.json
+  manifest declares (`origins`; secrets attach daemon-side via buildex.fetch, never in the page).
+  Copy this into team/.apps/<name>/app.html and edit.
 
   The agent can read and drive this view through the local app-driver MCP (list_apps, open_app,
   read_app, click, fill) - so a mini-app is both a human display and an agent-operable surface.

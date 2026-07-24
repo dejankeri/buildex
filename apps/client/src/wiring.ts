@@ -18,6 +18,7 @@ import { startProvisionProxy } from "./brain/provision-proxy.js";
 import { emptyCatalogSource, type CatalogSource } from "./brain/catalog-source.js";
 import { buildAgentView } from "./brain/agent-view.js";
 import { serveApp, brokerData } from "./server/app-serve.js";
+import { brokerAppFetch, setAppSecret } from "./server/app-fetch.js";
 import { LoopDefStore, LoopStateFile, migrateAutomationsYaml, parseScheduleInput, type LoopDef, type LoopSchedule } from "./brain/loops.js";
 import { LoopsEngine, type StartedRun, type RunOutcome } from "./brain/loops-engine.js";
 import { LoopRunsFile } from "./brain/loops-runs.js";
@@ -483,10 +484,12 @@ export function buildClientHandler(config: ClientConfig): Handler {
   const appCatalog = { list: () => listApps(config.roots) };
   const appStore = {
     create: (input: { repo: string; name: string; kind: "local" | "external"; title?: string; icon?: string; url?: string }) => {
+      // A local app's manifest declares no grants: reads are its own folder (always), egress and
+      // secrets start closed - the author adds `origins`/`secrets` when the app needs them.
       const manifest: AppManifest =
         input.kind === "external"
           ? { ...(input.title ? { name: input.title } : {}), ...(input.icon ? { icon: input.icon } : {}), kind: "external", url: input.url ?? "" }
-          : { ...(input.title ? { name: input.title } : {}), ...(input.icon ? { icon: input.icon } : {}), kind: "local", data: { read: true, write: false } };
+          : { ...(input.title ? { name: input.title } : {}), ...(input.icon ? { icon: input.icon } : {}), kind: "local" };
       const starter = input.kind === "local" ? starterAppHtml(input.title ?? input.name) : undefined;
       writeAppManifest(config.roots, { repo: input.repo, name: input.name, manifest, ...(starter != null ? { starter } : {}) });
       const root = config.roots.find((r) => r.name === input.repo);
@@ -979,6 +982,10 @@ export function buildClientHandler(config: ClientConfig): Handler {
     packStore,
     appServe: (urlPath) => serveApp(config.roots, urlPath),
     appData: (r) => brokerData(config.roots, r),
+    // The app fetch broker shares the gateway/provision approver seam, so an app's outbound send
+    // raises the same card an MCP send does; the secret itself stays in the keychain (invariant 4).
+    appFetch: (r) => brokerAppFetch({ roots: config.roots, fetch: fetchImpl, keychain, approve: brokerApprover(broker) }, r),
+    appSecrets: { set: (r) => setAppSecret(config.roots, keychain, r) },
     usageFn,
     openAccount,
     accountState,
@@ -1060,16 +1067,17 @@ function applyEffort(prompt: string, effort?: string): string {
   return prompt;
 }
 
-/** The starter local app - a minimal dashboard that reads a workspace file via the buildex bridge. */
+/** The starter local app - a minimal dashboard that reads a file from its OWN folder via the buildex
+ *  bridge (an app's reads never leave its folder, so the honest demo reads its own manifest). */
 function starterAppHtml(title: string): string {
   const e = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   return `<!doctype html><meta charset="utf-8"><title>${e(title)}</title>
 <style>body{font:14px/1.5 system-ui;margin:2rem;color:#1a1a1a}h1{font-size:1.4rem}pre{background:#f4f4f5;padding:1rem;border-radius:8px;overflow:auto}</style>
 <h1>${e(title)}</h1>
-<p>This is a starter app. It reads a file from your workspace through the buildex bridge:</p>
+<p>This is a starter app. It reads a file from its own folder through the buildex bridge:</p>
 <pre id="out">loading…</pre>
 <script>
-  buildex.read("README.md").then(t => { document.getElementById("out").textContent = t || "(no README.md yet)"; })
+  buildex.read("app.json").then(t => { document.getElementById("out").textContent = t; })
     .catch(e => { document.getElementById("out").textContent = "read failed: " + e; });
 </script>`;
 }

@@ -8,13 +8,30 @@ import { join, resolve, extname } from "node:path";
 import { confinePath } from "../lib/confine-path.js";
 import type { Root } from "./graph.js";
 
+/** One brokered secret slot a local app declares. The VALUE never appears in the manifest (or any
+ *  repo file) - it lives in the keychain and the daemon attaches it per request (invariant 4). */
+export interface AppSecretSpec {
+  /** The slot name (kebab-case, like app names) - the keychain key is derived from it. */
+  name: string;
+  /** The request header the daemon attaches the value under. Absent → `Authorization: Bearer <value>`. */
+  header?: string;
+}
+
 export interface AppManifest {
   name?: string;
   icon?: string;
   kind: "local" | "external";
   entry?: string;
   url?: string;
+  /** Deferred widening seam - NOT honored today (invariant 10): a local app's brokered reads are
+   *  always confined to its own folder, whatever these flags say. A future explicit-grant flow (an
+   *  operator tap, not a manifest bit an app author sets on itself) is the only thing that may widen. */
   data?: { read?: boolean; write?: boolean };
+  /** The https origins this app may reach: they become the served document's connect-src AND the
+   *  allowlist for brokered fetches. Nothing declared → egress closed (daemon origin only). */
+  origins?: string[];
+  /** The brokered secret slots this app may use (see AppSecretSpec). */
+  secrets?: AppSecretSpec[];
 }
 
 export interface AppMeta {
@@ -25,11 +42,39 @@ export interface AppMeta {
   icon?: string;
   entry?: string;
   url?: string;
-  dataRead: boolean;
-  dataWrite: boolean;
+  /** Validated egress origins (invalid declarations are dropped, never fixed up). */
+  origins: string[];
+  /** Validated secret slots. */
+  secrets: AppSecretSpec[];
 }
 
 const NAME_RE = /^[a-z][a-z0-9-]*$/;
+// A declared egress origin: https, an optional single leading subdomain wildcard, a host (optional
+// port), and nothing else - no path/query, no credentials, no broader wildcards. Anything that
+// doesn't match is dropped at read time (fail-closed), the same posture as the external-url guard.
+const ORIGIN_RE = /^https:\/\/(\*\.)?[a-z0-9][a-z0-9.-]*(:\d{1,5})?$/;
+// An HTTP header NAME (token) - the daemon puts a secret under it, so it must be shape-checked.
+const HEADER_RE = /^[A-Za-z][A-Za-z0-9-]*$/;
+
+/** Keep only well-formed origin declarations (defends against team-synced/hand-edited manifests). */
+function validOrigins(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((o): o is string => typeof o === "string" && ORIGIN_RE.test(o));
+}
+
+/** Keep only well-formed secret slots - a bad name or header drops the slot, never "fixes" it. */
+function validSecrets(raw: unknown): AppSecretSpec[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AppSecretSpec[] = [];
+  for (const s of raw) {
+    if (typeof s !== "object" || s === null) continue;
+    const { name, header } = s as { name?: unknown; header?: unknown };
+    if (typeof name !== "string" || !NAME_RE.test(name)) continue;
+    if (header !== undefined && (typeof header !== "string" || !HEADER_RE.test(header))) continue;
+    out.push({ name, ...(header ? { header } : {}) });
+  }
+  return out;
+}
 
 /** Scan every root's apps/ dir; precedence-merge by name (later root wins). Invalid apps are skipped. */
 export function listApps(roots: Root[]): AppMeta[] {
@@ -62,8 +107,8 @@ function readAppMeta(root: Root, name: string): AppMeta | undefined {
     title,
     repo: root.name,
     ...(m.icon ? { icon: m.icon } : {}),
-    dataRead: m.data?.read ?? false,
-    dataWrite: m.data?.write ?? false,
+    origins: validOrigins(m.origins),
+    secrets: validSecrets(m.secrets),
   };
   if (m.kind === "external") {
     if (!m.url || !/^https?:\/\//.test(m.url)) return undefined; // drop non-http(s) (defends against team-synced/hand-edited manifests)
@@ -105,6 +150,23 @@ export function writeAppManifest(
   writeFileSync(path, JSON.stringify(opts.manifest, null, 2) + "\n");
   if (opts.manifest.kind === "local" && opts.starter != null) writeFileSync(join(appDir, "index.html"), opts.starter);
   return { path };
+}
+
+/** A local app's own folder (the one holding its manifest) plus its validated declared grants - the
+ *  single lookup the data broker, the fetch broker and the serve route share. An app's authority is
+ *  exactly this: its own files, its declared origins, its declared secret slots. undefined for an
+ *  unknown repo/name, a non-local app, or an invalid manifest (fail-closed). */
+export function appGrants(
+  roots: Root[],
+  repo: string,
+  name: string,
+): { appDir: string; origins: string[]; secrets: AppSecretSpec[] } | undefined {
+  if (!NAME_RE.test(name)) return undefined;
+  const root = roots.find((r) => r.name === repo);
+  if (!root) return undefined;
+  const meta = readAppMeta(root, name);
+  if (!meta || meta.kind !== "local") return undefined;
+  return { appDir: join(root.dir, "apps", name), origins: meta.origins, secrets: meta.secrets };
 }
 
 /** Read one file inside an app folder, confined to `<repo>/apps/<name>/`. Used by the serve route. */

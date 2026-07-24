@@ -1,7 +1,9 @@
 // The script injected at the top of every LOCAL app's HTML before its own scripts run. It gives the
 // opaque-origin sandbox exactly two powers, both over postMessage to `parent` only (Conductor
-// bright-lines: no credential store, no token - the daemon attaches nothing sensitive to a read):
-//   1. window.buildex - a read-only data client (read/list); write is defined but rejected in v1.
+// bright-lines: no credential store, no token - a secret value never crosses into the sandbox):
+//   1. window.buildex - a data client over the app's OWN folder (read/list; write is defined but
+//      rejected in v1) plus fetch(secret, req) - a brokered outbound call where the DAEMON attaches
+//      the named keychain secret and only the reply's status/body come back.
 //   2. agent DOM-driving - executes {click,fill,read} from the trusted parent against its own DOM.
 export const APP_BRIDGE = `<script>
 (function(){
@@ -26,7 +28,8 @@ export const APP_BRIDGE = `<script>
   window.buildex={
     read:function(path){ return req("read",{path:path}); },
     list:function(glob){ return req("list",{glob:glob}); },
-    write:function(){ return Promise.reject("buildex.write is not yet enabled"); }
+    write:function(){ return Promise.reject("buildex.write is not yet enabled"); },
+    fetch:function(secret,r){ r=r||{}; return req("fetch",{secret:secret,url:r.url,method:r.method,headers:r.headers,body:r.body}); }
   };
 })();
 </script>`;

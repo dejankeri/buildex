@@ -441,21 +441,26 @@ function buildAppPane(tab) {
 }
 
 /**
- * Wire the parent side of a local app's iframe: (a) broker the app's data requests through
- * /apps-api/data, and (b) expose a per-tab `runCmd` so the global app-driver host can drive this
+ * Wire the parent side of a local app's iframe: (a) broker the app's data/fetch requests through
+ * /apps-api/*, and (b) expose a per-tab `runCmd` so the global app-driver host can drive this
  * frame's DOM. Registers a `tab.dispose` that removes both message listeners on tab close.
+ * The app's identity (repo/name) is stamped here from the tab the CONSOLE opened - the sandbox
+ * never names itself, so it cannot claim another app's folder, origins, or secrets.
  */
 function wireAppBridge(tab) {
   const frame = tab.frame;
   if (!frame) return;
-  // (a) data requests from the sandboxed app → broker via /apps-api/data
+  // (a) data/fetch requests from the sandboxed app → broker via /apps-api/*
+  const app = tab.app;
   const onMsg = async (e) => {
     if (e.source !== frame.contentWindow) return; // only this app's frame
     const d = e.data || {};
     if (!d.__buildexreq) return;
     let out = { __buildexres: true, id: d.id, ok: false };
     try {
-      const r = await postJSON("/apps-api/data", { op: d.op, path: d.path, glob: d.glob });
+      const r = d.op === "fetch"
+        ? await postJSON("/apps-api/fetch", { repo: app.repo, name: app.name, secret: d.secret, url: d.url, method: d.method, headers: d.headers, body: d.body })
+        : await postJSON("/apps-api/data", { op: d.op, repo: app.repo, name: app.name, path: d.path, glob: d.glob });
       if (r.ok) {
         out.ok = true;
         out.result = r.result;

