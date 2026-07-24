@@ -27,17 +27,26 @@ so no amount of rephrasing will find a tool for them.
    the MCP connection - full coach-level access to the whole account, owner-only, granted through its
    own browser approval. It is not enabled by default.
 4. If the operator wants it, point them at the pack's escape-hatch connection rather than asking them
-   to paste a key anywhere. Once granted it reaches you as `PROTOCOL_API_KEY` with the base URL in
-   `PROTOCOL_API_URL`.
-5. With the key present, call REST directly: `Authorization: Bearer <key>`, responses wrapped as
-   `{success, message, data}`. The spec is at `/v1/openapi.json` - read it rather than guessing routes.
+   to paste a key anywhere. Once granted, the key stays with the BuildEx daemon - it never appears in
+   your environment. What you get instead is a local proxy that attaches it for you:
+   `BUILDEX_PROVISION_URL` (where the proxy is) and `BUILDEX_PROVISION_TOKEN` (your pass for it),
+   with the API's own base URL in `PROTOCOL_API_URL` for reference.
+5. With the grant in place, call REST through the proxy - same paths, the daemon adds the credential
+   on the way through:
+   `curl -H "Authorization: Bearer $BUILDEX_PROVISION_TOKEN" $BUILDEX_PROVISION_URL/protocol/v1/openapi.json`
+   Responses are wrapped as `{success, message, data}`. The spec is at `/v1/openapi.json` - read it
+   rather than guessing routes. Reads (GET) go straight through; anything else waits for the
+   operator's tap first, exactly like a gated MCP tool.
 
 ## Rules
 
 - **Never work around a wall silently.** If the operator asks to message a client and you use the
   REST API to do it, say so before, not after.
-- The REST key is full coach access with no tier scoping - it bypasses every protection the MCP
+- The REST grant is full coach access with no tier scoping - it bypasses every protection the MCP
   connection gives. Treat each use as a deliberate exception, not a convenience.
+- A denied approval card is the operator saying no. Stop there; do not retry or look for another
+  route to the same effect.
 - Hard deletes are irreversible and Protocol keeps no undo. Confirm the exact entity, out loud, first.
-- If no key is provisioned, say what is missing and stop. Do not ask the operator to paste one into
-  a file or the chat.
+- If nothing is provisioned (`BUILDEX_PROVISION_URL` unset, or the proxy answers 404 for
+  `protocol`), say what is missing and stop. Do not ask the operator to paste a key into a file or
+  the chat.

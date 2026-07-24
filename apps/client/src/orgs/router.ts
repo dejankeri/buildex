@@ -48,18 +48,21 @@ export function createOrgRouter(deps: OrgRouterDeps): OrgRouter {
     handler: Handler;
     scheduler: SyncScheduler | null;
     gatewayHostP: Promise<GatewayHost> | null;
+    provisionHostP: Promise<GatewayHost> | null;
   } | null = null;
 
   // Tear down the currently-active org's background resources: stop its sync loop and CLOSE its
   // connector-gateway HTTP host, awaiting the close so the fixed gateway port is free before the next
-  // org rebinds it. Safe to call with no active org. A gateway that failed to bind (rejected promise)
-  // is swallowed - there is nothing to close.
+  // org rebinds it. The provision proxy is closed the same way (its port is ephemeral, but the old
+  // org's host must not outlive its org). Safe to call with no active org. A host that failed to
+  // bind (rejected promise) is swallowed - there is nothing to close.
   async function teardownCurrent(): Promise<void> {
     if (!current) return;
     current.scheduler?.stop();
-    if (current.gatewayHostP) {
+    for (const hostP of [current.gatewayHostP, current.provisionHostP]) {
+      if (!hostP) continue;
       try {
-        const host = await current.gatewayHostP;
+        const host = await hostP;
         await host.close();
       } catch {
         /* host never bound (or already gone) - nothing to close */
@@ -73,6 +76,7 @@ export function createOrgRouter(deps: OrgRouterDeps): OrgRouter {
   function activate(org: Org): void {
     let scheduler: SyncScheduler | null = null;
     let gatewayHostP: Promise<GatewayHost> | null = null;
+    let provisionHostP: Promise<GatewayHost> | null = null;
     const config: ClientConfig = {
       ...deps.baseConfig,
       workspace: org.workspace,
@@ -94,9 +98,13 @@ export function createOrgRouter(deps: OrgRouterDeps): OrgRouter {
         // unhandled rejection.
         hostP.catch(() => {});
       },
+      onProvisionHost: (hostP) => {
+        provisionHostP = hostP;
+        hostP.catch(() => {});
+      },
     };
     const handler = build(config);
-    current = { org, handler, scheduler, gatewayHostP };
+    current = { org, handler, scheduler, gatewayHostP, provisionHostP };
   }
 
   // Switch the active org: fully release the previous org's gateway/sync BEFORE building the next

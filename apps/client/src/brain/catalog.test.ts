@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { existsSync as ex, cpSync, readFileSync } from "node:fs";
-import { listPacks, readPack, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, type InstallDeps } from "./catalog.js";
+import { listPacks, readPack, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, provisionAuthHeaders, type InstallDeps, type PackProvision } from "./catalog.js";
 import { bundleCatalogSource, type CatalogSource } from "./catalog-source.js";
 import type { Root } from "./graph.js";
 
@@ -92,6 +92,31 @@ describe("readPack", () => {
     expect(readPack(source, "slack")?.name).toBe("Slack");
     expect(readPack(source, "nope")).toBeUndefined();
     expect(readPack(source, "../etc")).toBeUndefined();
+  });
+});
+
+describe("the escape-hatch (provision) face - the credential's auth header", () => {
+  const provision = (extra: Record<string, unknown> = {}): PackProvision =>
+    ({
+      authorizeUrl: "https://app.x.co/connect?redirect_uri={redirect_uri}&state={state}",
+      exchangeUrl: "https://api.x.co/exchange",
+      keyPath: "data.key",
+      envKey: "X_API_KEY",
+      grants: "Full access to the whole X account over its REST API.",
+      docsUrl: "https://x.co/docs",
+      ...extra,
+    }) as PackProvision;
+
+  it("accepts an optional authHeader; a blank one skips the pack (fail closed, like every provision field)", () => {
+    pack("x", { id: "x", name: "X", app: { url: "https://x.co" }, provision: provision({ authHeader: "X-Api-Key" }) });
+    pack("y", { id: "y", name: "Y", app: { url: "https://y.co" }, provision: provision({ authHeader: " " }) });
+    expect(listPacks(source, roots).map((p) => p.id)).toEqual(["x"]);
+    expect(listPacks(source, roots)[0]!.provision?.authHeader).toBe("X-Api-Key");
+  });
+
+  it("provisionAuthHeaders: default Authorization carries `Bearer <key>`; a custom header the bare key", () => {
+    expect(provisionAuthHeaders(provision(), "k1")).toEqual({ Authorization: "Bearer k1" });
+    expect(provisionAuthHeaders(provision({ authHeader: "X-Api-Key" }), "k2")).toEqual({ "X-Api-Key": "k2" });
   });
 });
 

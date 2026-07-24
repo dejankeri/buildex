@@ -8,12 +8,13 @@ import { homedir, hostname } from "node:os";
 import { confinePath } from "./lib/confine-path.js";
 import { createDaemon, type Handler, type VaultReader, type Catalog, type TreeNode, type SkillEditor, type LoopsEngineControl, type ConnectorControl, type ConnectorGatewayView } from "./daemon/daemon.js";
 import { startGatewayHttp, writeGatewayRegistration, writeMcpEntries } from "@buildex/connectors";
-import { ConnectorGatewayHub } from "./brain/connector-gateway.js";
+import { ConnectorGatewayHub, brokerApprover } from "./brain/connector-gateway.js";
 import { readSkill, writeSkillFile, composeSkill, validateSkill, skillTemplate, originOf } from "./brain/skills.js";
 import { listApps, writeAppManifest, type AppManifest } from "./brain/apps.js";
 import { reconciledPackMcpEntries, composePreset } from "./brain/pack-config.js";
-import { listPacks, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, provisionKeychainKey, provisionBaseKeychainKey, slotOf, type InstallDeps } from "./brain/catalog.js";
+import { listPacks, installPack, uninstallPack, packMcpProvider, packApiKeyPin, apiKeyKeychainKey, provisionKeychainKey, provisionBaseKeychainKey, provisionAuthHeaders, slotOf, type InstallDeps } from "./brain/catalog.js";
 import { ProvisionFlow } from "./brain/provision.js";
+import { startProvisionProxy } from "./brain/provision-proxy.js";
 import { emptyCatalogSource, type CatalogSource } from "./brain/catalog-source.js";
 import { buildAgentView } from "./brain/agent-view.js";
 import { serveApp, brokerData } from "./server/app-serve.js";
@@ -28,7 +29,7 @@ import { Gate } from "./gate/gate.js";
 import { PolicyEngine, type PolicyPreset } from "./gate/policy.js";
 import { ApprovalBroker, GATE_CARD_TTL_MS, type ApprovalCard, type CardOrigin } from "./gate/approval.js";
 import { describeTool } from "./gate/describe.js";
-import { ClaudeCodeDriver } from "./agent/claude-driver.js";
+import { ClaudeCodeDriver, type SpawnAgent } from "./agent/claude-driver.js";
 import { nodeSpawnAgent } from "./agent/node-spawn.js";
 import type { UiEvent } from "./agent/types.js";
 import { buildGraph, type Root } from "./brain/graph.js";
@@ -104,6 +105,15 @@ export interface ClientConfig {
    *  rebinding the fixed gateway port on the next org (see orgs/router.ts). The promise rejects if the
    *  host fails to bind; the caller catches. Only fires when `connectorsMcp` is set. */
   onGatewayHost?: (host: Promise<{ close: () => Promise<void> }>) => void;
+  /** Lifecycle hook for the provision-proxy loopback host (the sibling of `onGatewayHost` above):
+   *  called (once, synchronously) with a promise for the running host as soon as it's launched, so a
+   *  runner can await it (tests) or `close()` it on teardown. The promise rejects if the host fails
+   *  to bind; the caller catches. Only fires when the catalogue ships a pack with an escape-hatch
+   *  (provision) face - most boots wire none and start no host at all. */
+  onProvisionHost?: (host: Promise<{ url: string; close: () => Promise<void> }>) => void;
+  /** Injected agent spawn (defaults to the real node process spawn). The seam that lets a test
+   *  capture the exact environment the agent is started with, hermetically - no child process runs. */
+  spawnAgent?: SpawnAgent;
   /** Lifecycle hook for the approval broker: called (once, synchronously) with the broker the moment
    *  it's built. The demo runner uses it to seed one real outward-action card in-process - exactly the
    *  path the connector gateway takes for a gated send - so the flagship human gate (invariant 5) is
@@ -175,7 +185,7 @@ export function buildClientHandler(config: ClientConfig): Handler {
   // Late-bound so the driver can be built here while the keychain + catalog are wired below. Read
   // fresh on every run, so a credential the operator provisions mid-session works without a restart.
   let provisionedEnv: () => NodeJS.ProcessEnv = () => ({});
-  const driver = new ClaudeCodeDriver({ spawn: nodeSpawnAgent, bin: config.claudeBin, allowedModels: ["opus", "sonnet", "haiku", "fable"], defaultModel: "sonnet", extraEnv: () => provisionedEnv(), ...(config.agentConfigDir ? { configDir: config.agentConfigDir } : {}) });
+  const driver = new ClaudeCodeDriver({ spawn: config.spawnAgent ?? nodeSpawnAgent, bin: config.claudeBin, allowedModels: ["opus", "sonnet", "haiku", "fable"], defaultModel: "sonnet", extraEnv: () => provisionedEnv(), ...(config.agentConfigDir ? { configDir: config.agentConfigDir } : {}) });
   const appBus = new AppBus({ idFactory: randomUUID });
   // The writable (non-core) repo dirs - the only roots the sync loop may commit to (core is read-only).
   const writableDirs = (): string[] => config.roots.filter((r) => slotOf(r.name) !== "core").map((r) => r.dir);
@@ -516,21 +526,62 @@ export function buildClientHandler(config: ClientConfig): Handler {
   // The escape-hatch flow: a browser round-trip that mints a credential the MCP connection can't carry.
   // Never runs at install - the operator grants it when the work needs it (see PackProvision).
   const provisionFlow = new ProvisionFlow({
-    fetch: (...a: Parameters<typeof fetch>) => fetch(...a),
+    fetch: (...a: Parameters<typeof fetch>) => fetchImpl(...a),
     host: () => hostname().replace(/[^A-Za-z0-9-]/g, "-"),
   });
   const provisionRedirectBase = config.connectorsMcp?.redirectBase ?? "http://127.0.0.1:4317";
-  // Every provisioned credential, as the environment the agent runs with. Read from the keychain on
-  // each call so a fresh grant (or a revoke) takes effect on the next prompt, not the next restart.
+  // The provision proxy: the daemon keeps custody of every provisioned credential and the agent
+  // calls THROUGH it. Handing the key itself to the agent's environment would let any shelled
+  // process read it and call the provider directly - past the approval gate that makes wide
+  // autonomy safe (invariant 5) - so the key never leaves the keychain except here, per request,
+  // after the gate. Same hardening as the connector gateway host (per-boot bearer, loopback
+  // Host/Origin); reads pass, every other method raises the same approval card a gated gateway
+  // tool does (brokerApprover). Ephemeral port: the URL rides the agent's per-run env (below),
+  // never a config file, so nothing needs it stable across boots. Only started when the catalogue
+  // ships a provision-capable pack - most boots (and almost all tests) start no host at all.
+  let provisionProxy: { url: string; token: string } | undefined;
+  if (listPacks(catalogSource, config.roots).some((p) => p.provision)) {
+    const provisionToken = randomBytes(24).toString("base64url");
+    const provisionHostP = startProvisionProxy({
+      token: provisionToken,
+      fetch: fetchImpl,
+      approve: brokerApprover(broker),
+      // Resolved per request, so a fresh grant (or a revoke) takes effect on the next call. The
+      // forwarding base is the API base the provider issued alongside the key (stored beside it in
+      // the keychain); without one there is nowhere to forward, so the pack 404s at the proxy.
+      resolve: (id) => {
+        const p = listPacks(catalogSource, config.roots).find((x) => x.id === id);
+        if (!p?.provision || !p.installed) return undefined;
+        const key = keychain.get(provisionKeychainKey(id));
+        const base = keychain.get(provisionBaseKeychainKey(id));
+        if (!key || !base) return undefined;
+        return { baseUrl: base, headers: provisionAuthHeaders(p.provision, key) };
+      },
+    });
+    config.onProvisionHost?.(provisionHostP);
+    provisionHostP
+      .then((h) => { provisionProxy = { url: h.url, token: provisionToken }; })
+      .catch(() => { /* host failed to bind - the env simply never points at a proxy */ });
+  }
+  // The environment a provisioned pack contributes to the agent - and what it deliberately does
+  // NOT contribute: the credential itself never appears here (the daemon attaches it at the proxy
+  // above). The agent gets the non-secret API base plus where the proxy is - BUILDEX_PROVISION_URL
+  // and the per-boot BUILDEX_PROVISION_TOKEN, which grants only gated proxy access (the same trust
+  // class as the gateway bearer in .mcp.json). Read from the keychain on each call so a fresh grant
+  // (or a revoke) takes effect on the next prompt, not the next restart.
   provisionedEnv = () => {
     const env: NodeJS.ProcessEnv = {};
+    let provisioned = false;
     for (const p of listPacks(catalogSource, config.roots)) {
       if (!p.provision || !p.installed) continue;
-      const key = keychain.get(provisionKeychainKey(p.id));
-      if (!key) continue;
-      env[p.provision.envKey] = key;
+      if (!keychain.get(provisionKeychainKey(p.id))) continue;
+      provisioned = true;
       const base = p.provision.envBase ? keychain.get(provisionBaseKeychainKey(p.id)) : undefined;
       if (p.provision.envBase && base) env[p.provision.envBase] = base;
+    }
+    if (provisioned && provisionProxy) {
+      env["BUILDEX_PROVISION_URL"] = provisionProxy.url;
+      env["BUILDEX_PROVISION_TOKEN"] = provisionProxy.token;
     }
     return env;
   };

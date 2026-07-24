@@ -18,7 +18,7 @@ const MCP_KEYS = new Set(["kind", "url", "command", "args", "env", "scopes", "di
 const APIKEY_KEYS = new Set(["transport", "header", "prefix", "apiBase", "docsUrl", "hint"]);
 const PROVISION_KEYS = new Set([
   "authorizeUrl", "exchangeUrl", "codeParam", "codeField", "hostField",
-  "keyPath", "apiBasePath", "envKey", "envBase", "grants", "docsUrl",
+  "keyPath", "apiBasePath", "envKey", "envBase", "authHeader", "grants", "docsUrl",
 ]);
 
 const packDirs = readdirSync(CATALOG).filter((n) => existsSync(join(CATALOG, n, "pack.json")));
@@ -187,6 +187,11 @@ describe("catalog packs - the escape-hatch (provision) face", () => {
       it("says what the grant actually allows, at length", () => {
         // The operator sees this BEFORE the browser opens. A one-word `grants` would defeat the point.
         expect((pv.grants as string).length).toBeGreaterThan(40);
+      });
+      it("authHeader, when declared, is a non-empty header name", () => {
+        if (pv.authHeader === undefined) return;
+        expect(typeof pv.authHeader).toBe("string");
+        expect((pv.authHeader as string).trim().length).toBeGreaterThan(0);
       });
     });
   }

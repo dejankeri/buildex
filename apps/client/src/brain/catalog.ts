@@ -92,10 +92,15 @@ export interface PackProvision {
   keyPath: string;
   /** Optional dotted path to an API base URL issued alongside the credential. */
   apiBasePath?: string;
-  /** Environment variable the credential reaches the agent under. */
+  /** Name the credential is known by. Historically the env var it was injected under; today the
+   *  credential never enters the agent's environment - the daemon attaches it at the provision
+   *  proxy - so this is an identifier, kept for manifest continuity. */
   envKey: string;
-  /** Environment variable the API base reaches the agent under. */
+  /** Environment variable the API base URL (not a secret) reaches the agent under. */
   envBase?: string;
+  /** Header the daemon attaches the credential under when proxying a provisioned call. Default
+   *  "Authorization" (as `Bearer <key>`); a custom header carries the bare key. */
+  authHeader?: string;
   /** One line naming what this grant actually allows - shown to the operator BEFORE the browser opens.
    *  Required: a broader-than-MCP credential must never be requested without saying so. */
   grants: string;
@@ -182,7 +187,7 @@ function validProvision(p: PackProvision): boolean {
   if (!str(p.grants) || !str(p.docsUrl)) return false;
   for (const u of [p.authorizeUrl, p.exchangeUrl, p.docsUrl]) if (!u.startsWith("https://")) return false;
   if (!p.authorizeUrl.includes("{redirect_uri}") || !p.authorizeUrl.includes("{state}")) return false;
-  for (const k of ["codeParam", "codeField", "hostField", "apiBasePath", "envBase"] as const) {
+  for (const k of ["codeParam", "codeField", "hostField", "apiBasePath", "envBase", "authHeader"] as const) {
     if (p[k] !== undefined && !str(p[k])) return false;
   }
   return true;
@@ -330,6 +335,15 @@ export function provisionKeychainKey(id: string): string {
 /** Keychain key holding the API base URL issued alongside that credential. */
 export function provisionBaseKeychainKey(id: string): string {
   return `connector:${id}:provisioned-base`;
+}
+
+/** The provider auth header the daemon attaches when proxying a provisioned call. This is the ONLY
+ *  place the credential is ever joined to a request - it never enters the agent's environment.
+ *  Default is `Authorization: Bearer <key>`; a pack that declares `provision.authHeader` gets the
+ *  bare key under that header instead (for providers that take e.g. `X-Api-Key`). */
+export function provisionAuthHeaders(p: PackProvision, key: string): Record<string, string> {
+  const header = p.authHeader ?? "Authorization";
+  return { [header]: header === "Authorization" ? `Bearer ${key}` : key };
 }
 
 /** A minimal secret reader - the client Keychain satisfies it structurally. */

@@ -37,14 +37,17 @@ export interface ClaudeDriverDeps {
    *  operator's own Claude Code (no inherited hooks), so BuildEx's agent gets a clean, predictable tool
    *  set. Still NOT a credential seam: the driver never sets a provider key (conductor bright-line). */
   configDir?: string;
-  /** Extra environment for the agent process, read fresh on every run so a credential provisioned
-   *  mid-session takes effect without a restart.
+  /** Extra environment for the agent process, read fresh on every run so a grant made mid-session
+   *  takes effect without a restart.
    *
-   *  This is for CONNECTOR credentials the operator explicitly provisioned (a pack's escape-hatch key),
-   *  which BuildEx already owns and already hands the agent - the pasted `mcp-bearer` key rides into
-   *  the workspace `.mcp.json` as a Bearer header today. It is NOT a hole in the conductor bright-line:
-   *  that line is about the MODEL provider - the agent's own credential store, model tokens, and
-   *  provider sign-in - none of which may ever pass through here. */
+   *  Carries NO provider credential of any kind. What rides here is pointers: a provisioned pack's
+   *  non-secret API base URL, and where the daemon's provision proxy is (its loopback URL + the
+   *  per-boot proxy bearer - the same trust class as the gateway bearer in `.mcp.json`, granting
+   *  only gated proxy access). The credential itself stays in the keychain and is attached by the
+   *  daemon per request, behind the approval gate - an env var is readable by anything the agent
+   *  shells, and a key there would let a direct provider call slip past the gate entirely. The
+   *  conductor bright-line (the MODEL provider's tokens, credential store, sign-in) never passes
+   *  through here either. */
   extraEnv?: () => NodeJS.ProcessEnv;
 }
 
