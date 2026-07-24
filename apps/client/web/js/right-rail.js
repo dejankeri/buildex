@@ -11,16 +11,18 @@
 
 /* ---------- right rail ---------- */
 
-// The right panel is two surfaces now: "brain" (the map) and "documents" (files + drives). Legacy
-// panel names still RESOLVE — a persisted S.rightTab from an older build, or a caller that still asks
-// for "pending"/"synclog"/"skills"/"files" — so an upgrade never lands the operator on a blank panel.
-// Pending/Skills/Sync folded into the brain's Gate/Policy/Learning stages, so they route to the map.
-const RIGHT_PANELS = { brain: rBrain, documents: rDocs };
-const RIGHT_ALIASES = { files: "documents", skills: "brain", pending: "brain", synclog: "brain", automations: "brain" };
+// The right panel is three surfaces: "brain" (the map), "documents" (files + drives), and "loops"
+// (work that runs on its own). Legacy panel names still RESOLVE — a persisted S.rightTab from an
+// older build, or a caller that still asks for "pending"/"synclog"/"skills"/"files" — so an upgrade
+// never lands the operator on a blank panel. Pending/Skills/Sync folded into the brain's
+// Gate/Policy/Learning stages, so they route to the map; "automations"/"routines" became Loops.
+const RIGHT_PANELS = { brain: rBrain, documents: rDocs, loops: rLoops };
+const RIGHT_ALIASES = { files: "documents", skills: "brain", pending: "brain", synclog: "brain", automations: "loops", routines: "loops" };
 
 /**
  * Switch the right rail to panel `name`: mark it active, un-collapse the rail, and render it.
- * @param {string} name - "brain" | "documents" (legacy files/skills/pending/synclog/automations map on).
+ * @param {string} name - "brain" | "documents" | "loops" (legacy files/skills/pending/synclog/
+ *   automations/routines map on).
  */
 function switchRight(name) {
   const panel = RIGHT_PANELS[name] ? name : (RIGHT_ALIASES[name] || "brain");

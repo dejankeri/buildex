@@ -19,7 +19,6 @@ function makeDaemon() {
       skills: () => [{ name: "tidy", description: "Use when the workspace drifts.", root: "team" }],
       rules: () => [{ name: "Operating rules", description: "how we run", root: "team", path: "team/CLAUDE.md" }],
       connectors: () => [{ name: "gmail", status: "synced", lastSync: "2026-07-16T10:00:00Z" }],
-      routines: () => [],
     },
     agentView: () => ({ summary: { claudeMdOk: true }, tree: [], discrepancies: [] }),
     agentViewRegen: () => { regenCalls++; return { summary: { claudeMdOk: true }, tree: [], discrepancies: [{ kind: "policy-missing", message: "x" }] }; },
@@ -47,7 +46,7 @@ describe("catalog routes", () => {
       async *runPrompt() { yield { kind: "done" } as UiEvent; },
       buildMap: () => ({ nodes: [], edges: [] }), syncFn: async () => "ok",
       // A legacy catalog with no rules() method — the route must still answer, not 500.
-      catalog: { skills: () => [], connectors: () => [], routines: () => [] },
+      catalog: { skills: () => [], connectors: () => [] },
     });
     const res = await daemon(new Request("http://127.0.0.1/api/rules"));
     expect(await res.json()).toEqual({ rules: [] });
@@ -57,11 +56,6 @@ describe("catalog routes", () => {
     const body = (await res.json()) as { connectors: { name: string; status: string }[] };
     expect(body.connectors[0]).toMatchObject({ name: "gmail", status: "synced" });
   });
-  it("lists routines (empty in v1)", async () => {
-    const res = await makeDaemon()(new Request("http://127.0.0.1/api/routines"));
-    expect(await res.json()).toEqual({ routines: [] });
-  });
-
   it("serves the agent view, and regen forces a rebuild before returning the fresh view", async () => {
     const daemon = makeDaemon();
     const before = regenCalls;

@@ -26,5 +26,4 @@ if [ -z "$LITESTREAM_ENDPOINT" ]; then
 fi
 
 litestream restore -if-db-not-exists -if-replica-exists -config /etc/litestream.yml "$BUILDEX_DATA_DIR/control.db"
-litestream restore -if-db-not-exists -if-replica-exists -config /etc/litestream.yml "$BUILDEX_DATA_DIR/schedules.db"
 exec litestream replicate -config /etc/litestream.yml -exec "node /app/dist/main.js"

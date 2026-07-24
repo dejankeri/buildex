@@ -1,9 +1,9 @@
 "use strict";
-// Right rail: Skills + Automations panels and their editors.
+// Right rail: the Skills panel and its editors.
 //
 // Part of the operator console (web/index.html). Classic script — loaded in order via
 // <script src>, sharing one global scope. NOT an ES module.
-// Lists skills ("verbs") and routines ("automations"), opens read-only skill tabs, and hosts the
+// Lists skills ("verbs"), opens read-only skill tabs, and hosts the
 // create/edit editors that POST back to the daemon. State it reads on the shared global `S`:
 // `S.config` (company + repo roots, for save targets and run folders), `S.tabs` (to de-dup open
 // skill tabs), `S.rightTab` (to refresh the panel in place after a save), and `S.activeProject`
@@ -141,104 +141,6 @@ async function openSkillEditor(name) {
       // Verbs live in the Brain map's Policy stage now — refresh it so the new verb shows immediately.
       if (S.rightTab === "brain") rBrain();
       openSkillTab(body.name);
-    } catch (e) {
-      msg.innerHTML = '<span class="bad">' + esc(e && e.message || e) + '</span>';
-    }
-  };
-}
-
-/** Render the Automations panel: header, "New" button, and a card per routine (or an empty state). */
-async function rAuto() {
-  const p = $("#rpanel");
-  p.innerHTML = '<div class="rhead"><h4>Automations - verbs on a schedule</h4><button class="radd" id="newAuto">+ New</button></div><div id="rl"></div>';
-  $("#newAuto").onclick = () => openAutomationEditor();
-  let rt = [];
-  try {
-    rt = (await getJSON("/api/routines")).routines;
-  } catch (e) {}
-  const host = $("#rl");
-  if (!rt.length) {
-    host.innerHTML = '<div class="rmini"><div class="big">↻</div>No automations yet. Schedule a verb - like weekly-review every Friday - to run on its own.</div>';
-    return;
-  }
-  rt.forEach((r) => {
-    const card = elt("div", "rcard",
-      '<div class="cn">↻ ' + esc(r.name) + ' <span class="pill' + (r.enabled ? " ok" : "") + '">' + (r.enabled ? "on" : "off") + '</span></div>'
-      + '<div class="cd">Runs <b>' + esc(r.verb) + '</b> · ' + esc(r.cadence) + ' · next ' + fmtNext(r.nextRun) + '</div>'
-      + '<div class="ra"><button class="mini run">Run now</button><button class="mini ghost tgl">' + (r.enabled ? "Disable" : "Enable") + '</button><button class="mini ghost del">Remove</button></div>');
-    $(".run", card).onclick = async () => {
-      $(".run", card).textContent = "Running…";
-      try {
-        const rr = await postJSON("/api/routines/" + r.name + "/run", {});
-        if (rr && rr.sessionId) {
-          if (S.activeProject) await postJSON("/api/projects/" + S.activeProject + "/items", { item: { type: "chat", sessionId: rr.sessionId, title: "Auto · " + r.verb } });
-          openChatTab({ id: rr.sessionId, title: "Auto · " + r.verb, status: "idle" });
-        }
-        refreshProjects();
-      } catch (e) {}
-      rAuto();
-    };
-    $(".tgl", card).onclick = async () => {
-      await postJSON("/api/routines/" + r.name + "/toggle", {});
-      rAuto();
-    };
-    $(".del", card).onclick = async () => {
-      await postJSON("/api/routines/" + r.name + "/remove", {});
-      rAuto();
-    };
-    host.appendChild(card);
-  });
-}
-
-/**
- * Format a next-run timestamp as a short relative label.
- * @param {number} ms - epoch-millis of the next run (0/falsy when unscheduled).
- * @returns {string} "-", "due now", "soon", "in Nh", or "in Nd".
- */
-function fmtNext(ms) {
-  if (!ms) return "-";
-  const d = ms - Date.now();
-  if (d <= 0) return "due now";
-  const h = Math.round(d / 3600000);
-  if (h < 1) return "soon";
-  if (h < 24) return "in " + h + "h";
-  return "in " + Math.round(h / 24) + "d";
-}
-
-/** Open the "New automation" editor tab: pick a verb + cadence, then POST a routine. */
-async function openAutomationEditor() {
-  const tab = addTab({ type: "automation", title: "New automation" });
-  tab.pane.className = "pane editorpane on";
-  tab.pane.innerHTML = "loading…";
-  let sk = [];
-  try {
-    sk = (await getJSON("/api/skills")).skills;
-  } catch (e) {}
-  const vopts = sk.map((s) => '<option value="' + escAttr(s.name) + '">' + esc(s.name) + '</option>').join("") || '<option value="">(teach a verb first)</option>';
-  tab.pane.innerHTML = '<div class="editor"><h3>New automation</h3>'
-    + '<label>Name (kebab-case)<input class="f-name" placeholder="friday-review"></label>'
-    + '<label>Verb to run<select class="f-verb">' + vopts + '</select></label>'
-    + '<label>How often<select class="f-cad"><option value="daily">Every day</option><option value="weekly">Every week</option><option value="hourly">Every hour</option></select></label>'
-    + '<div class="ebar"><button class="mini save">Create automation</button><span class="emsg"></span></div>'
-    + '<p class="ehint">It runs the verb through your agent on this cadence while BuildEx is open. Outward actions still wait in Pending. Always-on, durable scheduling is the cloud path.</p></div>';
-  $(".save", tab.pane).onclick = async () => {
-    const body = { name: $(".f-name", tab.pane).value.trim(), verb: $(".f-verb", tab.pane).value, cadence: $(".f-cad", tab.pane).value };
-    const msg = $(".emsg", tab.pane);
-    if (!body.name || !body.verb) {
-      msg.innerHTML = '<span class="bad">Name and verb are required.</span>';
-      return;
-    }
-    msg.textContent = "Creating…";
-    try {
-      const r = await postJSON("/api/routines", body);
-      if (r.error) {
-        msg.innerHTML = '<span class="bad">' + esc(r.error) + '</span>';
-        return;
-      }
-      msg.innerHTML = '<span class="good">Created ✓</span>';
-      const id = tab.id;
-      switchRight("automations");
-      closeTab(id);
     } catch (e) {
       msg.innerHTML = '<span class="bad">' + esc(e && e.message || e) + '</span>';
     }

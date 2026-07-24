@@ -15,13 +15,11 @@ import { execFileSync } from "node:child_process";
 import { ControlPlaneStore } from "./store/store.js";
 import { EmbeddedGitService } from "./git/service.js";
 import { ProvisioningService } from "./provisioning/service.js";
-import { ScheduleStore } from "./automations/schedule-store.js";
 import { createApp, type Handler } from "./http/app.js";
 
 const SERVICE_KEY = "svc-key";
 let dir: string;
 let store: ControlPlaneStore;
-let schedules: ScheduleStore;
 let git: EmbeddedGitService;
 let app: Handler;
 
@@ -32,12 +30,10 @@ beforeEach(async () => {
   let n = 0;
   const provisioning = new ProvisioningService({ store, git, idFactory: () => `m${++n}` });
   await provisioning.ensureCoreRepo();
-  schedules = new ScheduleStore(join(dir, "schedules.db"));
-  app = createApp({ store, provisioning, git, schedules, serviceKey: SERVICE_KEY, publicBaseUrl: "https://sync.test" });
+  app = createApp({ store, provisioning, git, serviceKey: SERVICE_KEY, publicBaseUrl: "https://sync.test" });
 });
 afterEach(() => {
   store.close();
-  schedules.close();
   rmSync(dir, { recursive: true, force: true });
 });
 

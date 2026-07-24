@@ -59,11 +59,13 @@ describe("seedAcmeWorkspace - the non-syncable demo sandbox", () => {
     expect(JSON.parse(readFileSync(join(ws, "private-you", "apps", "slack", "app.json"), "utf8")).name).toBe("Slack");
   });
 
-  it("seeds the daemon-owned left rail (sessions, projects, automations)", () => {
+  it("seeds the daemon-owned left rail (sessions, projects) and the committed loops.yaml", () => {
     const ws = join(tmp, "ws");
     seedAcmeWorkspace({ workspace: ws, corePackDir: CORE_PACK });
     expect(existsSync(join(ws, ".projects.json"))).toBe(true);
-    expect(existsSync(join(ws, ".automations.json"))).toBe(true);
+    // Definitions are committed brain content (invariant 2); only the run stamps stay in the workspace.
+    expect(existsSync(join(ws, "team-acme", "loops.yaml"))).toBe(true);
+    expect(existsSync(join(ws, ".loops-state.json"))).toBe(true);
     // 8 seeded sessions, each a `<uuid>.json`
     const sessions = readdirSync(join(ws, ".sessions")).filter((f) => f.endsWith(".json"));
     expect(sessions.length).toBe(8);
@@ -74,11 +76,11 @@ describe("seedAcmeWorkspace - the non-syncable demo sandbox", () => {
     const before = Date.now();
     seedAcmeWorkspace({ workspace: ws, corePackDir: CORE_PACK });
     const after = Date.now();
-    // friday-review last ran ~1 day ago (relative to now); prove it tracks the real clock, not build time
-    const state = JSON.parse(readFileSync(join(ws, ".automations-state.json"), "utf8")) as Record<string, number>;
+    // friday-review last ran ~2 days ago (relative to now); prove it tracks the real clock, not build time
+    const state = JSON.parse(readFileSync(join(ws, ".loops-state.json"), "utf8")) as Record<string, { lastRun: number }>;
     const DAY = 24 * 3600_000;
-    expect(state["friday-review"]).toBeGreaterThan(before - 1.5 * DAY);
-    expect(state["friday-review"]).toBeLessThanOrEqual(after - 0.5 * DAY);
+    expect(state["friday-review"]!.lastRun).toBeGreaterThan(before - 2.5 * DAY);
+    expect(state["friday-review"]!.lastRun).toBeLessThanOrEqual(after - 1.5 * DAY);
   });
 
   it("uses only markup the console renderer supports (no [[wikilinks]], no _underscore_ italics)", () => {

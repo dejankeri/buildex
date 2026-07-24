@@ -57,7 +57,7 @@ const daemon = await startOrgDaemon({
     gateCommand,
     usageOAuth: true,
     actor: "operator",
-    schedulerIntervalMs: 60000,
+    schedulerIntervalMs: 60000, // check for due loops every minute while the app is open
     keychainMode: (process.env["BUILDEX_KEYCHAIN"] as "auto" | "system" | "memory") || "auto",
     webRoot: join(REPO, "apps", "client", "web"),
     // Managed-auth sign-in / anonymous cloud onboarding (mirrors startPackagedDaemon): present ONLY

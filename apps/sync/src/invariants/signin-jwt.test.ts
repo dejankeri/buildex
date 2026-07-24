@@ -12,7 +12,6 @@ import type { KeyObject, JsonWebKey } from "node:crypto";
 import { ControlPlaneStore } from "../store/store.js";
 import { EmbeddedGitService } from "../git/service.js";
 import { ProvisioningService } from "../provisioning/service.js";
-import { ScheduleStore } from "../automations/schedule-store.js";
 import { createApp, type Handler } from "../http/app.js";
 import { verifyJwt, JwtError } from "../auth/jwt-verify.js";
 import type { JwkResolver, VerifyConfig } from "../auth/jwt-verify.js";
@@ -73,7 +72,6 @@ describe("SIGN-IN JWT INVARIANT SUITE [release-gate:signin-jwt]: a forged/expire
 
   let dir: string;
   let store: ControlPlaneStore;
-  let schedules: ScheduleStore;
   let git: EmbeddedGitService;
   let app: Handler;
 
@@ -83,14 +81,12 @@ describe("SIGN-IN JWT INVARIANT SUITE [release-gate:signin-jwt]: a forged/expire
     git = new EmbeddedGitService({ reposRoot: join(dir, "repos") });
     const provisioning = new ProvisioningService({ store, git, idFactory: () => "m1" });
     await provisioning.ensureCoreRepo();
-    schedules = new ScheduleStore(join(dir, "schedules.db"));
     // Wired exactly like server.ts's createServices(): verifyJwt + a JWKS resolver behind
     // verifySession, never a mocked always-succeed/always-fail stand-in.
     app = createApp({
       store,
       provisioning,
       git,
-      schedules,
       serviceKey: "svc-key",
       publicBaseUrl: "https://sync.test",
       verifySession: async (jwt: string) => {
@@ -102,7 +98,6 @@ describe("SIGN-IN JWT INVARIANT SUITE [release-gate:signin-jwt]: a forged/expire
 
   afterEach(() => {
     store.close();
-    schedules.close();
     rmSync(dir, { recursive: true, force: true });
   });
 

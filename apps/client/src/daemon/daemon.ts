@@ -49,14 +49,13 @@ export interface VaultReader {
   readDocAt?(path: string, sha: string): string;
 }
 
-/** The workspace catalog - the verbs, connectors, and routines the operator surfaces render. */
+/** The workspace catalog - the verbs and connectors the operator surfaces render. */
 export interface Catalog {
   skills(): { name: string; description: string; root: string }[];
   /** The always-on operating rules (each root's CLAUDE.md layer). Optional so lightweight catalog
    *  mocks predating the Rules & Skills stage still satisfy the interface. */
   rules?(): { name: string; description: string; root: string; path: string }[];
   connectors(): { name: string; status: string; lastSync?: string }[];
-  routines(): { name: string; cadence: string }[];
 }
 
 /** A connector as the console renders it - catalog metadata + whether it's connected/last synced. */
@@ -97,23 +96,59 @@ export interface ConnectorGatewayView {
   finishAuth(name: string, code: string, state: string): Promise<{ connected: boolean; tools: number }>;
 }
 
-/** A scheduled verb, as the console renders it (nextRun is a computed ms timestamp). */
-export interface RoutineRecord {
+/** A loop, as the console renders it. `scheduleText` is the schedule in words and `nextRun`/`lastRun`
+ *  are ms timestamps - all computed daemon-side so there is exactly one phrasing in the product. */
+export interface LoopRecord {
   name: string;
-  verb: string;
-  cadence: string;
+  title: string;
+  prompt?: string;
+  verb?: string;
+  scheduleText: string;
+  /** Company-wide: is this loop live at all (loops.yaml, shared with the team). */
   enabled: boolean;
-  lastRun?: string;
-  nextRun?: number;
+  /** This machine only: does it run HERE. Off by default for anything not created here. */
+  activeHere: boolean;
+  nextRun: number;
+  lastRun?: number;
+  status?: string;
+  sessionId?: string;
+  blockedOn?: string;
+  /** The last runs, newest first. Shipped inline so the panel paints a history strip per card
+   *  without a request per loop. */
+  runs: LoopRunRecord[];
 }
 
-/** Create, schedule, toggle, and run verbs on a cadence. runNow/runDue drive the real agent. */
-export interface AutomationEngine {
-  list(): RoutineRecord[];
-  add(input: { name: string; verb: string; cadence: string; catchUp?: string }): RoutineRecord;
-  toggle(name: string): RoutineRecord;
+/** One past run, as the history strip and the run list render it. */
+export interface LoopRunRecord {
+  at: number;
+  status: string;
+  sessionId?: string;
+  blockedOn?: string;
+}
+
+/** Create, schedule, toggle and run loops. runNow drives the real agent (and returns as soon as the
+ *  session exists - the run continues behind it). */
+export interface LoopsEngineControl {
+  list(): LoopRecord[];
+  add(input: LoopInput): LoopRecord;
+  update(name: string, patch: Partial<LoopInput>): LoopRecord;
+  toggle(name: string): LoopRecord;
+  /** Adopt (or drop) a loop on this machine. */
+  setActiveHere(name: string, active: boolean): LoopRecord;
   remove(name: string): void;
   runNow(name: string): Promise<{ sessionId: string }>;
+}
+
+/** What the console may send when creating or editing a loop. Exactly one of prompt/verb, and
+ *  exactly one of every/at - validated by the engine, not just here. */
+export interface LoopInput {
+  title: string;
+  prompt?: string;
+  verb?: string;
+  every?: string;
+  at?: string;
+  days?: string;
+  enabled?: boolean;
 }
 
 /** Read + author verbs from the console (teach-a-verb). Writing validates, links, and commits. */
@@ -192,12 +227,12 @@ export interface DaemonDeps {
     /** Forget a provisioned credential locally (does NOT revoke it at the provider). */
     clearProvision?(id: string): void;
   };
-  /** The workspace catalog (verbs, connectors, routines). */
+  /** The workspace catalog (verbs, connectors). */
   catalog?: Catalog;
   /** Author + read verbs from the console. */
   skillEditor?: SkillEditor;
-  /** Schedule + run verbs on a cadence (the Automations panel). */
-  automations?: AutomationEngine;
+  /** Schedule + run loops (the Loops panel). */
+  loops?: LoopsEngineControl;
   /** Connect + sync sources (the Connectors panel). */
   connectorHub?: ConnectorControl;
   gatewayView?: ConnectorGatewayView;
@@ -605,32 +640,43 @@ export function createDaemon(deps: DaemonDeps): Handler {
     } else if (method === "GET" && deps.catalog && path === "/api/connectors") {
       return json({ connectors: deps.catalog.connectors() });
     }
-    if (deps.automations) {
-      if (method === "GET" && path === "/api/routines") return json({ routines: deps.automations.list() });
-      if (method === "POST" && path === "/api/routines") {
-        const b = await body<{ name: string; verb: string; cadence: string }>(req, {
-          name: "string!", verb: "string!", cadence: { enum: CADENCES, required: true }, catchUp: { enum: ["coalesce", "each"] },
+    if (deps.loops) {
+      // One request paints the whole panel: the cards and their histories.
+      if (method === "GET" && path === "/api/loops") return json({ loops: deps.loops.list() });
+      if (method === "POST" && path === "/api/loops") {
+        const b = await body<LoopInput>(req, {
+          title: "string!", prompt: "string", verb: "string", every: "string", at: "string", days: "string", enabled: "boolean",
         });
         try {
-          return json(deps.automations.add(b));
+          return json(deps.loops.add(b));
         } catch (e) {
           return json({ error: e instanceof Error ? e.message : "add failed" }, 400);
         }
       }
-      const am = path.match(/^\/api\/routines\/([a-z0-9-]+)\/(run|toggle|remove)$/);
-      if (method === "POST" && am) {
-        const [, name, action] = am;
+      const lm = /^\/api\/loops\/([a-z0-9-]+)(?:\/(run|toggle|remove|here))?$/.exec(path);
+      if (lm) {
+        const [, name, action] = lm;
         try {
-          if (action === "run") return json(await deps.automations.runNow(name!));
-          if (action === "toggle") return json(deps.automations.toggle(name!));
-          deps.automations.remove(name!);
-          return json({ ok: true });
+          if (method === "POST" && action === "run") return json(await deps.loops.runNow(name!));
+          if (method === "POST" && action === "toggle") return json(deps.loops.toggle(name!));
+          if (method === "POST" && action === "here") {
+            const b = await body<{ active?: boolean }>(req, { active: "boolean" });
+            return json(deps.loops.setActiveHere(name!, b.active !== false));
+          }
+          if (method === "POST" && action === "remove") {
+            deps.loops.remove(name!);
+            return json({ ok: true });
+          }
+          if (method === "PATCH" && !action) {
+            const b = await body<Partial<LoopInput>>(req, {
+              title: "string", prompt: "string", verb: "string", every: "string", at: "string", days: "string", enabled: "boolean",
+            });
+            return json(deps.loops.update(name!, b));
+          }
         } catch (e) {
           return json({ error: e instanceof Error ? e.message : "action failed" }, 400);
         }
       }
-    } else if (method === "GET" && deps.catalog && path === "/api/routines") {
-      return json({ routines: deps.catalog.routines() });
     }
 
     if (method === "GET" && deps.vault && path === "/api/files") return json({ docs: deps.vault.listDocs() });
@@ -994,13 +1040,12 @@ type BodyShape = Record<string, BodyRule>;
 /** A malformed or mis-shaped request body. The handler wrapper maps it to a 400 (never a raw 500). */
 class BodyError extends Error {}
 
-// Keep in step with ProjectItem (projects.ts) and Cadence/CatchUp (brain/automations.ts) - the
-// daemon depends on those modules by interface only, so the literal lists live here.
+// Keep in step with ProjectItem (projects.ts) - the daemon depends on that module by interface
+// only, so the literal list lives here.
 const PROJECT_ITEM_SHAPE: BodyShape = {
   type: { enum: ["chat", "browser", "doc", "map", "app"], required: true },
   sessionId: "string", url: "string", path: "string", title: "string", repo: "string", name: "string", app: "string",
 };
-const CADENCES = ["hourly", "daily", "weekly"] as const;
 
 /** Parse a JSON request body and (when a shape is given) validate required fields, field types, and
  *  enum membership. Throws BodyError - the route chain's wrapper turns it into a terse 400. */

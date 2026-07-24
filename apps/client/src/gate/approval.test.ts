@@ -119,7 +119,7 @@ describe("ApprovalBroker event subscription (drives the SSE push)", () => {
 
     broker.resolve(card.id, "approve");
     await decision;
-    expect(events).toEqual([{ type: "open", card }, { type: "resolve", id: card.id, verdict: "approve" }]);
+    expect(events).toEqual([{ type: "open", card }, { type: "resolve", id: card.id, verdict: "approve", reason: "operator" }]);
 
     off();
     broker.request({ name: "Bash", input: {} });
@@ -145,6 +145,19 @@ describe("ApprovalBroker TTL auto-deny", () => {
     expect(armed()).toBe(0); // timer was cleared on resolve
     fireAll(); // firing a stale timer must be a no-op (card already gone)
     expect(await decision).toBe("approve");
+  });
+
+  it("says WHY a card resolved, so a loop can tell a deliberate deny from nobody being there", async () => {
+    const { broker, fireAll } = makeTtlBroker(1000);
+    const events: ApprovalEvent[] = [];
+    broker.subscribe((ev) => events.push(ev));
+
+    const { card, decision } = broker.request({ name: "SendEmail", input: {} });
+    fireAll();
+    expect(await decision).toBe("deny");
+    expect(events.filter((e) => e.type === "resolve")).toEqual([
+      { type: "resolve", id: card.id, verdict: "deny", reason: "timeout" },
+    ]);
   });
 
   it("arms no timer when ttlMs is omitted (opt-in only)", () => {

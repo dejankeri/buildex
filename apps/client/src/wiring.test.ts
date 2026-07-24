@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildClientHandler } from "./wiring.js";
+import type { SyncScheduler } from "./sync/scheduler.js";
 
 // Escaping DIRECTORY link via each platform's real, unprivileged primitive: a junction on Windows
 // (skills are materialized as junctions - the actual Windows attack surface - needing no elevation),
@@ -12,12 +13,21 @@ function linkDir(target: string, linkPath: string): void {
 }
 
 let ws: string;
+// Every handler() builds a real SyncScheduler with live debounce timers. A route that writes into a
+// root arms one, and if it fires after afterEach has deleted the tmpdir it lands as an ENOENT
+// unhandled rejection - noise that turns into a flaky failure the moment a test writes enough. Hold
+// each scheduler and stop it before the directory goes.
+let schedulers: SyncScheduler[];
 beforeEach(() => {
   ws = mkdtempSync(join(tmpdir(), "buildex-wire-"));
+  schedulers = [];
   mkdirSync(join(ws, "team"), { recursive: true });
   writeFileSync(join(ws, "team", "conventions.md"), "# Conventions\n\nWe ship weekly.\n");
 });
-afterEach(() => rmSync(ws, { recursive: true, force: true }));
+afterEach(() => {
+  for (const s of schedulers) s.stop();
+  rmSync(ws, { recursive: true, force: true });
+});
 
 describe("buildClientHandler - the client composition root", () => {
   const handler = () =>
@@ -26,6 +36,7 @@ describe("buildClientHandler - the client composition root", () => {
       roots: [{ name: "team", dir: join(ws, "team") }],
       preset: { allow: ["Read"], ask: ["Bash"], deny: [], default: "ask" },
       claudeBin: "claude",
+      onScheduler: (s) => schedulers.push(s),
     });
 
   it("assembles a working daemon (healthz responds)", async () => {
@@ -210,32 +221,109 @@ describe("buildClientHandler - the client composition root", () => {
     expect(t.template).toMatch(/## When to use/);
   });
 
-  it("schedules automations: POST adds, GET lists with a nextRun, toggle flips, remove drops", async () => {
+  it("schedules loops end to end: POST adds, GET lists with a nextRun and a schedule sentence, toggle flips, remove drops", async () => {
     const app = handler();
     const post = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
 
-    const added = (await (await post("/api/routines", { name: "friday-review", verb: "weekly-review", cadence: "weekly" })).json()) as { name: string; enabled: boolean };
-    expect(added).toMatchObject({ name: "friday-review", enabled: true });
+    const added = (await (await post("/api/loops", { title: "Friday review", prompt: "draft it", at: "09:00", days: "fri" })).json()) as { name: string; enabled: boolean; scheduleText: string };
+    expect(added).toMatchObject({ name: "friday-review", enabled: true, scheduleText: "every Friday at 9:00 AM" });
 
-    const list1 = (await (await app(new Request("http://127.0.0.1/api/routines"))).json()) as { routines: { name: string; nextRun: number }[] };
-    expect(list1.routines).toHaveLength(1);
-    expect(typeof list1.routines[0]!.nextRun).toBe("number");
+    const list1 = (await (await app(new Request("http://127.0.0.1/api/loops"))).json()) as { loops: { name: string; nextRun: number }[] };
+    expect(list1.loops).toHaveLength(1);
+    expect(typeof list1.loops[0]!.nextRun).toBe("number");
 
-    const toggled = (await (await post("/api/routines/friday-review/toggle", {})).json()) as { enabled: boolean };
+    const toggled = (await (await post("/api/loops/friday-review/toggle", {})).json()) as { enabled: boolean };
     expect(toggled.enabled).toBe(false);
 
-    expect((await (await post("/api/routines/friday-review/remove", {})).json()) as { ok: boolean }).toEqual({ ok: true });
-    const list2 = (await (await app(new Request("http://127.0.0.1/api/routines"))).json()) as { routines: unknown[] };
-    expect(list2.routines).toHaveLength(0);
+    expect((await (await post("/api/loops/friday-review/remove", {})).json()) as { ok: boolean }).toEqual({ ok: true });
+    const list2 = (await (await app(new Request("http://127.0.0.1/api/loops"))).json()) as { loops: unknown[] };
+    expect(list2.loops).toHaveLength(0);
   });
 
-  it("rejects a routine with a bogus cadence (400, nothing persisted)", async () => {
+  it("writes a created loop into the COMMITTED loops.yaml, so it is reviewable and follows the operator", async () => {
+    const app = handler();
+    await app(new Request("http://127.0.0.1/api/loops", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Sweep", prompt: "sweep the inbox", every: "2h" }) }));
+    const yaml = readFileSync(join(ws, "team", "loops.yaml"), "utf8");
+    expect(yaml).toContain("- name: sweep");
+    expect(yaml).toContain("every: 2h");
+  });
+
+  it("a loop only runs on a machine that adopted it - a synced definition is inert until switched on", async () => {
     const app = handler();
     const post = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
-    const res = await post("/api/routines", { name: "bad", verb: "weekly-review", cadence: "bogus" });
-    expect(res.status).toBe(400);
-    const list = (await (await app(new Request("http://127.0.0.1/api/routines"))).json()) as { routines: unknown[] };
-    expect(list.routines).toHaveLength(0);
+
+    // Created here → adopted here, no tap needed.
+    const mine = (await (await post("/api/loops", { title: "Mine", prompt: "p", every: "1h" })).json()) as { activeHere: boolean };
+    expect(mine.activeHere).toBe(true);
+
+    // A definition that arrived by sync (written straight into the repo, as a git pull would) is
+    // inert on this machine until the operator says otherwise - otherwise every open laptop in the
+    // company fires the same loop.
+    writeFileSync(
+      join(ws, "team", "loops.yaml"),
+      readFileSync(join(ws, "team", "loops.yaml"), "utf8") + "\n- name: theirs\n  title: Theirs\n  prompt: p\n  every: 1h\n  enabled: true\n",
+    );
+    const listed = (await (await app(new Request("http://127.0.0.1/api/loops"))).json()) as { loops: { name: string; activeHere: boolean }[] };
+    expect(listed.loops.find((l) => l.name === "theirs")!.activeHere).toBe(false);
+
+    const adopted = (await (await post("/api/loops/theirs/here", { active: true })).json()) as { activeHere: boolean };
+    expect(adopted.activeHere).toBe(true);
+
+    // Adoption is machine-local, so it never touches the shared file.
+    expect(readFileSync(join(ws, "team", "loops.yaml"), "utf8")).not.toContain("activeHere");
+  });
+
+  it("switches a loop between a prompt and a verb without ending up with both or neither", async () => {
+    const app = handler();
+    const post = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
+    const patch = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
+
+    await post("/api/loops", { title: "Digest", prompt: "summarise the pipeline", every: "2h" });
+
+    // The console sends BOTH keys with the unused one empty - the empty one must not win.
+    const toVerb = (await (await patch("/api/loops/digest", { prompt: "", verb: "pipeline-digest" })).json()) as { prompt?: string; verb?: string };
+    expect(toVerb.verb).toBe("pipeline-digest");
+    expect(toVerb.prompt).toBeUndefined();
+
+    const backToPrompt = (await (await patch("/api/loops/digest", { prompt: "summarise it again", verb: "" })).json()) as { prompt?: string; verb?: string };
+    expect(backToPrompt.prompt).toBe("summarise it again");
+    expect(backToPrompt.verb).toBeUndefined();
+
+    // ...and the committed file agrees, so the next boot reads the same loop.
+    const yaml = readFileSync(join(ws, "team", "loops.yaml"), "utf8");
+    expect(yaml).toContain("prompt: summarise it again");
+    expect(yaml).not.toContain("verb:");
+
+    // An edit that mentions neither leaves the body alone.
+    const renamed = (await (await patch("/api/loops/digest", { title: "Pipeline digest" })).json()) as { title: string; prompt?: string };
+    expect(renamed).toMatchObject({ title: "Pipeline digest", prompt: "summarise it again" });
+  });
+
+  it("rejects a loop with no schedule, and one that would run every minute (400, nothing persisted)", async () => {
+    const app = handler();
+    const post = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
+
+    expect((await post("/api/loops", { title: "No schedule", prompt: "p" })).status).toBe(400);
+    expect((await post("/api/loops", { title: "Too fast", prompt: "p", every: "1m" })).status).toBe(400);
+    expect((await post("/api/loops", { title: "Both", prompt: "p", every: "1h", at: "09:00" })).status).toBe(400);
+
+    const list = (await (await app(new Request("http://127.0.0.1/api/loops"))).json()) as { loops: unknown[] };
+    expect(list.loops).toHaveLength(0);
+  });
+
+  it("keeps a loop's run history on THIS machine, out of the shared loops.yaml", async () => {
+    const app = handler();
+    const post = (r: string, b: unknown) => app(new Request("http://127.0.0.1" + r, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }));
+    await post("/api/loops", { title: "Sweep", prompt: "p", every: "2h" });
+
+    // The history ships inline on the ordinary list request - one fetch paints the whole panel.
+    const listed = (await (await app(new Request("http://127.0.0.1/api/loops"))).json()) as { loops: { runs: unknown[] }[] };
+    expect(listed.loops[0]!.runs).toEqual([]); // never run, so nothing on the strip
+
+    // The company's file carries the definition and nothing about what any machine did with it.
+    const yaml = readFileSync(join(ws, "team", "loops.yaml"), "utf8");
+    expect(yaml).toContain("name: sweep");
+    expect(yaml).not.toContain("runs");
   });
 
   it("rejects a junk project item (400, nothing persisted)", async () => {
