@@ -81,6 +81,17 @@ describe("buildJudgePrompt", () => {
     expect(prompt).toMatch(/strong.*pass.*fail/is);
     expect(prompt).toMatch(/findings/i);
   });
+
+  it("carries the unsatisfiable-premise fairness clause: a correctly-handled non-existent entity is not a fail", () => {
+    // Guards RC-A's judge-side safety net: without this guidance the judge fails a case whenever the
+    // expected deliverable never appears - even when the prompt named a client/template that simply
+    // does not exist and the agent searched, found nothing, and honestly reported it (no fabrication).
+    const prompt = buildJudgePrompt(CASE, "./transcript.json");
+    expect(prompt).toMatch(/unsatisfiable premise/i);
+    expect(prompt).toMatch(/does NOT actually exist|does not exist/i);
+    expect(prompt).toMatch(/without fabricating/i);
+    expect(prompt).toMatch(/score it\s+"pass"/i);
+  });
 });
 
 describe("parseVerdict", () => {

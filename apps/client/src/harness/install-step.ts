@@ -84,7 +84,7 @@ export function regenAgentConfig(opts: {
   corePackDir: string;
   allowMcpServer?: string;
   linkStrategy?: LinkStrategy;
-}): void {
+}): { allow: string[] } {
   const presetPath = join(opts.corePackDir, "policy", "preset.json");
   if (!existsSync(presetPath)) {
     throw new Error(`core pack has no policy/preset.json (looked in ${opts.corePackDir}) - is this a core pack dir?`);
@@ -98,6 +98,13 @@ export function regenAgentConfig(opts: {
     preset: { ...preset, allow },
     ...(opts.linkStrategy ? { linkStrategy: opts.linkStrategy } : {}),
   });
+  // The composed allow tier is the single source of truth for what the driven agent may do. It is
+  // written to settings.json above AND returned here so the harness can pass the SAME list to the
+  // spawn's --allowedTools: in a fresh, never-folder-trusted headless workspace settings.json does
+  // not bind, so --allowedTools is the ONLY thing that grants Write/Edit/Bash. Granting only the
+  // pack's mcp server (the old behavior) left every file-writing scenario denied at the permission
+  // wall - a false FAIL that had nothing to do with the pack under test.
+  return { allow };
 }
 
 /**

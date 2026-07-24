@@ -118,8 +118,12 @@ describe("runDeterministicTrack - the composition", () => {
     expect((pinnedAtDrive as { mcpServers: Record<string, { url: string; headers: Record<string, string> }> }).mcpServers["buildex-pack:acme"]).toEqual({
       type: "http", url: "http://localhost:9/mcp", headers: { Authorization: "Bearer pk_local_secret_1" },
     });
-    // The spawn got exactly the pack's server rule:
-    expect(seen[0]!.allowedTools).toEqual(["mcp__buildex-pack_acme"]);
+    // The spawn got the WHOLE allow tier - Read/Write/Edit/Bash AND the pack's server rule - not
+    // just the server. In a headless, never-folder-trusted workspace only --allowedTools binds, so
+    // granting only the mcp server left every Write/Edit denied (a false FAIL unrelated to the pack).
+    expect(seen[0]!.allowedTools).toContain("Write");
+    expect(seen[0]!.allowedTools).toContain("Bash");
+    expect(seen[0]!.allowedTools).toContain("mcp__buildex-pack_acme");
     // Both secrets scrubbed from the env BEFORE the drive (the child must not inherit them):
     expect(envAtDrive).toEqual([undefined, undefined]);
     // The surviving transcript never contains the key:

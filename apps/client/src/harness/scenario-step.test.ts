@@ -63,6 +63,26 @@ describe("buildGeneratorPrompt", () => {
     expect(prompt).toMatch(/disqualifiers/i);
     expect(prompt).toMatch(/day-in-the-life/i);
   });
+
+  it("grounds on the real-data catalog when given: scenarios MUST use only listed entities, never invent", () => {
+    const prompt = buildGeneratorPrompt(SURFACE, 3, "Clients: Tom Alvarez, Mary Moore\nTemplates: Base Strength");
+    const flat = prompt.replace(/\s+/g, " "); // the prompt wraps mid-phrase; match on flattened whitespace
+    expect(prompt).toContain("Tom Alvarez");
+    expect(prompt).toContain("Base Strength");
+    expect(flat).toMatch(/MUST use one drawn from this catalog/i);
+    expect(flat).toMatch(/never invent/i);
+  });
+
+  it("falls back to an explicit anti-fabrication instruction when no catalog is available", () => {
+    for (const p of [buildGeneratorPrompt(SURFACE, 3), buildGeneratorPrompt(SURFACE, 3, ""), buildGeneratorPrompt(SURFACE, 3, "   ")]) {
+      // Even ungrounded, the generator is told NOT to invent pre-existing entities and assume they
+      // exist - the RC-A false negative (a scenario about a client the instance never had) must not
+      // reappear just because exploration produced nothing.
+      const flat = p.replace(/\s+/g, " ");
+      expect(flat).toMatch(/do not invent specific pre-existing entities/i);
+      expect(flat).toMatch(/create the entity they need|operate over whatever the instance already contains/i);
+    }
+  });
 });
 
 describe("parseCases", () => {
@@ -191,6 +211,13 @@ describe("generateCases", () => {
     const { driver: d2, seen: s2 } = fakeDriver([fenced(VALID_CASES)]);
     await generateCases(d2, { workspace: "w", surface: SURFACE, n: 2, redact: [] });
     expect(s2[0]!.mcpConfigPath).toBeUndefined();
+  });
+
+  it("carries the real-data catalog (dataSample) into the generator prompt so scenarios are grounded", async () => {
+    const { driver, seen } = fakeDriver([fenced(VALID_CASES)]);
+    await generateCases(driver, { workspace: "w", surface: SURFACE, n: 2, redact: [], dataSample: "Clients: Tom Alvarez" });
+    expect(seen[0]!.prompt).toContain("Tom Alvarez");
+    expect(seen[0]!.prompt.replace(/\s+/g, " ")).toMatch(/MUST use one drawn from this catalog/i);
   });
 
   it("retries ONCE, quoting the parse error, and succeeds on the second attempt", async () => {

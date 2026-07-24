@@ -10,7 +10,7 @@ import type { CatalogSource } from "../brain/catalog-source.js";
 import type { AgentDriver } from "../agent/types.js";
 import type { SandboxWorkspace } from "../brain/sandbox.js";
 import { provisionRunContext, teardownRunContext } from "./run-context.js";
-import { installPackHeadless, regenAgentConfig, serverAllowRule, verifyInstall } from "./install-step.js";
+import { installPackHeadless, regenAgentConfig, verifyInstall } from "./install-step.js";
 import { pinKey, withSandbox } from "./sandbox-step.js";
 import { driveCase, type DriveResult } from "./drive-step.js";
 import { collectResults, writeResults } from "./results.js";
@@ -100,11 +100,12 @@ export async function runDeterministicTrack(args: Args, deps: RunDeps): Promise<
 
     // Mirror the product's post-install sync: re-link the pack's skills into .claude/skills and
     // recompose settings.json - with the pinned server allowed whenever this run pins one. The
-    // same server rule also rides --allowedTools on the spawn: a fresh run workspace is never
-    // folder-trusted, so the settings file alone cannot grant the tools to a headless session.
+    // composed allow tier also rides --allowedTools on the spawn: a fresh run workspace is never
+    // folder-trusted, so the settings file alone cannot grant the tools to a headless session -
+    // --allowedTools is the only thing that binds, so it must carry the WHOLE allow tier
+    // (Read/Write/Edit/Bash + the pinned server), not just the server.
     const willPin = mcpUrl !== undefined || sandboxEnabled;
-    const serverRule = serverAllowRule(`${PACK_KEY_PREFIX}${pack}`);
-    regenAgentConfig({
+    const { allow: driveAllow } = regenAgentConfig({
       workspace: ctx.workspace,
       roots: ctx.roots,
       corePackDir: deps.corePackDir,
@@ -124,10 +125,10 @@ export async function runDeterministicTrack(args: Args, deps: RunDeps): Promise<
         runDir: ctx.runDir,
         caseId: "smoke-1",
         redact,
+        allowedTools: driveAllow,
         // When pinning, the workspace .mcp.json holds only the pack under test; strict-mcp against
-        // it (mcpConfigPath) keeps the operator's claude.ai connectors out of the driven agent, the
-        // same server also riding --allowedTools.
-        ...(willPin ? { allowedTools: [serverRule], mcpConfigPath: join(ctx.workspace, ".mcp.json") } : {}),
+        // it (mcpConfigPath) keeps the operator's claude.ai connectors out of the driven agent.
+        ...(willPin ? { mcpConfigPath: join(ctx.workspace, ".mcp.json") } : {}),
       });
       drives.push(drive);
     };

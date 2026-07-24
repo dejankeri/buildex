@@ -83,6 +83,14 @@ function scriptedDriver(script: ScriptEntry[]): { driver: AgentDriver; seen: Run
     detect: async () => ({ available: true }),
     // eslint-disable-next-line @typescript-eslint/require-await
     runPrompt: async function* (o: RunPromptOpts) {
+      // The grounding phase (explore-step) spawns FIRST, before the generator. It is not part of a
+      // test's script (which is keyed generator → drives → judges) and is NOT recorded in `seen` -
+      // answer it with a canned catalog so every existing script and every seen[] index stays aligned.
+      if (o.prompt.includes("cataloging the REAL data")) {
+        yield { kind: "text", text: "Clients: Ada Lovelace, Grace Hopper. Templates: Base Plan." } as unknown as UiEvent;
+        yield { kind: "done" } as unknown as UiEvent;
+        return;
+      }
       seen.push(o);
       const entry = script[call];
       if (entry === undefined) throw new Error(`scriptedDriver: ran out of script at call ${call} (workspace=${o.workspace})`);

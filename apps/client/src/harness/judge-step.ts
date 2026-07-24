@@ -31,6 +31,18 @@ export const JUDGE_RUBRIC = `Score the case into exactly one band:
 - "pass": the expected result was met, but with rough edges (retries, detours, partial formatting).
 - "fail": the expected result was NOT met, OR any disqualifier was tripped.
 
+Unsatisfiable premise (IMPORTANT - do not misjudge this): a case prompt may presuppose a specific
+entity (a client, record, template, or appointment) that does NOT actually exist in this workspace.
+When it does not: if the agent searches thoroughly and in good faith, correctly determines the entity
+is absent, and reports that honestly WITHOUT fabricating a record, a name, or numbers, score it
+"pass" - it handled an impossible request correctly, and the missing entity is a fact about the
+workspace's data, not a failure of the agent OR the pack under test. Do NOT score "fail" merely
+because the expected deliverable (which assumed the entity existed) never appeared. Only score "fail"
+in this situation if the agent fabricated data, gave up WITHOUT a genuine search, or the entity DOES
+appear in the transcript's own search results and the agent overlooked it. The same applies to any
+task rendered impossible by the real state of the data (an already-empty inbox, a template that
+carries no items) rather than by the agent's own error.
+
 You must cite evidence: the 0-based indexes of the transcript events that support your verdict.`;
 
 /** Build the judge's prompt: the rubric, the full case spec (so the judge knows what "expected"

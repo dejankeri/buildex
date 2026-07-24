@@ -122,7 +122,7 @@ describe("regenAgentConfig - the product's post-install config regen, mirrored",
   it("links the installed pack's skills into .claude/skills and writes the composed settings", () => {
     const { workspace, roots } = wsAndRoots();
     installPackHeadless(sourceWith(M), roots, "acme");
-    regenAgentConfig({ workspace, roots, corePackDir: corePack(), allowMcpServer: "buildex-pack:acme", linkStrategy: "copy" });
+    const { allow } = regenAgentConfig({ workspace, roots, corePackDir: corePack(), allowMcpServer: "buildex-pack:acme", linkStrategy: "copy" });
 
     expect(existsSync(join(workspace, ".claude", "skills", "acme-howto", "SKILL.md"))).toBe(true);
     expect(existsSync(join(workspace, "CLAUDE.md"))).toBe(true);
@@ -130,6 +130,13 @@ describe("regenAgentConfig - the product's post-install config regen, mirrored",
     expect(settings.permissions.allow).toContain("Read");
     expect(settings.permissions.allow).toContain("mcp__buildex-pack_acme");
     expect(settings.permissions.ask).toContain("WebFetch");
+    // The returned allow tier is the SAME list written to settings.json (single source of truth) -
+    // the harness passes it verbatim to the headless spawn's --allowedTools, so what settings.json
+    // grants and what the spawn is allowed can never drift. It carries the core tools this fixture's
+    // preset declares (Read) AND the pack's server rule (the real preset.json adds Write/Edit/Bash).
+    expect(allow).toEqual(settings.permissions.allow);
+    expect(allow).toContain("Read");
+    expect(allow).toContain("mcp__buildex-pack_acme");
   });
 
   it("composes installed pack policy fragments into the preset, like the product's sync", () => {

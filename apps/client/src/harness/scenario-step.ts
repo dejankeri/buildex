@@ -22,8 +22,26 @@ const KEBAB_CASE = /^[a-z][a-z0-9-]*$/;
 const MAX_ID_LENGTH = 64;
 
 /** Build the generator's prompt: the surface JSON verbatim (so the agent can only ever reference
- *  tools/skills that actually exist) plus the exact output contract parseCases will enforce. */
-export function buildGeneratorPrompt(surface: Surface, n: number): string {
+ *  tools/skills that actually exist), a grounding block (the real-data catalog when the explore
+ *  phase produced one, else an explicit anti-fabrication fallback), plus the exact output contract
+ *  parseCases will enforce. The grounding block is what stops the generator inventing entities the
+ *  instance never had - a client "Marcus Webb", a template "Hypertrophy Base" - that the driven
+ *  agent then correctly cannot find, failing the case for a reason unrelated to the pack. */
+export function buildGeneratorPrompt(surface: Surface, n: number, dataSample?: string): string {
+  const grounding = dataSample && dataSample.trim()
+    ? `Here is a catalog of the REAL data that exists in this instance RIGHT NOW. Any scenario that
+names a specific entity (a client, template, record, appointment) MUST use one drawn from this
+catalog - NEVER invent a name that is not listed here:
+
+${dataSample.trim()}
+`
+    : `You do NOT have a catalog of this instance's real data. Therefore do NOT invent specific
+pre-existing entities (named clients, templates, records) and assume they already exist - a scenario
+that references "client Jane Doe" when no such client exists will fail for a reason unrelated to the
+pack under test. Instead, write scenarios that either CREATE the entity they need first, or that
+operate over whatever the instance already contains (e.g. "review whichever client was updated most
+recently", "list every template and pick one").
+`;
   return `You are writing end-to-end test scenarios for a software pack, from the perspective of an
 operator's day-in-the-life use of it - real tasks a person would actually ask an assistant to do
 with this pack, not synthetic API probes.
@@ -35,6 +53,7 @@ Never invent a tool or skill name beyond what is listed here.
 ${JSON.stringify(surface, null, 2)}
 \`\`\`
 
+${grounding}
 Write EXACTLY ${n} test cases. Each case is a JSON object with these fields:
 - "id": a unique, kebab-case identifier (lowercase letters, digits, hyphens only, e.g. "find-a-record")
 - "title": a short human-readable title
@@ -176,9 +195,9 @@ export function parseCases(text: string, n: number): ProofCase[] {
  *  original prompt plus the quoted validation error; a second failure throws that error (redacted). */
 export async function generateCases(
   driver: AgentDriver,
-  opts: { workspace: string; surface: Surface; n: number; redact: string[]; mcpConfigPath?: string },
+  opts: { workspace: string; surface: Surface; n: number; redact: string[]; mcpConfigPath?: string; dataSample?: string },
 ): Promise<ProofCase[]> {
-  const prompt = buildGeneratorPrompt(opts.surface, opts.n);
+  const prompt = buildGeneratorPrompt(opts.surface, opts.n, opts.dataSample);
 
   const attempt = async (thisPrompt: string): Promise<ProofCase[]> => {
     let text = "";

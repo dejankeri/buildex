@@ -17,6 +17,7 @@ import type { AgentDriver } from "../agent/types.js";
 import { destroySandboxWorkspace, type SandboxWorkspace } from "../brain/sandbox.js";
 import { provisionRunContext, teardownRunContext } from "./run-context.js";
 import { installPackHeadless, regenAgentConfig, serverAllowRule, verifyInstall } from "./install-step.js";
+import { exploreData } from "./explore-step.js";
 import { pinKey, mintAndPin } from "./sandbox-step.js";
 import { discoverSurface, writeSurface, diffSurface, type Surface } from "./discover.js";
 import { generateCases } from "./scenario-step.js";
@@ -85,7 +86,6 @@ export async function runProofTrack(args: ProofArgs, deps: ProofDeps): Promise<P
 
   const runSlug = `${slugTimestamp(now())}-${args.pack}-proof`;
   const runDir = join(deps.baseDir, runSlug);
-  const serverRule = serverAllowRule(`${PACK_KEY_PREFIX}${args.pack}`);
 
   // One shared clean-room discovers the surface AND hosts the generator's spawn (no case is driven
   // here - each case gets its own fresh clean-room below). Registered on the cleanup registry
@@ -173,6 +173,24 @@ export async function runProofTrack(args: ProofArgs, deps: ProofDeps): Promise<P
       );
       writeSurface(runDir, surface);
 
+      // Grounding phase: drive a READ-ONLY explorer against the live pinned pack (in the discovery
+      // workspace, which holds the pin) to catalog the REAL entities the instance contains, so the
+      // generator references things that actually exist instead of inventing a "Marcus Webb" the
+      // driven agent then correctly cannot find. Fail-soft: exploreData returns "" on any failure and
+      // the generator falls back to its explicit anti-fabrication instruction - never worse than
+      // before this phase existed. Read-only grant: the pack's server + read core tools; the pack's
+      // write tools are technically reachable but forbidden by the prompt, and this runs only against
+      // disposable instances (the local throwaway or a minted sandbox).
+      const dataSample = await exploreData(deps.driver, {
+        workspace: discoveryCtx.workspace,
+        surface,
+        allowedTools: [serverAllowRule(`${PACK_KEY_PREFIX}${args.pack}`), "Read", "Grep", "Glob", "LS"],
+        mcpConfigPath: join(discoveryCtx.workspace, ".mcp.json"),
+        redact: allSecrets,
+      });
+      writeFileSync(join(runDir, "exploration.txt"), dataSample || "(exploration produced no catalog - generator fell back to ungrounded)\n");
+      log(dataSample ? `grounded generator on ${dataSample.split(/\r?\n/).length} lines of real data` : "exploration empty - generator ungrounded");
+
       // Surface drift against a prior run's baseline is opportunistic, never fatal: an unreadable or
       // invalid baseline file just means "no drift computed this run", logged as a warning.
       if (args.baseline) {
@@ -200,6 +218,7 @@ export async function runProofTrack(args: ProofArgs, deps: ProofDeps): Promise<P
         workspace: genDir,
         surface,
         n: args.cases,
+        dataSample,
         redact: allSecrets,
         mcpConfigPath: genMcpConfig,
       });
@@ -212,7 +231,12 @@ export async function runProofTrack(args: ProofArgs, deps: ProofDeps): Promise<P
         deps.cleanup.push(`case-${c.id}-teardown`, () => teardownRunContext(caseCtx));
 
         installPackHeadless(deps.source, caseCtx.roots, args.pack);
-        regenAgentConfig({
+        // The composed allow tier (core preset ⊕ pack policy + the pack's mcp server) is what the
+        // driven agent may do. In a headless never-trusted workspace only --allowedTools binds, so
+        // the drive gets the SAME list settings.json holds - not just the mcp server (which left
+        // every Write/Edit/Bash denied, failing file-writing scenarios for a reason unrelated to the
+        // pack).
+        const { allow: driveAllow } = regenAgentConfig({
           workspace: caseCtx.workspace,
           roots: caseCtx.roots,
           corePackDir: deps.corePackDir,
@@ -227,7 +251,7 @@ export async function runProofTrack(args: ProofArgs, deps: ProofDeps): Promise<P
           prompt: c.prompt,
           runDir: caseCtx.runDir,
           caseId: c.id,
-          allowedTools: [serverRule],
+          allowedTools: driveAllow,
           // The pinned workspace .mcp.json holds only the pack under test - strict-mcp against it
           // means the driven agent sees that pack and NOT the operator's claude.ai connectors.
           mcpConfigPath: join(caseCtx.workspace, ".mcp.json"),
