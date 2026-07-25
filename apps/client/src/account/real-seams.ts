@@ -106,10 +106,19 @@ export function realSupabaseAuthClient(deps: { supabaseUrl: string; anonKey: str
     authorizeUrl: ({ redirectUri, state, codeChallenge }) => {
       const u = new URL(base + "/auth/v1/authorize");
       u.searchParams.set("provider", "google");
-      u.searchParams.set("redirect_to", redirectUri);
+      // GoTrue OWNS the OAuth `state` parameter: it mints a UUID, stores the flow keyed by it, and
+      // forwards it to the provider. Setting our own here made GoTrue forward OURS to Google, and
+      // its callback then looked up a flow by a value it had never stored - so it bounced back to
+      // redirect_to with `error=invalid_request`, after the operator had already authorized.
+      //
+      // Our own one-time state is still required (invariant 7), so it rides in redirect_to's query.
+      // GoTrue parses redirect_to and sets `code` on its query when it sends the operator back, which
+      // preserves anything already there - so the loopback receives `?state=<ours>&code=<theirs>`.
+      const back = new URL(redirectUri);
+      back.searchParams.set("state", state); // set, not append: never emit two state values
+      u.searchParams.set("redirect_to", back.toString());
       u.searchParams.set("code_challenge", codeChallenge);
       u.searchParams.set("code_challenge_method", "S256");
-      u.searchParams.set("state", state);
       return u.toString();
     },
     exchangeCode: async ({ code, codeVerifier, redirectUri }) => {
