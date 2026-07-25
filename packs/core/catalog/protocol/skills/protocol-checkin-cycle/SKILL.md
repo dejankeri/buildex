@@ -15,10 +15,16 @@ week's numbers back at the operator.
 
 ## Steps
 
-1. Find who is due: `find` with `kind: "progress_entry"` (or `review_inbox` for the wider "what needs
+1. Find who is due: `find` with `kind: "progress"` (or `review_inbox` for the wider "what needs
    me" bundle - see `../protocol-inbox-triage`).
 2. For each client, read their history with `review_client` before judging a single entry. One heavy
    week after a holiday is not a trend.
+   **Pass an explicit `limit` whenever you are looking at a trend.** `find` caps at 20-25 by default;
+   a client with four years of check-ins gives you the most recent 25 unless you ask for more. The
+   response tells you: `defaultLimitApplied` means you did not set one, `truncated` means you exactly
+   filled the one you set. Either way you are not looking at the whole history yet.
+   The list rows carry only dates and status - **measurements come from `get kind=progress`**, one
+   per entry. Budget for that before promising a full-history analysis.
 3. Record with `record_progress`, choosing the right `action`:
    - `entry` - a check-in's numbers
    - `report` - triage an AI progress report
@@ -33,5 +39,10 @@ week's numbers back at the operator.
   the most common way to make coaching worse.
 - Write notes the way a coach would - specific and human. Never produce a template with the numbers
   swapped in.
-- Recording progress is a write. It does **not** message the client; if the operator wants the client
-  told, that is `../protocol-scheduling` or a message the coach sends themselves.
+- Logging a check-in or a note is a write, and reaches nobody.
+- **Approving a report is different: it publishes to the client.** The report appears in their app
+  the moment it is approved, so it waits for the operator's tap. Get the `clientFacingSummary` right
+  *before* you approve - approval requires one, and it is what the client reads. `update` the draft
+  as many times as you like; approve once, deliberately.
+- Everything else here reaches nobody. If the operator wants the client told about something,
+  that is `../protocol-scheduling` or a message they send themselves.

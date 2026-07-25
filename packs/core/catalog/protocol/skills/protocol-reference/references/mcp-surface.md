@@ -192,7 +192,7 @@ No required params (omit `programId` to create).
 | `programType` | string enum | `WORKOUT` · `NUTRITION` · `FULL` |
 | `sections` | string[] | Plan sections. |
 | `phases` | object[] | Weekly phases (one phase = one week). **Replaces the phase list** — see [the replace grammar](#the-replace-grammar-phases-items-groups); `add` is a **boolean** here. |
-| `content` | object | `{ collections: [...] }` — replaces program content. |
+| `content` | object | `{ collections: [...] }` — replaces program content. The **menu-as-content** model; see below. |
 | `metadata` | object | Partial metadata patch (name / description / programGoal / programType / sections / …). |
 | `importWorkoutId` | string | Import this workout into the library. |
 | `duplicatePhaseId` | string | Duplicate this phase within the program. |
@@ -202,6 +202,35 @@ Copying/assigning to a client is `assign_program`, not this verb.
 `phases[].nutritionGoal` values: `AGGRESSIVE_DEFICIT` · `DEFICIT` · `MINOR_DEFICIT` ·
 `MAINTENANCE` · `MINOR_SURPLUS` · `SURPLUS`. This one is **not** schema-validated — a bad value is
 persisted verbatim.
+
+#### `content` — the menu-as-content model
+
+Some coaches deliver food as a menu on the program instead of as day plans. `content.collections` is
+that library: a collection groups items, and an item of type `SUBCOLLECTION` nests more items to any
+depth (max 6) — meal-time sections like Doručak / Ručak / Večera.
+
+```
+content: { collections: [
+  { name: "JELOVNIK", type: "recipes", items: [
+      { type: "SUBCOLLECTION", name: "Doručak", items: [
+          { type: "NUTRITION_TEMPLATE", nutritionTemplateId: "<recipe id>" } ] } ] } ] }
+```
+
+| Item `type` | Carries |
+|---|---|
+| `SUBCOLLECTION` | `name` + nested `items` (a meal-time section) |
+| `NUTRITION_TEMPLATE` | `nutritionTemplateId` — a recipe |
+| `MEDIA` | `mediaId` — photo / video / PDF |
+| `WORKOUT` | `workoutId` |
+
+Collection `type` is a free label (`recipes`, `guides`, `general`, …). Items are referenced **by id**
+and snapshotted in; unresolved ids are reported and skipped.
+
+> **Read/write asymmetry.** You WRITE a subcollection's children as `items`. `get kind=program`
+> returns them under `subcollection.items`. Both are accepted on write, so a read-then-write-back is
+> safe — but read the nested items from `subcollection.items` or you will think they vanished.
+
+For per-DAY content use `phases[].contentDays` instead.
 
 #### Mixed weeks — training *and* nutrition on the same phase
 

@@ -1,18 +1,38 @@
 ---
 name: protocol-rest-escape
-description: Use when a Protocol request cannot be done through the MCP tools at all - billing, permanent deletes, or messaging a client - so the operator learns whether it needs the broader REST key rather than being told a flat no.
+description: Use when a Protocol request cannot be done through the MCP tools at all - billing, permanent deletes, messaging a client - or when an analysis needs more history than the MCP reads will return, so the operator learns what the broader REST key buys rather than being told a flat no.
 ---
 
 # protocol-rest-escape - what MCP will not do, and what it costs
 
 Protocol's MCP surface deliberately omits four things. They are missing on purpose, not by oversight,
-so no amount of rephrasing will find a tool for them.
+so no amount of rephrasing will find a tool for them. There is also a fifth case that is not a wall
+at all - just a much shorter road.
 
 ## When to use
 
 - The operator asks to message a client, take a payment, issue a refund, or permanently delete
   something.
 - You have checked `../protocol-reference/references/mcp-surface.md` and there is genuinely no verb.
+- **Or: the analysis needs bulk history and the MCP reads would take dozens of calls.**
+
+## Bulk reads for analysis
+
+`find` returns list rows without measurements, so a real trend means one `get kind=progress` per
+entry - 86 calls for one client with four years of check-ins, and more for a whole roster. The REST
+list returns the same records **with `measurements` included**, paginated:
+
+```
+GET $BUILDEX_PROVISION_URL/protocol/v1/progress-entries?userId=<clientId>&page=0&pageSize=100
+```
+
+One call per hundred entries instead of one per entry. Responses are `{success, message, data}` with
+`data` as `{items, total, page, pageSize, totalPages}` - and unlike the MCP reads, **`total` tells you
+whether you have all of it**.
+
+Reads go straight through the proxy with no approval card, so this costs the operator nothing beyond
+the grant itself. It is still the broad credential: use it for reading at scale, not as a way around
+a gate. If no grant exists, do the analysis with MCP and say plainly how much history you covered.
 
 ## Steps
 

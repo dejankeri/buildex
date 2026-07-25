@@ -1,7 +1,7 @@
 {
   "id": "protocol",
   "name": "Protocol",
-  "icon": "🏋️",
+  "icon": "\ud83c\udfcb\ufe0f",
   "summary": "Coaching CRM - clients, programs, check-ins, and scheduling, drivable by the agent.",
   "app": {
     "url": "https://app.protocolcrm.com"
@@ -10,17 +10,42 @@
     "kind": "http",
     "url": "https://api.protocolcrm.com/mcp",
     "policy": {
-      "read": ["message"],
+      "read": [
+        "message"
+      ],
       "gated": [
-        { "tool": "schedule", "when": { "action": ["send_reminder", "reminder"] } },
-        { "tool": "manage_automations", "when": { "action": ["run"] } }
+        {
+          "tool": "schedule",
+          "when": {
+            "action": [
+              "send_reminder",
+              "reminder"
+            ]
+          }
+        },
+        {
+          "tool": "manage_automations",
+          "when": {
+            "action": [
+              "run"
+            ]
+          }
+        },
+        {
+          "tool": "record_progress",
+          "when": {
+            "reportAction": [
+              "approve"
+            ]
+          }
+        }
       ]
     }
   },
   "apiKey": {
     "transport": "mcp-bearer",
     "docsUrl": "https://help.protocolcrm.com/ai-agent/connecting",
-    "hint": "Agent key (pk_…) from the AI Agent page"
+    "hint": "Agent key (pk_\u2026) from the AI Agent page"
   },
   "provision": {
     "authorizeUrl": "https://app.protocolcrm.com/workspace-connect?redirect_uri={redirect_uri}&state={state}",
