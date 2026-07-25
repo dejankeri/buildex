@@ -248,3 +248,50 @@ with 403 by design. `team` and `private` must both be pushed. Reading a missing 
   `{state}` only; the slug is on `GET /api/account`. The jsdom test missed this because its fake
   returned a `companySlug` the real endpoint never sends - **when writing a fake, copy the real
   handler's response shape, not the one you assume.**
+
+---
+
+## Step 3 - the quick tour
+
+Runs automatically once the wizard finishes (`finish()` calls `startTour(true)`), and is replayable
+any time from the title-bar **?** button.
+
+**Action:** finish the wizard, or click **?**. Advance with **Next**, **→**/**Enter**; **Esc** or
+**Skip** exits.
+
+**Expected:** six steps, each spotlighting a region that exists, in this order:
+
+| # | Title | Anchors to |
+|---|---|---|
+| 1 | The left panel | `.left` |
+| 2 | Start a session | `#newProject` (or `#newSessionTop`) |
+| 3 | Open different screens | `#tabAdd` |
+| 4 | The right panel | `#rtabs` — must name **Brain**, **Documents**, **Loops** |
+| 5 | Your apps & tools | `.apps-hd` (or `#storeTop`) |
+| 6 | Your company brain | `#brandBtn` |
+
+On finish: the card and `.tour-back` backdrop are both removed, `localStorage` holds
+`buildex.tour.v2 = 1`, and the console logs no errors.
+
+> **`collectTourSteps()` silently drops any step whose anchor is missing.** That is what keeps the
+> tour from breaking when the UI moves - and it means a renamed region makes its step vanish with no
+> error at all. Always check the count reads **"Step 1 of 6"**, not just that the tour runs.
+
+**Verify commands:**
+
+```sh
+$B js "(function(){var b=document.querySelector('.wz-backdrop'); if(b) b.remove(); startTour(true); return 'ok';})()"
+$B js "document.querySelector('.tour-card').textContent"     # → "Step 1 of 6 …"
+for i in 1 2 3; do $B js "tourGo(1)"; done
+$B js "document.querySelector('.tour-card').textContent"     # → step 4, naming Brain/Documents/Loops
+```
+
+### Regressions this step has caught
+
+- **The right-panel step described a rail that no longer exists** (fixed 2026-07-25): "switch it
+  between Pending approvals, Files, and Skills", long after that rail became Brain / Documents /
+  Loops and approvals moved onto the Brain icon's badge. Nothing failed - the step's anchor still
+  existed, so it rendered confidently wrong copy. `tour.js` had no tests at all; it has
+  `console-tour.test.ts` now, which reads the panel names out of the real `index.html` so the test
+  fails when the UI moves rather than when a fixture goes stale.
+- `TOUR_FLAG` was bumped to `v2` so anyone who saw the wrong tour gets the corrected one once.

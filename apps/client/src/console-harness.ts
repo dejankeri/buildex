@@ -108,6 +108,11 @@ const EXPOSE = [
   "notifyOperator", "notifyNudge", "openNotifySettings", "notifySettingsBody",
   // Kept-work recovery cards in the pending tray (conflict backups the operator can bring back).
   "lastConflicts", "keptLine", "keptFileRow", "keptCard", "viewKept", "copyBackKept", "dismissKept",
+  // Guided tour: the coach-marks over the real UI regions. Exposed so a test can assert every step
+  // still anchors to something that exists - a renamed region otherwise makes its step silently
+  // vanish (collectTourSteps filters missing anchors), and stale body copy survives unnoticed.
+  "tourStepDefs", "stepEl", "collectTourSteps", "startTour", "tourGo", "endTour", "renderTourStep",
+  "positionTour", "maybeAutoTour", "TOUR_FLAG",
   // Agent Context viewer ("what my agent sees").
   "openAgentContextTab", "loadAgentContext", "renderAgentContext", "regenAgentContext", "actxGroup", "actxRow", "actxSelectFile",
 ];

@@ -6,7 +6,7 @@ brain, so they're versioned, editable, and shared with your team like everything
 
 ## The fastest way: the Teach button
 
-1. Open the **Skills** panel (right rail).
+1. Open the **Brain** panel (right rail) and expand **Rules & Skills**.
 2. Click **+ Teach**.
 3. Describe the verb in plain language — what it does and when to use it.
 4. Save. It appears as a card with **Run** and **Edit**.

@@ -39,15 +39,17 @@ A three-pane workspace (both rails collapse via the top-bar toggles):
   history, with an **Edit** button), a **web browser**, or the **workspace map**. The chat box grows
   with longer messages and has a **model** picker, an **effort** (thinking) level, and a 📎 to
   **attach** a workspace file.
-- **Right rail** - icon mini-tabs in the top bar, each one actionable:
-  - **Pending** - outward actions waiting for your approval (with a badge). This is the human gate.
-  - **Files** - a real tree with find-files; click a file to open it.
-  - **Skills** - your verbs. Click one to read it, **+ Teach** to write a new one (it's validated,
-    linked into the agent, and committed), or **Run** to invoke it in a fresh chat.
-  - **Apps & connectors** - **Connect** a source (Gmail/Slack/Notion), then **Sync now** to file its
-    material into `sources/<name>/` with provenance. Credentials go to your OS keychain, never the repo.
-- **Top bar** - the **sync dot** (click it for the recent-changes log), a theme toggle, and the two
-  rail toggles.
+- **Right rail** - three icon mini-tabs in the top bar, each one actionable:
+  - **Brain** - your company's mind, live: its sensors, rules & skills, tools, the gate, and what it
+    has learned, all rendered from repo state with zero LLM. Anything waiting for your approval shows
+    up here, and the icon carries the count - this is the human gate.
+  - **Documents** - your files and connected drives: a real tree with find-files; click a file to
+    open it. **Connect** a source (Gmail/Slack/Notion), then **Sync now** to file its material into
+    `sources/<name>/` with provenance. Credentials go to your OS keychain, never the repo.
+  - **Loops** - work that runs on its own: what is scheduled, when it last ran, and what needs you.
+- **Top bar** - the **sync dot** (click it for the recent-changes log), a **?** that replays the
+  guided tour, a theme toggle, the two rail toggles, and the **account** menu (sign in with Google,
+  see your company, log out).
 
 Chat renders markdown and shows the agent's working trace - thinking and each tool step - folded into
 one collapsible line (`Worked · N steps`), like Claude Code; the answer stays clean below it.
@@ -77,14 +79,16 @@ In the chat, ask:
 - *"Look up what's at buildex.dev and summarize the homepage."*  (reads and research flow freely -
   the agent works autonomously; only consequential actions wait for you)
 
-The demo also boots with one approval already waiting in the **Pending** tray - a drafted reply to
-Globex's Dana that would send email outward. Approve or deny it to watch the gate close the loop.
+The demo also boots with one approval already waiting - a drafted reply to Globex's Dana that would
+send email outward. It shows up in the **Brain** panel's **Gate**, and the Brain icon carries the
+count. Approve or deny it to watch the gate close the loop.
 
-As the agent works, the **live map** highlights the files it touches, the **Files** tree shows every
-doc with its history, and the big outward moves — sending, posting, paying — wait in the **Pending** tray for your tap.
+As the agent works, the **live map** highlights the files it touches, **Documents** shows every doc
+with its history, and the big outward moves — sending, posting, paying — wait at the **Gate** for
+your tap.
 
-Then try the right-rail panels: **Teach** a new skill, or **Connect**
-a source and hit **Sync now** to watch it file email/chat/docs into the brain.
+Then try the right-rail panels: **Teach** a new skill from the Brain's Rules & Skills, or **Connect**
+a source from Documents and hit **Sync now** to watch it file email/chat/docs into the brain.
 
 > The demo's connectors use built-in sample data instead of live provider APIs. Real OAuth is the
 > production path - the plumbing (keychain, read-only-by-construction filing, the gate) is the same.

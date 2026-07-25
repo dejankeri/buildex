@@ -43,13 +43,15 @@ npm run demo:app
   browsers and the map you open in it are tabs in the center, not rail entries.
 - **Center**: the active session — a chat with your company brain, or a rendered/editable document.
 - **Left rail — Apps**: the tools installed for this company, and the **Store** to add more.
-- **Right rail**: **Pending** (outward actions waiting for your approval), **Files** (the whole
-  brain), and **Skills** (verbs the agent can run). Apps are managed in the left rail and the
-  ⊕ **Store** - there is no separate apps panel on the right.
+- **Right rail**: **Brain** (your company's live map — its sensors, rules & skills, tools, the
+  **Gate** where outward actions wait for your approval, and what it has learned; the icon carries
+  the waiting count), **Documents** (the whole brain as a file tree, plus connected drives), and
+  **Loops** (work that runs on its own). Apps are managed in the left rail and the ⊕ **Store** -
+  there is no separate apps panel on the right.
 
 Open a session, edit a document, watch the **History** on any doc — every change is checkpointed on
 your machine the moment it lands. History shows your named **saves**; anything newer sits under a
-single *Unsaved changes* entry until you **Save** it from the Pending tray.
+single *Unsaved changes* entry until you **Save** it from the **Brain** panel's **Gate**.
 
 ## Let the agent run
 

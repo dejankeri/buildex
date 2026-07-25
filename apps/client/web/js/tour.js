@@ -10,7 +10,10 @@
 // The card bodies are trusted, author-written strings (the only markup is <b>); no operator/agent
 // content flows in, so setting innerHTML here carries no XSS exposure (same pattern as onboarding.js).
 
-const TOUR_FLAG = "buildex.tour.v1"; // bump the suffix to re-show the tour after materially changing it.
+// Bump the suffix to re-show the tour after materially changing it. v2: the right-panel step was
+// describing a rail that no longer exists (Pending/Files/Skills, replaced by Brain/Documents/Loops),
+// so anyone who saw v1 was taught the wrong UI and needs to see the corrected tour once.
+const TOUR_FLAG = "buildex.tour.v2";
 
 /** The tour steps, resolved against the live DOM. Each: an anchor selector (with an optional fallback),
  *  a title + one-sentence body, a preferred card placement, and an optional `before` that reveals the
@@ -46,7 +49,7 @@ function tourStepDefs() {
       place: "bottom",
       before: openRight,
       title: "The right panel",
-      body: "Switch it between <b>Pending</b> approvals, <b>Files</b>, and <b>Skills</b>. Toggle the whole panel with <b>⇥</b>.",
+      body: "Switch it between your <b>Brain</b> — your company's live map, where anything waiting for your approval shows up — <b>Documents</b>, your files and connected drives, and <b>Loops</b>, work that runs on its own. Toggle the whole panel with <b>⇥</b>.",
     },
     {
       sel: ".apps-hd",

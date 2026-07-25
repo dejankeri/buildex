@@ -4,9 +4,10 @@
 > in the same session it happens. **This repo is public: structure and placeholders only.**
 > No real hosts, IDs, or costs.
 
-**Snapshot date:** 2026-07-22 (sync service DEPLOYED live on Fly + Tigris; end-to-end verified over
+**Snapshot date:** 2026-07-25 (sync service DEPLOYED live on Fly + Tigris; end-to-end verified over
 real HTTPS: provision → clone/push `team` succeeds → push `core` rejected 403 → Litestream replicating.
-Phase 3 self-serve sign-in (`POST /session`) deployed **dormant** the same day - see the sign-in bullet).
+Self-serve sign-in is now **LIVE, not dormant** - a real Google sign-in provisioned a company and
+pushed both writable roots. Company deletion (`DELETE /s2s/companies/<slug>`) deployed the same day.)
 
 ## Deploy stack
 
@@ -44,15 +45,26 @@ Phase 3 self-serve sign-in (`POST /session`) deployed **dormant** the same day -
   Authenticode certificate, so it trips SmartScreen. Both are hosted alongside a `latest.json`
   (`infra/latest.json.example` shape). Windows code-signing and auto-update remain fast-follows.
 - **Onboarding:** `task mint-setup-token -- --base-url https://<host> --onboard ...` (S2S admin path).
-- **Self-serve sign-in (Phase 3, DEPLOYED DORMANT):** `POST /session` verifies a Supabase JWT
+- **Self-serve sign-in (LIVE since 2026-07-25):** `POST /session` verifies a Supabase JWT
   (`node:crypto` only, zero-dep) → find-or-create company-of-one → the SAME machine token `/provision`
-  mints. Ships **dormant** (`501 "sign-in not configured"`) until `BUILDEX_SUPABASE_JWKS_URL` /
-  `BUILDEX_SUPABASE_ISSUER` / `BUILDEX_SUPABASE_AUDIENCE` are all set (all-or-nothing) - verified live
-  that the dormant deploy is a no-op (existing `/provision` + git push/reject unchanged). **Owner
-  cutover:** create a Supabase project (Google provider - email magic-link is deferred, Google-only
-  shipped), allow-list the loopback redirect `http://127.0.0.1:54121/auth/callback`, `fly secrets set`
-  the three vars + `task deploy`, then put the Supabase URL + anon key into the client config. Full
-  checklist + decisions: `docs/superpowers/specs/2026-07-22-self-serve-signin-sync-design.md`.
+  mints. It stays **dormant** (`501 "sign-in not configured"`) until `BUILDEX_SUPABASE_JWKS_URL` /
+  `BUILDEX_SUPABASE_ISSUER` / `BUILDEX_SUPABASE_AUDIENCE` are all set (all-or-nothing); all three are
+  now set, so it answers live. **Google is the only way in** - the anonymous and setup-code paths were
+  removed from the client, and anonymous sign-ins are disabled on the project (an anonymous account
+  has no recovery path, which contradicts invariant 8).
+  **The cutover has four parts and is only done when all four are:** the three `fly secrets` + deploy;
+  the OAuth provider enabled on the Supabase project; the loopback redirect
+  `http://127.0.0.1:54121/auth/callback` in the project's `uri_allow_list`; and the Supabase URL + anon
+  key in the client env. Doing only the first left `/session` answering while every browser sign-in
+  failed - the shape of a half-cutover is a service that looks healthy and a product that cannot log
+  anyone in, so verify the browser round-trip, not just the endpoint. Full checklist + decisions:
+  `docs/superpowers/specs/2026-07-22-self-serve-signin-sync-design.md`.
+- **Company deletion (`DELETE /s2s/companies/<slug>`, service-key gated):** removes a company, its
+  operators, machines, setup tokens, permissions and audit rows in one transaction, then its bare
+  repos (never `core`). This is the operator-facing "delete my account" primitive and the only way to
+  get a clean re-run when testing sign-in with one real email - `/s2s/revoke` is not a substitute, it
+  leaves the operator resolvable by Supabase `sub` and the slug taken. Driven by
+  `task delete-company -- --base-url <host> --slug <slug>`.
 - **Backups:** Litestream (control.db, continuous) → Tigris. The `buildex_data` volume
   has **scheduled daily snapshots enabled (retention 5)**, which cover `/srv/buildex/repos` as the
   interim answer; a repo-level continuous backup (not just point-in-time volume snapshots) remains a

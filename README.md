@@ -59,7 +59,7 @@ A demo company — *Acme Labs*, a small B2B SaaS — running on BuildEx:
 
 | | |
 |---|---|
-| ![Approval gate](docs/images/approval-gate.png) **Nothing outward happens without you.** The agent's outward actions wait in a Pending tray — approve or deny. | ![Session transcript](docs/images/session-transcript.png) **Ask your company brain.** "Draft the Q3 investor update" — it reads the metrics, writes the doc, and reports back. |
+| ![Approval gate](docs/images/approval-gate.png) **Nothing outward happens without you.** The agent's outward actions wait at the Gate — approve or deny. | ![Session transcript](docs/images/session-transcript.png) **Ask your company brain.** "Draft the Q3 investor update" — it reads the metrics, writes the doc, and reports back. |
 | ![App store](docs/images/app-store.png) **Connect the tools you already use.** Gmail, Slack, Notion, Linear, Stripe, HubSpot — installed per company. | ![Decision log](docs/images/decision-log.png) **Every decision, remembered.** The brain is organized markdown; the agent keeps it tidy and never forgets. |
 
 ## Quickstart — run the demo

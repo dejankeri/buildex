@@ -41,7 +41,8 @@ approval history stay on your machine.
 
 The rule is: **an operator's work is never silently discarded.** If two people changed the same
 document and the versions can't be combined cleanly, the team's version wins so nobody is blocked —
-and your version is kept safe on your machine and flagged for you. A card in the Pending tray shows
+and your version is kept safe on your machine and flagged for you. A card at the **Brain** panel's
+**Gate** shows
 you what was kept: view it side by side with the current version, or copy your text back in with one
 tap (the copy-back is an ordinary edit — checkpointed at once, part of your next save, and in
 History from then on). When you've

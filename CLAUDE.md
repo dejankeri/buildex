@@ -71,6 +71,13 @@ use the per-worktree launchers instead of `npm run demo` / `demo:app`:
 
 - `npm run demo:app:here` - native Electron app for **this** worktree
 - `npm run demo:here` - browser/console only for **this** worktree
+- `npm run demo:orgs:here` - the **multi-org** daemon for **this** worktree
+
+**Anything touching accounts, sign-in or sync must use `demo:orgs:here`.** Only the multi-org daemon
+builds an account seam (`wiring.ts` gates it on `orgId` + `orgDir`), so the single-workspace demo
+reports `signInAvailable: false` no matter what the environment holds - and `demo:orgs:here` is also
+the mode that matches the shipped packaged app, which boots through `startOrgDaemon`. It needs the
+cloud env sourced first: `set -a && . ./.env.local && set +a`.
 
 Each derives a **stable, non-colliding** demo dir (`~/.buildex-demo/<worktree>-<hash>`) and a
 console/gateway port pair (4400 band, `console`=even, `gateway`=`console+1`) from the worktree
