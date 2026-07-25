@@ -31,6 +31,10 @@ is the mode that matches the shipped packaged app, which boots through `startOrg
 
 ## Reset
 
+### Local only
+
+Use this between runs that do not involve the cloud.
+
 ```sh
 # 1. stop anything already running for this worktree
 pkill -f "demo-here.ts"; pkill -f "electron apps/client"
@@ -45,6 +49,45 @@ set -a && . ./.env.local && set +a && npm run demo:orgs:here
 
 The demo dir and console port are derived from the worktree path, so the same worktree always gets
 the same URL and two worktrees never collide.
+
+### Full reset - server and client
+
+Needed whenever a run reached the cloud, because the local wipe above leaves the company standing on
+the sync service. Sign in again without this and the **same email lands on `<slug>-2`**: `dedupeSlug`
+suffixes while the old row holds the name.
+
+```sh
+# 1. delete the company on the server - IRREVERSIBLE, there is no second copy of a team/private repo
+export BUILDEX_SERVICE_KEY=...                       # never pass it as an argument
+task delete-company -- --base-url https://<host> --slug <slug>
+
+# 2. then the local reset above (stop, rm the demo dir, boot)
+```
+
+Then confirm the clean state before starting a run:
+
+| Endpoint | Expected |
+|---|---|
+| `GET /api/account` | `{"state":"local"}` |
+| `GET /api/onboarding` | `firstRun: true` |
+| `GET /api/sync` | `signInAvailable: true`, `unsaved.connected: false` |
+
+**Do not use `/s2s/revoke` for this.** It only drops grants. `findOperatorBySupabaseSub` does not
+filter on status, so the operator is still resolved by `sub` and the next sign-in mints working
+tokens for a principal with no permissions - a credential that authenticates and can touch nothing.
+`task delete-company` is the only path that actually starts over.
+
+**The Supabase auth user is deliberately left alone.** Deletion keys on the operator row, so the same
+Google account provisions a fresh company next time. Nothing to clean there.
+
+**Stale keychain entries are harmless.** The keychain namespace derives from the workspace path,
+which contains a per-provision random org id, so a new run never reuses an old namespace. Entries
+from deleted orgs are orphaned, not read.
+
+**No `curl` inside the sync machine.** The Alpine runtime ships `git`, `git-daemon` and `litestream`
+only. To poke the API from inside the box, use `node -e` with global `fetch`; for the control DB use
+`node --experimental-sqlite` (there is no `sqlite3` binary either). Running from inside is the way to
+use `BUILDEX_SERVICE_KEY` without it leaving the machine.
 
 ---
 
