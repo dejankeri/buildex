@@ -65,7 +65,7 @@ async function boot() {
   // otherwise the change log answers "what happened?".
   $("#sync").onclick = () => {
     const dot = $("#sync");
-    if (dot.classList.contains("local") || dot.classList.contains("reconnect")) { openConnectAccount(); return; }
+    if (dot.classList.contains("local") || dot.classList.contains("reconnect")) { startSignIn(); return; }
     // "Needs attention" with kept work waiting: land on the kept-work card itself (the pending
     // tray) - the click must open the thing the operator can act on, not a log about it. A
     // needs-help with no kept work (a save that failed outright) still falls through to the map.
@@ -106,17 +106,9 @@ async function boot() {
   setInterval(refreshLoops, 30000);
   // load the active project's context (its tabs), or show the start screen if it's empty
   if (S.activeProject) switchToProject(S.activeProject);
-  // First run: ask for the company name (and, when available, whether to back up to the cloud)
-  // BEFORE the rest of the wizard. openOnboard() does NOT mark onboarding complete - it only tears
-  // itself down - so /api/onboarding still reports firstRun:true afterward and checkOnboarding()
-  // (called unconditionally below) runs its full step sequence, including the essential "Connect
-  // your agent (Claude Code)" step. checkOnboarding() itself POSTs /api/onboarding/complete when
-  // it finishes, so the marker is set exactly once, by the wizard.
-  let firstRun = false;
-  try {
-    const o = await getJSON("/api/onboarding");
-    firstRun = !!(o && o.firstRun);
-  } catch (e) {}
-  if (firstRun && typeof openOnboard === "function") await openOnboard();
+  // First run is the wizard alone. There is no company-name pre-dialog: a workspace starts fully
+  // local, and backing up is an explicit, later choice the operator makes from the "Back up & sync"
+  // pill (renderSigninPill in projects.js → the Google sign-in modal in signin.js). checkOnboarding()
+  // POSTs /api/onboarding/complete when it finishes, so the marker is set exactly once, by the wizard.
   checkOnboarding(); // fire-and-forget - shows the first-run wizard once on a fresh install
 }

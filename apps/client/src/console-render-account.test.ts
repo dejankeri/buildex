@@ -1,7 +1,7 @@
-// Browser test net for the account seam's console UI (Task 10): the first-run wizard's final step
-// gains a real "connect an account" affordance (base URL + setup code + Connect), replacing the old
-// "coming soon" placeholder; and the sync dot's local-workspace tooltip drops its stale "coming"
-// framing now that the feature exists. Loads the REAL bundle into jsdom (see console-harness.ts) and
+// Browser test net for the account seam's console UI: the first-run wizard's final step offers a
+// real choice - back up with Google, or stay local - and never asks for a company URL or a setup
+// code, neither of which a self-serve operator has. The sync dot's local-workspace tooltip states
+// that work stays on this machine. Loads the REAL bundle into jsdom (see console-harness.ts) and
 // routes fetch to controlled JSON, per the pattern in console-render-connectors.test.ts.
 import { describe, it, expect } from "vitest";
 import { loadConsole } from "./console-harness.js";
@@ -21,86 +21,98 @@ function advanceToLastStep(doc: any, n = 3): void {
   for (let k = 0; k < n; k++) doc.querySelector(".wz-primary").click();
 }
 
-describe("console renderers (jsdom) — onboarding's final step connects an account", () => {
-  it("shows a base-URL + setup-code field when the org is local, not the 'coming' placeholder", async () => {
+describe("console renderers (jsdom) — onboarding's final step offers backup, never a setup code", () => {
+  it("offers Google backup when sign-in is wired, and asks for no URL or code", async () => {
     const { doc, w, c } = loadConsole();
     routeFetch(w, [
       ["/api/onboarding", { firstRun: true, agent: { available: true, version: "1.0.0" } }],
       ["/api/account", { state: "local" }],
+      ["/api/sync", { status: "ok", signInAvailable: true, unsaved: { files: 0, oldestAt: null, stale: false, connected: false } }],
     ]);
     await c.checkOnboarding();
     advanceToLastStep(doc);
     const body = doc.querySelector(".wz-body")!;
-    expect(body.textContent).not.toMatch(/coming/i);
-    expect(body.querySelectorAll("input")).toHaveLength(2);
-    expect(doc.querySelector("#wz-connect")).not.toBeNull();
+    expect(doc.querySelector("#wz-signin-google")).not.toBeNull();
+    // The regression this guards: an operator was shown "Company URL" and "Setup code" - two things
+    // a self-serve user has never heard of and cannot supply. There are no free-text fields here.
+    expect(body.querySelectorAll("input")).toHaveLength(0);
+    expect(body.textContent).not.toMatch(/setup code|company url/i);
+  });
+
+  it("says work stays on this machine, and offers nothing, when sign-in is dormant", async () => {
+    const { doc, w, c } = loadConsole();
+    routeFetch(w, [
+      ["/api/onboarding", { firstRun: true, agent: { available: true } }],
+      ["/api/account", { state: "local" }],
+      ["/api/sync", { status: "ok", signInAvailable: false, unsaved: { files: 0, oldestAt: null, stale: false, connected: false } }],
+    ]);
+    await c.checkOnboarding();
+    advanceToLastStep(doc);
+    // A dormant build is local-forever. A backup button here would dead-end at a 501, so there is none.
+    expect(doc.querySelector("#wz-signin-google")).toBeNull();
+    expect(doc.querySelector(".wz-body")!.textContent).toMatch(/stays on this machine/i);
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  it("POSTs {baseUrl, setupToken} on Connect and, once connected, hides the form", async () => {
+  it("POSTs /api/signin on backup and, once connected, names the company instead", async () => {
     const { doc, w, c } = loadConsole();
     let posted: unknown = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (w as any).fetch = (url: string, opts: any) => {
       const u = String(url);
       if (u.includes("/api/onboarding")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ firstRun: true, agent: { available: true } }) });
-      if (u.includes("/api/account") && opts && opts.method === "POST") {
+      if (u.includes("/api/signin") && opts && opts.method === "POST") {
         posted = JSON.parse(opts.body);
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ state: "connected", companySlug: "acme" }) });
       }
       if (u.includes("/api/account")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ state: "local" }) });
-      // refreshProjects() fires after a successful connect - stub it out benignly.
       if (u.includes("/api/projects")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ projects: [{ id: "p1", name: "Workspace", items: [] }] }) });
       if (u.includes("/api/sessions")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ sessions: [] }) });
-      if (u.includes("/api/sync")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ status: "ok", unsaved: { files: 0, oldestAt: null, stale: false, connected: true } }) });
+      if (u.includes("/api/sync")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ status: "ok", signInAvailable: true, unsaved: { files: 0, oldestAt: null, stale: false, connected: true } }) });
       return Promise.reject(new Error("no route: " + u));
     };
     await c.checkOnboarding();
     advanceToLastStep(doc);
-    (doc.querySelector("#wz-baseurl") as unknown as { value: string }).value = "https://sync.acme.dev";
-    (doc.querySelector("#wz-code") as unknown as { value: string }).value = "setup_abc123";
-    (doc.querySelector("#wz-connect") as unknown as { click(): void }).click();
+    (doc.querySelector("#wz-signin-google") as unknown as { click(): void }).click();
     await new Promise((r) => setTimeout(r, 0));
-    expect(posted).toEqual({ baseUrl: "https://sync.acme.dev", setupToken: "setup_abc123" });
-    expect(doc.querySelector("#wz-connect")).toBeNull(); // the form is gone
-    expect(doc.querySelector("#wz-baseurl")).toBeNull();
+    expect(posted).toEqual({ provider: "google" });
+    expect(doc.querySelector("#wz-signin-google")).toBeNull(); // the button is gone
     expect(doc.querySelector(".wz-body")!.textContent).toContain("acme");
   });
 
-  it("shows the returned error inline on a 4xx, and leaves the form in place to retry", async () => {
+  it("shows the returned error inline on a failure, and leaves the button to retry", async () => {
     const { doc, w, c } = loadConsole();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (w as any).fetch = (url: string, opts: any) => {
       const u = String(url);
       if (u.includes("/api/onboarding")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ firstRun: true, agent: { available: true } }) });
-      if (u.includes("/api/account") && opts && opts.method === "POST") {
-        return Promise.resolve({ ok: false, status: 400, json: () => Promise.resolve({ error: "invalid setup code" }) });
+      if (u.includes("/api/signin") && opts && opts.method === "POST") {
+        return Promise.resolve({ ok: false, status: 400, json: () => Promise.resolve({ error: "sign-in was denied" }) });
       }
+      if (u.includes("/api/sync")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ status: "ok", signInAvailable: true, unsaved: { files: 0, oldestAt: null, stale: false, connected: false } }) });
       if (u.includes("/api/account")) return Promise.reject(new Error("network")); // GET fails - treated as not-connected
       return Promise.reject(new Error("no route: " + u));
     };
     await c.checkOnboarding();
     advanceToLastStep(doc);
-    (doc.querySelector("#wz-connect") as unknown as { click(): void }).click();
+    (doc.querySelector("#wz-signin-google") as unknown as { click(): void }).click();
     await new Promise((r) => setTimeout(r, 0));
-    expect(doc.querySelector(".wz-body")!.textContent).toContain("invalid setup code");
-    expect(doc.querySelector("#wz-connect")).not.toBeNull(); // still there - the operator can retry
+    expect(doc.querySelector(".wz-body")!.textContent).toContain("sign-in was denied");
+    expect(doc.querySelector("#wz-signin-google")).not.toBeNull(); // still there - the operator can retry
   });
 
-  it("operator copy never uses push/commit/branch/merge/diff, and 'token' stays out of labels", async () => {
+  it("operator copy never uses push/commit/branch/merge/diff, and never says token", async () => {
     const { doc, w, c } = loadConsole();
     routeFetch(w, [
       ["/api/onboarding", { firstRun: true, agent: { available: true } }],
       ["/api/account", { state: "local" }],
+      ["/api/sync", { status: "ok", signInAvailable: true, unsaved: { files: 0, oldestAt: null, stale: false, connected: false } }],
     ]);
     await c.checkOnboarding();
     advanceToLastStep(doc);
     const text = doc.querySelector(".wz-body")!.textContent!;
     expect(text).not.toMatch(/\b(push|commit|branch|merge|diff)\b/i);
-    // "setup code" is the label; the input's placeholder may say "code" but the field itself is
-    // never labeled with the word "token".
-    const codeInput = doc.querySelector("#wz-code")!;
-    expect((codeInput.getAttribute("placeholder") || "") + text.toLowerCase()).not.toContain("token");
+    expect(text.toLowerCase()).not.toContain("token");
   });
 });
 

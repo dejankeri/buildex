@@ -42,9 +42,6 @@ function fakeSupabase(jwt: string): SupabaseAuthClient & { exchangeCalls: unknow
       exchangeCalls.push(args);
       return { jwt };
     },
-    async signInAnonymously() {
-      return { jwt };
-    },
   };
 }
 

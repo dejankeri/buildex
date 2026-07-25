@@ -18,7 +18,7 @@ function routeFetch(w: any, routes: Array<[string, unknown]>): void {
 }
 
 describe("console (jsdom) — openProfile() menu", () => {
-  it("signed out (local, signInAvailable): a Sign in action + Have a setup code?, no company line, no Log out", async () => {
+  it("signed out (local, signInAvailable): a Sign in action only, no company line, no Log out", async () => {
     const { doc, w, c } = loadConsole();
     routeFetch(w, [
       ["/api/account", { state: "local" }],
@@ -28,7 +28,8 @@ describe("console (jsdom) — openProfile() menu", () => {
     const menu = doc.querySelector(".profile-menu");
     expect(menu).not.toBeNull();
     expect(menu!.textContent).toContain("Sign in");
-    expect(menu!.textContent).toContain("Have a setup code?");
+    // Google is the only way in - the setup-code entry point was removed everywhere it appeared.
+    expect(menu!.textContent).not.toMatch(/setup code/i);
     expect(menu!.textContent).not.toContain("Log out");
     expect(menu!.textContent).not.toMatch(/connected to/i);
     expect(menu!.textContent).not.toMatch(BANNED);
@@ -46,7 +47,7 @@ describe("console (jsdom) — openProfile() menu", () => {
     expect(menu!.textContent).toContain("acme");
     expect(menu!.textContent).toContain("Log out");
     expect(menu!.textContent).not.toContain("Sign in");
-    expect(menu!.textContent).not.toContain("Have a setup code?");
+    expect(menu!.textContent).not.toMatch(/setup code/i);
     expect(menu!.textContent).not.toMatch(BANNED);
   });
 

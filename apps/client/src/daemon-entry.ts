@@ -39,8 +39,8 @@ export interface PackagedDaemonOpts {
 
 /** Read the client's Supabase config from env, ALL-OR-NOTHING: `supabase` is populated only when
  *  `BUILDEX_SUPABASE_URL`, `BUILDEX_SUPABASE_ANON_KEY`, and `BUILDEX_SYNC_URL` are ALL present and
- *  non-empty (trimmed) - any one missing leaves it undefined, the default today (dormant `signIn`/
- *  `onboard`, see wiring.ts's `supabase` field). `url`/`anonKey` are the Supabase project's PUBLIC
+ *  non-empty (trimmed) - any one missing leaves it undefined, which leaves `signIn` dormant and the
+ *  workspace local-only (see wiring.ts's `supabase` field). `url`/`anonKey` are the Supabase project's PUBLIC
  *  OAuth endpoint + anon key (anon keys are public by Supabase's design - RLS enforces access, so
  *  these are safe to bake into env/a build, never a secret); `BUILDEX_SYNC_URL` is BuildEx's OWN
  *  hosted sync service base URL, where `POST /session` lives. Exported for the focused unit test. */
@@ -81,8 +81,9 @@ export async function startPackagedDaemon(opts: PackagedDaemonOpts = {}): Promis
   // The web console is packed alongside the bundle (web/ is a sibling of build/ under the app root).
   const webRoot = join(__dirname, "..", "web");
 
-  // Anonymous onboarding + sign-in (Task 10/4): dormant unless a build's env sets all three
-  // BUILDEX_SUPABASE_URL / BUILDEX_SUPABASE_ANON_KEY / BUILDEX_SYNC_URL - see supabaseFromEnv above.
+  // Google sign-in: dormant unless a build's env sets all three BUILDEX_SUPABASE_URL /
+  // BUILDEX_SUPABASE_ANON_KEY / BUILDEX_SYNC_URL - see supabaseFromEnv above. Dormant means the
+  // workspace stays fully local, which is a supported end state, not a degraded one.
   const supabase = supabaseFromEnv(process.env);
 
   return startOrgDaemon({

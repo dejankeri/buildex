@@ -2,12 +2,12 @@
 // pending tray's contextual card, and the sign-in modal itself. All three exist ONLY while the
 // workspace has no connected account (`unsaved.connected === false`) and disappear the moment one
 // is. Loads the REAL bundle into jsdom (see console-harness.ts) and routes fetch to controlled
-// JSON, per the pattern in console-connect-account.test.ts / console-render-account.test.ts.
+// JSON, per the pattern in console-render-account.test.ts.
 import { describe, it, expect } from "vitest";
 import { loadConsole } from "./console-harness.js";
 
-// Operator-facing copy must never leak engineer jargon - the same bar console-connect-account.test.ts
-// holds openConnectAccount() to, extended with "jwt" since this surface is closer to auth.
+// Operator-facing copy must never leak engineer jargon; "jwt" is included since this surface is
+// closer to auth than most.
 const BANNED = /\b(push|commit|branch|merge|diff|token|jwt)\b/i;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -21,15 +21,18 @@ function routeFetch(w: any, routes: Array<[string, unknown]>): void {
 }
 
 describe("console (jsdom) — startSignIn() modal", () => {
-  it("opens a modal offering Sign in with Google and a setup-code fallback", () => {
+  it("opens a modal whose only way in is Google - no setup code, no company URL", () => {
     const { doc, c } = loadConsole();
     c.startSignIn();
     const card = doc.querySelector(".wz-card");
     expect(card).not.toBeNull();
     expect(doc.querySelector("#wz-signin-google")).not.toBeNull();
-    expect(doc.querySelector("#wz-signin-code")).not.toBeNull();
     expect(card!.textContent).toContain("Sign in with Google");
-    expect(card!.textContent).toContain("Have a setup code?");
+    // The setup-code disclosure was removed along with the flow behind it: a self-serve operator has
+    // no company URL and no code, and being asked for either reads as a wall, not an option.
+    expect(doc.querySelector("#wz-signin-code")).toBeNull();
+    expect(card!.textContent).not.toMatch(/setup code|company url/i);
+    expect(doc.querySelector("#wz-baseurl")).toBeNull();
     // The "Email me a link" button was removed - there is no email-magic-link backend, and the
     // daemon's /api/signin reads no request body so it can't tell email apart from Google anyway.
     expect(doc.querySelector("#wz-signin-email")).toBeNull();
@@ -37,15 +40,6 @@ describe("console (jsdom) — startSignIn() modal", () => {
     expect(card!.textContent).not.toContain("Email me a link");
     // operator copy only - no engineer jargon leaks into the dialog
     expect(card!.textContent).not.toMatch(BANNED);
-  });
-
-  it("'Have a setup code?' closes the sign-in modal and falls back to the existing connect flow", () => {
-    const { doc, c } = loadConsole();
-    c.startSignIn();
-    (doc.querySelector("#wz-signin-code") as unknown as { click(): void }).click();
-    expect(doc.querySelector(".signin-modal")).toBeNull(); // the sign-in modal tore down
-    expect(doc.querySelector("#wz-connect")).not.toBeNull(); // openConnectAccount()'s modal is up
-    expect(doc.querySelector("#wz-baseurl")).not.toBeNull();
   });
 
   it("Cancel closes the modal without posting anything", () => {
@@ -124,7 +118,10 @@ describe("console (jsdom) — startSignIn() modal", () => {
     await new Promise((r) => setTimeout(r, 0));
     const text = doc.querySelector(".wz-card")!.textContent!;
     expect(text).not.toContain("sign-in not configured"); // never the raw internal string
-    expect(text).toMatch(/setup code/i); // nudges toward the working fallback
+    // There is no fallback to nudge toward any more, so the copy must state the real end state -
+    // this build is local-forever - rather than inviting a retry that can never succeed.
+    expect(text).toMatch(/stays on this machine/i);
+    expect(text).not.toMatch(/try again/i);
     expect(text).not.toMatch(BANNED);
   });
 

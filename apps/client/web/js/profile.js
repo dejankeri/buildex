@@ -5,15 +5,13 @@
 // <script src>, sharing one global scope. NOT an ES module.
 // Opened from the title-bar #profileBtn (boot.js). Reads GET /api/account (state:"local"|"connected",
 // companySlug) and GET /api/sync (signInAvailable) to decide what to offer:
-// - signed out: the SAME entry points as the left-rail pill / pending card (projects.js, pending.js)
-//   - "Sign in" runs startSignIn() when signInAvailable, else falls back to openConnectAccount()
-//   (mirrors renderSigninPill's gating) - plus a secondary "Have a setup code?" straight to
-//   openConnectAccount(), exactly like signin.js's own disclosure.
+// - signed out: "Sign in" (startSignIn, the same entry point as the left-rail pill and pending card
+//   in projects.js / pending.js), shown only when signInAvailable - a build with sign-in dormant is
+//   local-forever, so offering anything there would be a dead end.
 // - connected: the company line ("Connected to <companySlug>") and "Log out", which opens a
-//   confirm step before POSTing /api/logout - the reverse of openConnectAccount()'s connect
-//   (Task 2's runDisconnect on the daemon side).
-// Operator copy only: "Sign in", "Log out", "your company", "your work stays on this machine",
-// "Have a setup code?" - never push/commit/branch/merge/diff/token/JWT.
+//   confirm step before POSTing /api/logout (Task 2's runDisconnect on the daemon side).
+// Operator copy only: "Sign in", "Log out", "your company", "your work stays on this machine" -
+// never push/commit/branch/merge/diff/token/JWT.
 
 /**
  * Open a confirm step for logging out, mirroring the postJSON idiom in signin.js/account.js: the
@@ -33,8 +31,8 @@ function openLogoutConfirm(companySlug) {
   const draw = () => {
     card.innerHTML =
       '<h2 class="wz-t">Log out?</h2>' +
-      '<div class="wz-body"><p>Log out disconnects this device from ' + esc(company) + ". Your work stays on this machine. " +
-      "If you signed in anonymously, you may not be able to get back in unless you've linked Google.</p>" +
+      '<div class="wz-body"><p>Log out disconnects this device from ' + esc(company) + ". Your work stays on this machine, " +
+      "and you can sign back in with Google any time.</p>" +
       (error ? '<div class="wz-err">' + esc(error) + "</div>" : "") +
       "</div>" +
       '<div class="wz-actions"><div class="wz-right"><button class="wz-ghost" data-a="cancel">Cancel</button>' +
@@ -66,9 +64,9 @@ function openLogoutConfirm(companySlug) {
 
 /**
  * Open the profile menu anchored to #profileBtn. Fetches /api/account + /api/sync (best-effort -
- * a failed fetch is treated as signed-out/dormant, the same safe default openOnboard() uses) and
+ * a failed fetch is treated as signed-out/dormant, the safe default) and
  * draws a small dropdown:
- * - signed out ("local"): "Sign in" + "Have a setup code?", no company line, no Log out.
+ * - signed out ("local"): "Sign in" when sign-in is wired, nothing when it isn't; no company line, no Log out.
  * - connected: "Connected to <companySlug>" + "Log out" - NOT the sign-in actions.
  * @returns {Promise<void>}
  */
@@ -95,19 +93,16 @@ async function openProfile() {
     };
     m.appendChild(out);
   } else {
-    const signIn = elt("button", null, "Sign in");
-    signIn.onclick = () => {
-      closeMenus();
-      if (signInAvailable) startSignIn();
-      else openConnectAccount();
-    };
-    m.appendChild(signIn);
-    const code = elt("button", null, "Have a setup code?");
-    code.onclick = () => {
-      closeMenus();
-      openConnectAccount();
-    };
-    m.appendChild(code);
+    // Only offer sign-in when the build can actually do it. Dormant → the menu simply carries no
+    // account action: this workspace is local, and saying so by omission beats a button that 501s.
+    if (signInAvailable) {
+      const signIn = elt("button", null, "Sign in");
+      signIn.onclick = () => {
+        closeMenus();
+        startSignIn();
+      };
+      m.appendChild(signIn);
+    }
   }
   // Notifications are a property of THIS machine, not of the account, so they sit below the account
   // actions rather than inside them - and they are reachable whether or not anyone is signed in.

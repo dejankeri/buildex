@@ -31,19 +31,24 @@ async function checkOnboarding(){
   let acct; try{acct=await getJSON("/api/account");}catch(e){acct=null;}
   let connected=!!(acct&&acct.state==="connected");
   let acctError="";
-  // The final step's body: once connected, a short confirmation naming the company; otherwise a
-  // small form - a company URL and a setup code, and a Connect button that POSTs /api/account.
-  // Operator copy: "connect"/"save"/"your company", never push/commit/branch/merge/diff; the field
-  // is labeled "Setup code" (never "token" as operator-facing jargon).
-  const acctStepBody=()=>connected
-    ?'<p>This is your <b>local</b> workspace - start chatting with your agent. Your account is connected'+(acct&&acct.companySlug?' to <b>'+esc(acct.companySlug)+'</b>':'')+' - your work now saves to your company.</p>'
-    :'<p>This is your <b>local</b> workspace - start chatting with your agent. Connect an account any time to save your work to your company.</p>'+
+  // Whether the build can actually sign in at all. Best-effort, and false on failure: never offer a
+  // back-up button that would dead-end at a dormant /api/signin (501).
+  let signInAvailable=false;
+  try{const s=await getJSON("/api/sync");signInAvailable=!!(s&&s.signInAvailable);}catch(e){}
+  // The final step is a real choice, not a form. There are exactly two end states - signed in with
+  // Google, or fully local - and both are legitimate, so the step states them plainly and lets the
+  // operator pick. Staying local needs no button: the step's own "Start using BuildEx" CTA is it.
+  // Operator copy: "back up"/"save"/"your company", never push/commit/branch/merge/diff/token.
+  const acctStepBody=()=>{
+    if(connected)return'<p>This is your <b>local</b> workspace - start chatting with your agent. Your work is backed up'+(acct&&acct.companySlug?' to <b>'+esc(acct.companySlug)+'</b>':'')+'.</p>';
+    if(!signInAvailable)return'<p>This is your <b>local</b> workspace - start chatting with your agent. Everything stays on this machine.</p>';
+    return'<p>This is your <b>local</b> workspace - start chatting with your agent.</p>'+
+      '<p>Back it up to your company so nothing is lost if this machine is - or keep everything on this device and decide later.</p>'+
       '<div class="wz-connect">'+
-        '<label class="wz-field">Company URL<input id="wz-baseurl" type="text" inputmode="url" autocomplete="off" placeholder="https://sync.yourcompany.com"></label>'+
-        '<label class="wz-field">Setup code<input id="wz-code" type="text" autocomplete="off" placeholder="Paste the code your company gave you"></label>'+
+        '<button class="wz-primary wz-full" id="wz-signin-google" type="button">Back up - sign in with Google</button>'+
         (acctError?'<div class="wz-err">'+esc(acctError)+'</div>':'')+
-        '<button class="wz-ghost" id="wz-connect" type="button">Connect</button>'+
       '</div>';
+  };
   // The wizard steps, in order. `skip:true` adds a "Skip" button alongside the primary CTA. The last
   // step's `body` is a placeholder - draw() below replaces it with acctStepBody() so it stays live
   // across a Connect attempt (success/error) without touching the step's title or CTA.
@@ -61,25 +66,30 @@ async function checkOnboarding(){
   // Render the current step `i` into the card: progress dots, title, body, and back/skip/primary actions.
   const draw=()=>{
     const s=steps[i];
-    const body=(i===steps.length-1)?acctStepBody():s.body;
+    const last=(i===steps.length-1);
+    const body=last?acctStepBody():s.body;
+    // Exactly one primary per card. On the final step the recommended action is backing up, so the
+    // Google button owns the emphasis and "Start using BuildEx" steps down to a ghost - it means
+    // "skip this, stay local", which is a real choice but not the one to lead with. Two primaries
+    // would leave the operator with no signal about which path is the recommended one.
+    const ctaClass=(last&&!connected&&signInAvailable)?"wz-ghost":"wz-primary";
     card.innerHTML='<div class="wz-dots">'+steps.map((_,k)=>'<span class="'+(k===i?'on':'')+'"></span>').join('')+'</div>'+
       '<h2 class="wz-t">'+esc(s.t)+'</h2><div class="wz-body">'+body+'</div>'+
       '<div class="wz-actions">'+(i>0?'<button class="wz-ghost" data-a="back">Back</button>':'')+
       '<div class="wz-right">'+(s.skip?'<button class="wz-ghost" data-a="next">Skip</button>':'')+
-      '<button class="wz-primary" data-a="next">'+esc(s.cta)+'</button></div></div>';
+      '<button class="'+ctaClass+'" data-a="next">'+esc(s.cta)+'</button></div></div>';
     card.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{
       if(b.dataset.a==="back"){i=Math.max(0,i-1);draw();}
       else if(i>=steps.length-1)finish(); else{i++;draw();}
     });
-    // Wire the connect form (present only on the final step, and only while not yet connected).
-    const connectBtn=card.querySelector("#wz-connect");
-    if(connectBtn)connectBtn.onclick=async()=>{
-      const baseUrl=card.querySelector("#wz-baseurl").value.trim();
-      const setupToken=card.querySelector("#wz-code").value.trim();
-      connectBtn.disabled=true;connectBtn.textContent="Connecting…";
+    // Wire the back-up button (final step only, and only while signed out with sign-in wired). Same
+    // POST /api/signin the sign-in modal uses - one auth path, no second implementation.
+    const googleBtn=card.querySelector("#wz-signin-google");
+    if(googleBtn)googleBtn.onclick=async()=>{
+      googleBtn.disabled=true;googleBtn.textContent="Opening Google…";
       let res;
-      try{res=await postJSON("/api/account",{baseUrl,setupToken});}
-      catch(e){res={error:"Could not reach your company's server - check the URL and try again."};}
+      try{res=await postJSON("/api/signin",{provider:"google"});}
+      catch(e){res={error:"Could not reach your company's server - check your connection and try again."};}
       if(res&&res.state==="connected"){
         connected=true;acct=res;acctError="";
         // Refresh the sync surface (the title-bar dot + save card) so it reflects the new
@@ -87,8 +97,10 @@ async function checkOnboarding(){
         if(typeof refreshProjects==="function")refreshProjects().catch(()=>{});
         draw();
       }else{
-        connectBtn.disabled=false;connectBtn.textContent="Connect";
-        acctError=(res&&res.error)||"Could not connect - check the URL and setup code.";
+        googleBtn.disabled=false;googleBtn.textContent="Back up - sign in with Google";
+        acctError=res&&res.state==="needs-help"
+          ?"Signed in, but your account needs attention - please contact your company."
+          :(res&&res.error)||"Could not sign in - please try again.";
         draw();
       }
     };

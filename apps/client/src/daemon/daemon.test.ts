@@ -699,59 +699,6 @@ describe("/api/signin", () => {
   });
 });
 
-// Anonymous onboarding (Task 4): the operator names their company and gets an anonymous account with
-// no browser round-trip. Dormant (501) whenever `onboard` isn't wired - the default today (no Supabase
-// config) - and never a raw 500 once it is, mirroring /api/signin's error mapping exactly.
-describe("/api/onboard", () => {
-  it("501s when onboarding isn't configured (dormant by default)", async () => {
-    const { app } = makeDaemon();
-    const res = await app(post("/api/onboard", { companyName: "Acme" }));
-    expect(res.status).toBe(501);
-    expect(((await res.json()) as { error: string }).error).toMatch(/sign-in not configured/i);
-  });
-
-  it("runs the wired onboard with the posted companyName and returns its resulting state", async () => {
-    let seen: { companyName: string } | undefined;
-    const { app } = makeDaemon({
-      onboard: async (input: { companyName: string }) => {
-        seen = input;
-        return { state: "connected" as const };
-      },
-    });
-    const res = await app(post("/api/onboard", { companyName: "Acme Inc" }));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ state: "connected" });
-    expect(seen).toEqual({ companyName: "Acme Inc" });
-  });
-
-  it("400s when companyName is missing", async () => {
-    const { app } = makeDaemon({ onboard: async () => ({ state: "connected" as const }) });
-    const res = await app(post("/api/onboard", {}));
-    expect(res.status).toBe(400);
-  });
-
-  it("400s when companyName is empty", async () => {
-    const { app } = makeDaemon({ onboard: async () => ({ state: "connected" as const }) });
-    const res = await app(post("/api/onboard", { companyName: "   " }));
-    expect(res.status).toBe(400);
-  });
-
-  it("maps a sandbox refusal to 409", async () => {
-    const { app } = makeDaemon({
-      onboard: async () => { throw new Error("the sandbox org is local-only and cannot attach an account"); },
-    });
-    const res = await app(post("/api/onboard", { companyName: "Acme" }));
-    expect(res.status).toBe(409);
-  });
-
-  it("maps any other throw to a terse 400, never a 500", async () => {
-    const { app } = makeDaemon({ onboard: async () => { throw new Error("company creation failed: taken"); } });
-    const res = await app(post("/api/onboard", { companyName: "Acme" }));
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: string }).error).toMatch(/taken/);
-  });
-});
-
 // Local disconnect of the active org (Task 2). Unwired whenever `logout` isn't gated in (no account
 // store - e.g. the sandbox), matching /api/account's own unwired shape: the route just doesn't match
 // and the request falls through to the daemon's terminal 404, never a raw 500.
