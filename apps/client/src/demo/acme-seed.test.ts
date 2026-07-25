@@ -64,7 +64,10 @@ describe("seedAcmeWorkspace - the non-syncable demo sandbox", () => {
     seedAcmeWorkspace({ workspace: ws, corePackDir: CORE_PACK });
     expect(existsSync(join(ws, ".projects.json"))).toBe(true);
     // Definitions are committed brain content (invariant 2); only the run stamps stay in the workspace.
+    // Existence is not the claim - `git ls-files` is. An untracked loops.yaml never reaches another
+    // machine, and the checkpoint net would later commit it as an operator edit nobody made.
     expect(existsSync(join(ws, "team-acme", "loops.yaml"))).toBe(true);
+    expect(git(["ls-files", "loops.yaml"], join(ws, "team-acme"))).toBe("loops.yaml");
     expect(existsSync(join(ws, ".loops-state.json"))).toBe(true);
     // 8 seeded sessions, each a `<uuid>.json`
     const sessions = readdirSync(join(ws, ".sessions")).filter((f) => f.endsWith(".json"));
@@ -100,6 +103,18 @@ describe("seedAcmeWorkspace - the non-syncable demo sandbox", () => {
       const text = readFileSync(f, "utf8");
       expect(text, `${f} must not use [[wikilinks]]`).not.toMatch(/\[\[/);
       expect(text, `${f} must not use _underscore_ italics`).not.toMatch(/(^|[^\w*])_[A-Za-z][^_\n]*_(?=[\s.,)]|$)/m);
+    }
+  });
+
+  it("leaves every seeded repo clean - a first launch shows no work the operator never did", () => {
+    // The seed is a company's genesis. Anything it writes into a repo but does not commit surfaces
+    // to the operator as unsaved work seconds after their very first boot, and is then swept into
+    // history by the checkpoint net as "~operator: update ..." - an edit they never made. Company
+    // history is a deterministic trust surface (invariant 9); it must not open with a phantom.
+    const ws = join(tmp, "ws");
+    const roots = seedAcmeWorkspace({ workspace: ws, corePackDir: CORE_PACK });
+    for (const r of roots) {
+      expect(git(["status", "--porcelain"], r.dir), `${r.name} must be clean after seeding`).toBe("");
     }
   });
 

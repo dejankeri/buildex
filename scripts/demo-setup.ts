@@ -89,6 +89,18 @@ const roots = [
 ];
 writeWorkspaceExtras(ws, { roots, preset });
 
+// writeWorkspaceExtras writes loops.yaml INTO the team root - a repo that was already committed and
+// pushed above - so it lands untracked in the clone and never reaches the bare remote at all. Left
+// alone, the operator's first boot reports "1 unsaved file" for work they never did, and the
+// checkpoint net later sweeps it into history as "~operator: update loops.yaml". Commit and push it
+// here so the definitions are genuinely shared brain content (invariant 2), the same way
+// seedAcmeWorkspace orders it for the packaged sandbox. Everything else the extras writer produces
+// lands in the workspace root, outside any repo, and stays uncommitted as intended.
+const teamRoot = join(ws, "team-acme");
+git(["add", "loops.yaml"], teamRoot);
+git(["commit", "-m", "seed loops"], teamRoot);
+git(["push", "origin", "HEAD:main"], teamRoot);
+
 // --- an isolated CLAUDE_CONFIG_DIR for the agent (no inherited hooks from the operator's own
 //     Claude Code), so the spawned agent gets a clean, predictable tool set. Opt-in: it only takes
 //     effect once logged in (npm run demo:agent-login), which writes the .buildex-ready marker. ---

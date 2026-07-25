@@ -797,11 +797,16 @@ export function seedAcmeWorkspace(opts: SeedAcmeOpts): Root[] {
   if (fresh.has("team-acme") && fresh.has("private-you")) {
     installDemoPacks(join(opts.workspace, "private-you"), join(opts.workspace, "team-acme"), opts.corePackDir);
   }
+  // Extras BEFORE the commit loop, not after. writeWorkspaceExtras writes loops.yaml into the team
+  // root - a repo - so running it afterwards left the definitions untracked: they never reached
+  // another machine, the operator's first boot showed "1 unsaved file" for work they never did, and
+  // the checkpoint net then swept them into history as "~operator: update loops.yaml". Everything
+  // else it writes lands in the workspace root, outside any repo, and stays uncommitted as intended.
+  const preset = JSON.parse(readFileSync(join(opts.corePackDir, "policy", "preset.json"), "utf8")) as PolicyPreset;
+  writeWorkspaceExtras(opts.workspace, { roots, preset });
   for (const root of roots) {
     if (!fresh.has(root.name)) continue;
     initAndCommit(root.dir, actor, `seed ${root.name}`); // no remote → permanently local (non-syncable sandbox)
   }
-  const preset = JSON.parse(readFileSync(join(opts.corePackDir, "policy", "preset.json"), "utf8")) as PolicyPreset;
-  writeWorkspaceExtras(opts.workspace, { roots, preset });
   return roots;
 }
