@@ -252,11 +252,39 @@ No required params (omit `workoutId` to create).
 | `difficulty` | string enum | `EASY` · `MODERATE` · `HARD` · `VERY_HARD` |
 | `goal` | string enum | `WEIGHT_LOSS` · `MUSCLE_GAIN` · `STRENGTH` · `ENDURANCE` · `FLEXIBILITY` · `SPORT_SPECIFIC` · `GENERAL_FITNESS` · `REHABILITATION` |
 | `durationMinutes` | number | |
-| `exercises` | object[] | The exercise groups. **Replaces the whole tree.** |
+| `exercises` | object[] | The exercise groups. **Replaces the whole tree** — see [the replace grammar](#the-replace-grammar-phases-items-groups); `add` names the row TYPE here (`"GROUP"` / `"EXERCISE"`). |
 | `metadata` | object | Partial metadata patch (name / difficulty / goal / …). |
 
 The param is `exercises` — not `groups`, not `exerciseGroups`. Both enum values are also re-checked
 on the `metadata` patch path, so a bad `metadata.difficulty` gives a clean error.
+
+#### The two-level shape
+
+GROUP rows at the top; each group's movements go in its own nested `exercises` array. Exercises
+never sit at the top level.
+
+```
+{ add:"GROUP", section:"MAIN", format:"SUPERSET", restAfterGroupSeconds:120,
+  exercises:[ { add:"EXERCISE", exerciseId:"<id>", sets:4, repRule:"8-10", restAfterSeconds:90 } ] }
+```
+
+| Field | On | Notes |
+|---|---|---|
+| `section` | GROUP | `WARMUP` · `MAIN` · `FINISHER` · `COOLDOWN`. Validated — a descriptive value like "Strength" is rejected. |
+| `format` | GROUP | `REGULAR` (the overwhelming default) · `SUPERSET` · `CIRCUIT` · `DROPSET` · `AMRAP` · `EMOM` · `TABATA` · `FOR_TIME` · … Validated. |
+| `rounds`, `timeCapSeconds`, `restBetweenRoundsSeconds` | GROUP | For circuits / AMRAP / EMOM. |
+| `restAfterGroupSeconds` | GROUP | Rest after the block. |
+| `exerciseId` | EXERCISE | A library id — resolve it with `find kind=exercise` first. A name is not a reference. |
+| `sets`, `repRule` | EXERCISE | There is **no `reps` field**; reps live in `repRule`. |
+| `restAfterSeconds` | EXERCISE | Rest between sets. **Set this** — it is on ~3 of every 4 real exercises. |
+| `weight`, `tempo`, `notes` | EXERCISE | `rir` / `rpe` exist but are barely used in practice. |
+
+`repRule` is a **structured grammar**, not free text — the same one the coach's builder enforces, so
+a value it rejects would render red in their UI. Valid: `"10"`, `"8-10"`, `"10 / 8 / 6"`,
+`"10x25kg"`, `"30s"`, `"5:00 / 4:30"`, `"bw"`, `"80%"`. Rejected: `"AMRAP"`, `"to failure"`,
+`"60s hold"`, and anything with an unknown unit. Units: `kg` `lbs` `lb` `%` `bw` `bodyweight` `m`
+`meters` `yd` `yards` `min` `s` `sec` — note `cal`, `km` and `in` are **not** supported by either
+side. Unilateral work ("10 each side") has no notation: put it in `notes` and keep `repRule` numeric.
 
 ### `build_nutrition`
 

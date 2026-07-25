@@ -42,8 +42,19 @@ client's profile, and confusing a template with a client's copy.
   to create, `{ ref: "<phaseId>" }` to keep a week untouched, `{ modify: "<phaseId>", … }` to change
   one. A week you omit is deleted. Note `add` is a **boolean** here - in `build_nutrition` it names
   the row type instead. Full grammar: `../protocol-reference/references/mcp-surface.md`.
-- `exercises` **replaces** the whole exercise list on a workout. To add one session, read the current
-  list, append, and write the complete array back - or you will delete the rest.
+- `exercises` **replaces** the whole exercise list on a workout - and so does a group's own nested
+  `exercises` array. Changing one movement in a superset means sending that group's complete list
+  with `{ ref: <exerciseId> }` for the ones you are keeping. Read the current list, merge, write it
+  all back.
+- **A workout is two levels: groups, then movements inside them.** A movement needs a real
+  `exerciseId` (resolve it with `find kind=exercise` - a name is not a reference), `sets`, and
+  `repRule`. There is no `reps` field.
+- **Prescribe rest.** `restAfterSeconds` on each exercise, `restAfterGroupSeconds` on the block.
+  Real coaches set it on most exercises; a session without rest reads half-finished to a client.
+- **`repRule` is a structured grammar, not prose** - `"8-10"`, `"10 / 8 / 6"`, `"10x25kg"`, `"30s"`.
+  Free text ("AMRAP", "to failure", "60s hold") is rejected, because the coach's own builder would
+  render it as invalid. Unilateral work has no notation: keep `repRule` numeric and say "each side"
+  in `notes`.
 - **Read `failCount` on every write.** These verbs are best-effort: rows they cannot parse are
   skipped, and the call still succeeds. A response carrying `failCount: 2` built two fewer weeks than
   you asked for, and only the number tells you.

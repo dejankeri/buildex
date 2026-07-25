@@ -74,6 +74,24 @@ The same holds at the storage layer: these are unvalidated jsonb blobs. Exactly 
 what is stored. A field renamed or nested one level wrong is not an error; it's simply absent on
 the next read.
 
+### Replacing applies at EVERY level, including inside a group
+
+`build_workout.exercises` is two levels: GROUP rows, each holding its EXERCISE rows in a nested
+`exercises` array. Sending `{ modify: <groupId>, exercises: [...] }` replaces **that group's whole
+exercise list**, not just the ones you named. Keep the rest with `{ ref: <exerciseId> }`.
+
+A malformed nested list is now refused rather than applied — send
+`{ name: "Bench Press", sets: 4, reps: 8 }` and the server rejects the write, because `reps` is not
+a field (it is `repRule`) and a name is not a reference (you need `exerciseId`). Before that guard
+existed, a superset silently went from two exercises to zero and the call reported success.
+
+> **The guards do not protect you from OMISSION.** They refuse a payload the server cannot parse.
+> A payload that is perfectly well-formed and simply leaves rows out is indistinguishable from
+> "delete those rows" — because that is how you delete them. Sending one `{ modify: <groupId> }` to
+> tweak a single group deletes every OTHER group in the workout, with no error and no warning.
+> The only defence is the discipline above: `get` first, then send `{ ref: <id> }` for everything
+> you are keeping, at **both** levels.
+
 ---
 
 ## 3. Filters that don't apply just no-op
