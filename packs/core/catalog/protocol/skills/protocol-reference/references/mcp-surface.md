@@ -236,8 +236,29 @@ Required: `action`. 5 actions.
 | `startDate` | string | `activate`: `YYYY-MM-DD`; defaults to today. |
 | `position` | integer | `move`: 0-based position in the client's program list. |
 
+**`copyFromProgramId` is the source; `programId` is not.** On `assign` they are different things —
+`programId` names the program to act on for the *other four* actions. Passing `programId` to
+`assign` is the easiest mistake on this verb, and it used to create a brand-new **empty** program
+assigned to the client while reporting success. It is refused now, but know which key you mean.
+`assign` also requires `userId`: a copy owned by nobody is a library duplicate, not an assignment.
+
 `assign` produces an **independent deep copy** — its `templateId` stays null by design. That is not
-a bug to correct.
+a bug to correct. The copy is independent all the way down: the source's **workouts and nutrition
+templates are duplicated into new rows too**, so editing the client's session does not change the
+template it came from. Edit the client's copy for that client; edit the source to change the recipe
+for everyone you assign it to next.
+
+`unlink` only applies to programs that carry a `templateId` — those come from the web app's link
+flow. A program you assigned is already independent, so `unlink` answers "not linked to a template".
+That is the correct answer, not a failure.
+
+**The copy duplicates per DAY-REFERENCE, not per distinct item.** A 4-week block whose seven days
+each point at the same nutrition plan yields 28 copies of it; a workout used in all four weeks
+becomes four rows. This matches ~99.7% of the product's real programs (measured), so it is the house
+shape, not a defect — but two things follow. Titles are copied **verbatim**, so a workout named after
+one client will carry that name into the next client's plan; name sessions by content, never by
+person. And an edit to the client's copy applies to the day you edit, not to every day that
+originally shared the item.
 
 ### `build_workout`
 

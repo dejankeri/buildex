@@ -28,9 +28,13 @@ client's profile, and confusing a template with a client's copy.
    phase: `workoutDays` carries `{ workoutIds: [...] }` per day, `nutritionDays` carries
    `{ plannedNutritionTemplates: [...] }` per day. They are separate arrays on the same week, seven
    entries each. Nutrition placed on a `workoutDay` is silently not rendered.
-5. Assign with `assign_program`. Assigning **deep-copies** the template into an independent client
-   copy - later edits to the client's program do not touch the template, and vice versa. Edit the
-   right one.
+5. Assign with `assign_program` — `action: "assign"`, the source as **`copyFromProgramId`** (not
+   `programId`, which is what the other actions use), and the client as `userId`. Both are required;
+   without the source you would create an empty plan for that client.
+   Assigning **deep-copies** the template into an independent client copy, all the way down: the
+   workouts and nutrition templates are duplicated too. Later edits to the client's program - or to
+   its sessions - do not touch the template, and vice versa. Edit the client's copy to change that
+   client; edit the source to change what the next person gets.
 6. Read the program back with `get` and confirm the phases and exercises actually landed.
 7. Tell the operator what you built in their language - the shape of the block and why, not a dump
    of every set.
@@ -51,6 +55,15 @@ client's profile, and confusing a template with a client's copy.
   `repRule`. There is no `reps` field.
 - **Prescribe rest.** `restAfterSeconds` on each exercise, `restAfterGroupSeconds` on the block.
   Real coaches set it on most exercises; a session without rest reads half-finished to a client.
+- **Never put a client's name in a workout or nutrition-template title.** Assigning deep-copies
+  those titles **verbatim** to the next client, so a session called "Sarah - Upper A" ends up in
+  Marcus's plan still saying Sarah. Name them by what they are: "Upper A - Push", "Cut Block Daily
+  Nutrition". The program name is where the client belongs, and `assign` lets you set that per copy.
+- **Assigning multiplies rows, and that is normal.** The copy duplicates a workout or template once
+  per day it is referenced - a 4-week block referencing one daily nutrition plan produces 28 copies.
+  That is how ~99.7% of this product's real programs are shaped, so do not "clean it up" or report it
+  as a fault. It also means edits to the client's copy are per-day: change the session on the day
+  you mean.
 - **`repRule` is a structured grammar, not prose** - `"8-10"`, `"10 / 8 / 6"`, `"10x25kg"`, `"30s"`.
   Free text ("AMRAP", "to failure", "60s hold") is rejected, because the coach's own builder would
   render it as invalid. Unilateral work has no notation: keep `repRule` numeric and say "each side"
@@ -59,6 +72,9 @@ client's profile, and confusing a template with a client's copy.
   skipped, and the call still succeeds. A response carrying `failCount: 2` built two fewer weeks than
   you asked for, and only the number tells you.
 - Never edit a template when the operator meant a client's assigned copy. If it is ambiguous, ask.
+  The two are fully independent after an assign, so the wrong choice is silent: the change lands
+  somewhere real, just not where the operator meant. `find kind=program` with the client's id shows
+  which copies are theirs.
 - Use round, coachable numbers - real set and rep schemes, sensible session lengths. Mirror the
   conventions already in the coach's other programs.
 - Building and assigning are writes, not outward actions. Nothing here notifies the client.
