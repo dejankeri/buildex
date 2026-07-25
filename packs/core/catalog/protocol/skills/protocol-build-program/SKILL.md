@@ -20,12 +20,19 @@ client's profile, and confusing a template with a client's copy.
 2. Confirm the exact parameter names in `../protocol-reference/references/mcp-surface.md` before
    writing. `build_program` and `build_workout` have specific, easy-to-mistake argument shapes.
 3. Build the structure with `build_program` (metadata, phases, content), and individual sessions with
-   `build_workout`.
-4. Assign with `assign_program`. Assigning **deep-copies** the template into an independent client
+   `build_workout`. **Send a workout's metadata and its `exercises` in the SAME call.** Creating the
+   workout first and adding exercises after means a second call, and if you omit `workoutId` on it
+   you create a *second, empty* workout rather than filling the first - the coach's library ends up
+   with a duplicate of every session.
+4. For a **mixed block** (training + nutrition in one program - the usual shape), attach both on the
+   phase: `workoutDays` carries `{ workoutIds: [...] }` per day, `nutritionDays` carries
+   `{ plannedNutritionTemplates: [...] }` per day. They are separate arrays on the same week, seven
+   entries each. Nutrition placed on a `workoutDay` is silently not rendered.
+5. Assign with `assign_program`. Assigning **deep-copies** the template into an independent client
    copy - later edits to the client's program do not touch the template, and vice versa. Edit the
    right one.
-5. Read the program back with `get` and confirm the phases and exercises actually landed.
-6. Tell the operator what you built in their language - the shape of the block and why, not a dump
+6. Read the program back with `get` and confirm the phases and exercises actually landed.
+7. Tell the operator what you built in their language - the shape of the block and why, not a dump
    of every set.
 
 ## Rules

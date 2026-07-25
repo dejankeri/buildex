@@ -203,6 +203,25 @@ Copying/assigning to a client is `assign_program`, not this verb.
 `MAINTENANCE` · `MINOR_SURPLUS` · `SURPLUS`. This one is **not** schema-validated — a bad value is
 persisted verbatim.
 
+#### Mixed weeks — training *and* nutrition on the same phase
+
+The common real shape. A phase carries parallel day arrays, seven entries each, and they are
+independent: editing one does not disturb the other.
+
+| Array | A day looks like |
+|---|---|
+| `workoutDays` | `{ workoutIds: ["<workoutId>"], isRestDay: false }`, or `{ isRestDay: true }` |
+| `nutritionDays` | `{ plannedNutritionTemplates: ["<templateId>"] }` |
+| `contentDays` | `{ mediaIds: ["<mediaId>"] }` |
+
+Nutrition placed on a `workoutDay` is **not rendered** — it must go in `nutritionDays`.
+
+Day objects are **not** reconciled the way rows are: they are stored as given. A day whose fields are
+not from the real vocabulary is rejected outright rather than coerced (an invented
+`{ day: "Monday", workout: "Upper A" }` used to become a silent rest day). The accepted fields are
+`workoutIds`, `plannedNutritionTemplates`, `recoveryActivities`, `mediaIds`, `isRestDay`, `name`,
+`dayType`, `dayFocus`, `notes`. A bare `{}` is a valid empty day.
+
 ### `assign_program`
 
 Required: `action`. 5 actions.
