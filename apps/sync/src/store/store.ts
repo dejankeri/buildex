@@ -284,6 +284,61 @@ export class ControlPlaneStore {
     }
   }
 
+  // --- delete ---
+
+  /** Hard-delete a company and everything hanging off it, returning the repos that are now orphaned
+   *  so the caller can remove them from disk. Returns null when the slug is unknown - the caller
+   *  must report that rather than claim a delete that never happened.
+   *
+   *  This is deliberately NOT `revokeOperator`. Revoke marks a row and drops grants;
+   *  findOperatorBySupabaseSub still resolves the operator by `sub`, so a later sign-in would mint
+   *  tokens for a principal with no permissions - authenticated, and able to touch nothing. Only a
+   *  hard delete lets the same identity start over, and only removing the company row frees the
+   *  slug (dedupeSlug otherwise hands back `<slug>-2`).
+   *
+   *  The repo list is read from the permission matrix rather than reconstructed from naming rules,
+   *  so it stays correct if those rules ever change. `core` is filtered out explicitly: it is the
+   *  shared read-only pack every company reads, and deleting one company must never touch it. */
+  deleteCompanyBySlug(slug: string): { companyId: string; operatorIds: string[]; repos: string[] } | null {
+    const company = this.db.prepare("SELECT id FROM companies WHERE slug = ?").get(slug) as { id: string } | undefined;
+    if (!company) return null;
+    const companyId = company.id;
+    const operatorIds = (
+      this.db.prepare("SELECT id FROM operators WHERE company_id = ?").all(companyId) as { id: string }[]
+    ).map((r) => r.id);
+
+    // Gather the repos BEFORE the delete - the permission rows are about to go away.
+    const repos = operatorIds.length
+      ? (
+          this.db
+            .prepare(
+              `SELECT DISTINCT repo FROM repo_permissions
+               WHERE access = 'write' AND principal IN (${operatorIds.map(() => "?").join(",")})`,
+            )
+            .all(...operatorIds) as { repo: string }[]
+        )
+          .map((r) => r.repo)
+          .filter((r) => r !== "core")
+      : [];
+
+    this.db.exec("BEGIN");
+    try {
+      for (const id of operatorIds) {
+        this.db.prepare("DELETE FROM machines WHERE operator_id = ?").run(id);
+        this.db.prepare("DELETE FROM setup_tokens WHERE operator_id = ?").run(id);
+        this.db.prepare("DELETE FROM repo_permissions WHERE principal = ?").run(id);
+      }
+      this.db.prepare("DELETE FROM audit_events WHERE company_id = ?").run(companyId);
+      this.db.prepare("DELETE FROM operators WHERE company_id = ?").run(companyId);
+      this.db.prepare("DELETE FROM companies WHERE id = ?").run(companyId);
+      this.db.exec("COMMIT");
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
+    return { companyId, operatorIds, repos };
+  }
+
   // --- audit ---
 
   addAuditEvent(e: { actor: string; companyId: string; action: string }): void {

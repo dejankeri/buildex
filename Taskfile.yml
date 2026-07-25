@@ -81,6 +81,15 @@ tasks:
     cmds:
       - npx tsx scripts/mint-setup-token.ts {{.CLI_ARGS}}
 
+  # IRREVERSIBLE. Hard-deletes a company, its people, and its bare repos (never `core`), which is
+  # what makes "sign in, test, start over clean" repeatable: only a hard delete frees the slug and
+  # lets the same identity provision fresh. Prompts for the slug unless --yes. Not /s2s/revoke -
+  # see deleteCompanyBySlug for why revoke leaves an unusable half-state behind.
+  delete-company:
+    desc: "Permanently delete a company + its repos from the sync service (needs BUILDEX_SERVICE_KEY)"
+    cmds:
+      - npx tsx scripts/delete-company.ts {{.CLI_ARGS}}
+
   # infra/fly.toml carries no app identity (public repo) - FLY_APP (required) comes from the
   # untracked infra/.env. Copy infra/.env.example to infra/.env and set FLY_APP before deploying.
   # Region is NOT passed to `fly deploy` - flyctl has no --region flag for it; a first deploy places

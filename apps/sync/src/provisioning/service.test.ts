@@ -8,11 +8,18 @@ import type { GitService } from "../git/types.js";
 import { AuthError } from "../lib/errors.js";
 import { hashToken } from "../lib/tokens.js";
 
-// A fake embedded-git service that just records which repos were ensured (the seam we depend on).
+// A fake embedded-git service that records which repos were ensured and which were removed (the two
+// halves of the seam we depend on). `removed` also drops the repo from `ensured`, so a test can
+// assert the end state rather than replaying the history.
 class FakeGit implements GitService {
   ensured: string[] = [];
+  removed: string[] = [];
   async ensureRepo(name: string): Promise<void> {
     if (!this.ensured.includes(name)) this.ensured.push(name);
+  }
+  async removeRepo(name: string): Promise<void> {
+    this.removed.push(name);
+    this.ensured = this.ensured.filter((n) => n !== name);
   }
 }
 

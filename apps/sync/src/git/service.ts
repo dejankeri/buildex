@@ -3,7 +3,7 @@
 // authorization - the HTTP layer authenticates the machine token and checks the control-plane
 // permission matrix before calling `cgi` (so "core read-only by construction" is one identity
 // system, not a forge's ACLs).
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
 import { join } from "node:path";
 import { type GitService, assertSafeRepoName } from "./types.js";
@@ -40,6 +40,15 @@ export class EmbeddedGitService implements GitService {
     execFileSync("git", ["init", "--bare", "--initial-branch=main", dir], { stdio: "ignore" });
     // Allow pushes over HTTP; the permission gate (HTTP layer) decides who may actually push.
     execFileSync("git", ["-C", dir, "config", "http.receivepack", "true"], { stdio: "ignore" });
+  }
+
+  async removeRepo(name: string): Promise<void> {
+    // repoDir asserts the name is a single safe path segment, so this can only ever unlink a
+    // directory directly under the repos root - a slug carrying `../` is rejected before we touch
+    // the filesystem, not sanitised into something that looks fine.
+    const dir = this.repoDir(name);
+    if (!existsSync(dir)) return; // already gone - idempotent, so a retry after a partial delete works
+    rmSync(dir, { recursive: true, force: true });
   }
 
   /** Run a smart-HTTP request through git's own CGI backend and return the raw response. */

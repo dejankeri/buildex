@@ -126,6 +126,22 @@ export class ProvisioningService {
     if (operator) store.addAuditEvent({ actor: operatorId, companyId: operator.companyId, action: "revoke" });
   }
 
+  /** Hard-delete a company: its rows first (one transaction), then its bare repos. Returns null for
+   *  an unknown slug so the caller can 404 instead of reporting a delete that never happened.
+   *
+   *  Rows before repos, deliberately. If repo removal dies half way, the control plane already says
+   *  the company is gone - nothing authenticates, nothing is reachable - and re-running the delete
+   *  cleans the leftovers (removeRepo treats absent as success). The other order could leave a live
+   *  company whose repos had been deleted underneath it, which is a far worse state to be in.
+   *
+   *  Irreversible: there is no second copy of a team or private repo on the server. */
+  async deleteCompany(slug: string): Promise<{ slug: string; repos: string[] } | null> {
+    const removed = this.deps.store.deleteCompanyBySlug(slug);
+    if (!removed) return null;
+    for (const repo of removed.repos) await this.deps.git.removeRepo(repo);
+    return { slug, repos: removed.repos };
+  }
+
   private mintMachine(operatorId: string, machineName: string): Credentials {
     const machineToken = newToken(TOKEN_PREFIX.machine);
     const refreshToken = newToken(TOKEN_PREFIX.refresh);

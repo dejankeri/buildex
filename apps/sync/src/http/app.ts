@@ -70,6 +70,19 @@ async function route(deps: AppDeps, req: Request): Promise<Response> {
       await deps.provisioning.revoke(b.operatorId);
       return json({ ok: true });
     }
+    // Hard-delete a company and its repos. Distinct from /s2s/revoke, which only drops grants and
+    // leaves the operator resolvable by Supabase sub and the slug taken - see deleteCompanyBySlug.
+    // Irreversible, so it is service-key gated (the requireServiceKey above covers every /s2s route)
+    // and validates the slug against the same charset repo names use, rejecting anything that could
+    // escape the repos root before the store is touched.
+    const delMatch = method === "DELETE" && /^\/s2s\/companies\/(.+)$/.exec(path);
+    if (delMatch) {
+      const slug = decodeURIComponent(delMatch[1]!);
+      if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(slug)) throw new ValidationError("unsafe company slug");
+      const removed = await deps.provisioning.deleteCompany(slug);
+      if (!removed) return json({ error: "company not found" }, 404);
+      return json({ ok: true, ...removed });
+    }
     return json({ error: "not found" }, 404);
   }
 
