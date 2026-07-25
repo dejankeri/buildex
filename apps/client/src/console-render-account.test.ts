@@ -54,27 +54,35 @@ describe("console renderers (jsdom) — onboarding's final step offers backup, n
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  it("POSTs /api/signin on backup and, once connected, names the company instead", async () => {
+  it("POSTs /api/signin on backup and, once connected, names the company from /api/account", async () => {
     const { doc, w, c } = loadConsole();
     let posted: unknown = null;
+    let connected = false;
+    // FAITHFUL to the daemon: POST /api/signin returns {state} and NOTHING else (daemon.ts just
+    // `json(await deps.signIn())`). The company slug lives on GET /api/account. An earlier version
+    // of this test had the signin fake return a companySlug the real endpoint never sends, so it
+    // passed while the live app rendered an unnamed "Your work is backed up." after a real sign-in.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (w as any).fetch = (url: string, opts: any) => {
       const u = String(url);
-      if (u.includes("/api/onboarding")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ firstRun: true, agent: { available: true } }) });
+      const ok = (data: unknown) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) });
+      if (u.includes("/api/onboarding")) return ok({ firstRun: true, agent: { available: true } });
       if (u.includes("/api/signin") && opts && opts.method === "POST") {
         posted = JSON.parse(opts.body);
-        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ state: "connected", companySlug: "acme" }) });
+        connected = true;
+        return ok({ state: "connected" });
       }
-      if (u.includes("/api/account")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ state: "local" }) });
-      if (u.includes("/api/projects")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ projects: [{ id: "p1", name: "Workspace", items: [] }] }) });
-      if (u.includes("/api/sessions")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ sessions: [] }) });
-      if (u.includes("/api/sync")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ status: "ok", signInAvailable: true, unsaved: { files: 0, oldestAt: null, stale: false, connected: true } }) });
+      if (u.includes("/api/account")) return ok(connected ? { state: "connected", companySlug: "acme" } : { state: "local" });
+      if (u.includes("/api/projects")) return ok({ projects: [{ id: "p1", name: "Workspace", items: [] }] });
+      if (u.includes("/api/sessions")) return ok({ sessions: [] });
+      if (u.includes("/api/sync")) return ok({ status: "ok", signInAvailable: true, unsaved: { files: 0, oldestAt: null, stale: false, connected } });
       return Promise.reject(new Error("no route: " + u));
     };
     await c.checkOnboarding();
     advanceToLastStep(doc);
     (doc.querySelector("#wz-signin-google") as unknown as { click(): void }).click();
     await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0)); // the re-read of /api/account is a second microtask hop
     expect(posted).toEqual({ provider: "google" });
     expect(doc.querySelector("#wz-signin-google")).toBeNull(); // the button is gone
     expect(doc.querySelector(".wz-body")!.textContent).toContain("acme");

@@ -151,3 +151,57 @@ $B screenshot /tmp/wizard-final.png
   self-serve operator has never heard of and cannot supply. Replaced by the Google/local choice.
   Guarded by `console-render-account.test.ts` - "offers Google backup ... asks for no URL or code".
 - **Two competing primary buttons** on the final step (fixed 2026-07-25).
+
+---
+
+## Step 2b - backing up (Google sign-in)
+
+The one step that **cannot** be driven headlessly: it opens the operator's real browser and needs a
+human at the Google consent screen. Everything up to the redirect is assertable; the round-trip is not.
+
+**Precondition:** signed out, `signInAvailable: true`, nothing already listening on port `54121`.
+
+**Action:** click `Back up - sign in with Google` (wizard final step), the left-rail
+`Back up & sync` pill, or the title-bar sync dot while it reads local. Complete Google in the browser.
+
+**Expected:**
+
+| Stage | Observable |
+|---|---|
+| button label | `Signing in…` for the whole wait - it covers the browser leg **and** the backup behind it |
+| browser lands on | `http://127.0.0.1:54121/auth/callback?code=<uuid>&state=<ours>` - **both** params present |
+| callback page | "Signed in - you can close this tab and return to BuildEx" |
+| wait | seconds, not instant: machine token, attach three roots, push two repos over HTTPS |
+| wizard final step | "Your work is backed up **to `<company>`**" - the company must be named |
+| left-rail pill | gone |
+| sync dot | `sync ok`, title "Synced · click for recent changes" |
+| profile menu | "Connected to `<company>`" + "Log out"; no "Sign in" |
+
+**Verify commands:**
+
+```sh
+curl -s http://127.0.0.1:<port>/api/account   # state connected, companySlug, three remotes
+curl -s http://127.0.0.1:<port>/api/sync      # unsaved.files 0, connected true
+W=~/.buildex-demo/<worktree>-<hash>/orgs/<activeId>/workspace
+for r in core team private; do
+  git -C $W/$r rev-parse --verify --quiet refs/remotes/origin/main >/dev/null && echo "$r pushed" || echo "$r NOT pushed"
+done
+```
+
+**`core` must report NOT pushed.** It is the read-only pack and the sync service rejects pushes to it
+with 403 by design. `team` and `private` must both be pushed. Reading a missing `origin/main` on
+`core` as a failure is the trap here.
+
+### Regressions this step has caught
+
+- **`sign-in was denied: invalid_request`** after a successful Google authorization (fixed
+  2026-07-25). The client sent its own `state` to `/auth/v1/authorize`, but GoTrue owns that
+  parameter - it mints a UUID, keys the flow on it, and forwards it to the provider. Ours got
+  forwarded instead, so GoTrue's callback found no matching flow. Our one-time state now rides in
+  `redirect_to`'s query. Guarded by `real-seams.test.ts`.
+- **"Opening Google…" shown for the whole wait** (fixed 2026-07-25) - Google finishes in seconds;
+  the rest is the backup, and naming the finished step reads as a hang.
+- **"Your work is backed up." with no company name** (fixed 2026-07-25). `POST /api/signin` returns
+  `{state}` only; the slug is on `GET /api/account`. The jsdom test missed this because its fake
+  returned a `companySlug` the real endpoint never sends - **when writing a fake, copy the real
+  handler's response shape, not the one you assume.**

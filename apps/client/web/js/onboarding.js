@@ -86,12 +86,20 @@ async function checkOnboarding(){
     // POST /api/signin the sign-in modal uses - one auth path, no second implementation.
     const googleBtn=card.querySelector("#wz-signin-google");
     if(googleBtn)googleBtn.onclick=async()=>{
-      googleBtn.disabled=true;googleBtn.textContent="Opening Google…";
+      // "Signing in…", not "Opening Google…": this one call covers BOTH legs - the browser round-trip
+      // AND the backup that follows it (machine token, attaching each root, pushing them up). Google
+      // is done within seconds; the rest is the long part, and naming the finished step while the
+      // operator waits on the unfinished one reads as a hang.
+      googleBtn.disabled=true;googleBtn.textContent="Signing in…";
       let res;
       try{res=await postJSON("/api/signin",{provider:"google"});}
       catch(e){res={error:"Could not reach your company's server - check your connection and try again."};}
       if(res&&res.state==="connected"){
-        connected=true;acct=res;acctError="";
+        connected=true;acctError="";
+        // POST /api/signin answers {state} and nothing else - the company name lives on
+        // /api/account. Without this re-read the step degrades to an unnamed "Your work is backed
+        // up.", which tells the operator less than it should at the one moment it matters.
+        try{acct=await getJSON("/api/account");}catch(e){acct=res;}
         // Refresh the sync surface (the title-bar dot + save card) so it reflects the new
         // account immediately, without waiting for the next poll tick.
         if(typeof refreshProjects==="function")refreshProjects().catch(()=>{});

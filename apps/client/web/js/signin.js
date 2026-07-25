@@ -68,8 +68,11 @@ function startSignIn() {
         draw();
       }
     };
+    // "Signing in…" covers the whole call, not just its first leg. /api/signin does the browser
+    // round-trip AND the backup behind it (machine token, attach each root, push). Google is done
+    // in seconds; labelling the finished step while the operator waits on the rest reads as a hang.
     card.querySelector("#wz-signin-google").onclick = () =>
-      signIn({ provider: "google" }, card.querySelector("#wz-signin-google"), "Opening Google…");
+      signIn({ provider: "google" }, card.querySelector("#wz-signin-google"), "Signing in…");
   };
   draw();
 }
