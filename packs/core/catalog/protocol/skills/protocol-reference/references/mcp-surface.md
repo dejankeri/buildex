@@ -154,6 +154,32 @@ No schema-level required params, but you must pass either `clientId` **or** `cre
 `lifecycleStageId` moves one client. `lifecycleStage` edits the pipeline columns for the whole
 tenant. They are not the same thing.
 
+### The replace grammar (`phases`, `items`, `groups`)
+
+Three verbs take a list that **replaces** an existing tree: `build_program.phases`,
+`build_nutrition.items`, `build_workout.groups`. They share one grammar, and getting it wrong used
+to delete the operator's work silently.
+
+**Every row needs exactly one control key:**
+
+| Key | Means |
+|---|---|
+| `add` | Create this row. **`build_program`: `add: true` (boolean).** `build_nutrition`: `add: "MEAL"` / `"LABEL"` / `"GROUP"` / `"SUPPLEMENT"` (the row type). |
+| `ref` | Keep this existing row, and its children, exactly as they are. Takes the row's id. |
+| `modify` | Patch this existing row. Takes the row's id. |
+
+A row with none of the three is **rejected**. The list you send becomes the entire tree, so:
+
+> **Editing something that already exists? `get` it first, and send `{ ref: <id> }` for every row
+> you are keeping.** Omitting a row deletes it.
+
+If every row is rejected, the write is now refused and nothing is saved — the server returns an
+error naming the missing control key, and the existing content survives. Read the error and resend
+with control keys; do not create a second record.
+
+A *partial* failure still applies, and the response carries `failCount` and `entries`. Check it: a
+plan that came back with `failCount: 2` is missing two rows you thought you wrote.
+
 ### `build_program`
 
 No required params (omit `programId` to create).
@@ -165,7 +191,7 @@ No required params (omit `programId` to create).
 | `userId` | string | Assign to a client; omit for a library template. |
 | `programType` | string enum | `WORKOUT` · `NUTRITION` · `FULL` |
 | `sections` | string[] | Plan sections. |
-| `phases` | object[] | Weekly phases (one phase = one week). **Replaces the phase list.** |
+| `phases` | object[] | Weekly phases (one phase = one week). **Replaces the phase list** — see [the replace grammar](#the-replace-grammar-phases-items-groups); `add` is a **boolean** here. |
 | `content` | object | `{ collections: [...] }` — replaces program content. |
 | `metadata` | object | Partial metadata patch (name / description / programGoal / programType / sections / …). |
 | `importWorkoutId` | string | Import this workout into the library. |
@@ -222,7 +248,7 @@ No required params (omit `templateId` to create).
 | `templateId` | string | Edit this template; omit to create. |
 | `name` | string | |
 | `userId` | string | Assign to a client; omit for a library template. |
-| `items` | object[] | The full flat item tree (LABEL headers + MEAL food rows). **Replaces the tree.** |
+| `items` | object[] | The full **flat** item tree — a `LABEL` heading row followed by its foods as sibling `MEAL` rows, all top-level (foods do **not** nest inside the label; nested `items` are only for `GROUP` alternatives). A food row is `{ add:"MEAL", foodId, quantity, measure }`. **Replaces the tree** — see [the replace grammar](#the-replace-grammar-phases-items-groups). |
 | `metadata` | object | Partial patch. Only `name` / `description` / `tags` / `templateMode` are honored. |
 
 `metadata.templateMode`: `ADVANCED` (default — a "My Daily Nutrition" day plan) · `SIMPLE` (a

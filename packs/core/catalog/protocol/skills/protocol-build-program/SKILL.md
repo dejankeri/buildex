@@ -30,8 +30,16 @@ client's profile, and confusing a template with a client's copy.
 
 ## Rules
 
+- **Editing a live program? `get` it first and keep every week you are not changing.** `phases`
+  replaces the ENTIRE phase list, and each row needs one control key: `{ add: true, name: "Week 1" }`
+  to create, `{ ref: "<phaseId>" }` to keep a week untouched, `{ modify: "<phaseId>", … }` to change
+  one. A week you omit is deleted. Note `add` is a **boolean** here - in `build_nutrition` it names
+  the row type instead. Full grammar: `../protocol-reference/references/mcp-surface.md`.
 - `exercises` **replaces** the whole exercise list on a workout. To add one session, read the current
   list, append, and write the complete array back - or you will delete the rest.
+- **Read `failCount` on every write.** These verbs are best-effort: rows they cannot parse are
+  skipped, and the call still succeeds. A response carrying `failCount: 2` built two fewer weeks than
+  you asked for, and only the number tells you.
 - Never edit a template when the operator meant a client's assigned copy. If it is ambiguous, ask.
 - Use round, coachable numbers - real set and rep schemes, sensible session lengths. Mirror the
   conventions already in the coach's other programs.
