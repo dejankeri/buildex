@@ -13883,7 +13883,10 @@
       "page": {
         "title": "Store",
         "emptyTitle": "No packs available yet",
-        "emptyHint": "Skill packs you install are written into your company repo."
+        "emptyHint": "Skill packs you install are written into your company repo.",
+        "skills": "skills",
+        "installed": "Installed",
+        "install": "Install"
       }
     },
     "brain": {

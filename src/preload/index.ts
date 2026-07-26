@@ -88,6 +88,12 @@ import type {
 import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
 // BuildEx: see BUILDEX-PATCHES.md
 import type { BrainScan, BrainScanRequest } from '../shared/buildex-brain-types'
+import type {
+  PackCatalog,
+  PackCatalogRequest,
+  PackInstallRequest,
+  PackInstallResult
+} from '../shared/buildex-packs-types'
 import type { SkillFreshnessInventory } from '../shared/skill-freshness'
 import type {
   RuntimeBrowserDriverState,
@@ -2267,6 +2273,13 @@ const api = {
   buildexBrain: {
     scan: (request: BrainScanRequest): Promise<BrainScan> =>
       ipcRenderer.invoke('buildex-brain:scan', request)
+  },
+
+  buildexPacks: {
+    catalog: (request: PackCatalogRequest): Promise<PackCatalog> =>
+      ipcRenderer.invoke('buildex-packs:catalog', request),
+    install: (request: PackInstallRequest): Promise<PackInstallResult> =>
+      ipcRenderer.invoke('buildex-packs:install', request)
   },
 
   pet: {

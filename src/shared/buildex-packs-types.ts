@@ -1,0 +1,58 @@
+// Capability packs — the App Store's unit of installation. A pack bundles one
+// system's faces: an external app link, an MCP server the agent connects to,
+// and the skills that teach the agent to use it well. Every face is optional;
+// a pack declares only what it has.
+
+export type PackAppFace = {
+  url: string
+}
+
+export type PackMcpFace = {
+  kind: 'http' | 'stdio'
+  url?: string
+  command?: string
+  direct?: boolean
+}
+
+export type BuildExPack = {
+  id: string
+  name: string
+  icon: string
+  summary: string
+  app?: PackAppFace
+  mcp?: PackMcpFace
+  skills: string[]
+  /** Repo-relative POSIX path of the pack.json this came from. */
+  manifestPath: string
+  /** True when every skill this pack declares exists in the repo. */
+  installed: boolean
+}
+
+export type PackCatalog = {
+  repoPath: string
+  /** Repo-relative catalog roots that were scanned. */
+  catalogRoots: string[]
+  packs: BuildExPack[]
+}
+
+export type PackCatalogRequest = {
+  repoPath: string
+}
+
+export type PackInstallRequest = {
+  repoPath: string
+  packId: string
+}
+
+export type PackInstallResult = {
+  ok: boolean
+  /** Repo-relative POSIX paths written, sorted. Empty when nothing changed. */
+  writtenPaths: string[]
+  error?: string
+}
+
+export const EMPTY_PACK_CATALOG: PackCatalog = {
+  repoPath: '',
+  catalogRoots: [],
+  packs: []
+}

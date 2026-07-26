@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { test, expect } from './helpers/orca-app'
 import { getStoreState } from './helpers/store'
 
@@ -38,6 +38,45 @@ test('company brain filter narrows the document list', async ({ orcaPage }) => {
 
   await expect(orcaPage.getByText('README', { exact: true })).toBeVisible()
   await expect(orcaPage.getByText('CLAUDE', { exact: true })).toHaveCount(0)
+})
+
+test('store installs a pack into the company repo', async ({ orcaPage, testRepoPath }) => {
+  // Seed a catalog pack in the repo the app has open. The Store reads packs from
+  // the repo, so this is the real path an operator's catalog takes.
+  const packDir = path.join(testRepoPath, 'catalog', 'acme')
+  const skillManifest = path.join(testRepoPath, 'skills', 'acme-search', 'SKILL.md')
+  mkdirSync(packDir, { recursive: true })
+  writeFileSync(
+    path.join(packDir, 'pack.json'),
+    JSON.stringify({
+      id: 'acme',
+      name: 'Acme',
+      icon: '🧪',
+      summary: 'End-to-end fixture pack.',
+      app: { url: 'https://example.com' },
+      skills: ['acme-search']
+    }),
+    'utf8'
+  )
+
+  try {
+    await orcaPage.getByRole('button', { name: 'Store', exact: true }).click()
+    await expect(orcaPage.getByText('Acme', { exact: true })).toBeVisible()
+
+    await orcaPage.getByRole('button', { name: 'Install', exact: true }).click()
+    await expect(orcaPage.getByText('Installed', { exact: true })).toBeVisible()
+
+    // Git is the record: the install must exist as a real file in the repo.
+    expect(existsSync(skillManifest)).toBe(true)
+
+    // An installed pack with an app face now shows up under Apps.
+    await orcaPage.getByRole('button', { name: 'Apps', exact: true }).click()
+    await expect(orcaPage.getByText('Acme', { exact: true })).toBeVisible()
+    await orcaPage.screenshot({ path: proofPath('store-installed.png') })
+  } finally {
+    rmSync(path.join(testRepoPath, 'catalog'), { recursive: true, force: true })
+    rmSync(path.join(testRepoPath, 'skills'), { recursive: true, force: true })
+  }
 })
 
 test('apps and store open from the sidebar', async ({ orcaPage }) => {

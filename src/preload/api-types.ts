@@ -346,6 +346,12 @@ import type {
 import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
 // BuildEx: see BUILDEX-PATCHES.md
 import type { BrainScan, BrainScanRequest } from '../shared/buildex-brain-types'
+import type {
+  PackCatalog,
+  PackCatalogRequest,
+  PackInstallRequest,
+  PackInstallResult
+} from '../shared/buildex-packs-types'
 import type { SkillFreshnessInventory } from '../shared/skill-freshness'
 import type {
   CrashReportBreadcrumbData,
@@ -2327,6 +2333,10 @@ export type PreloadApi = {
   // BuildEx: see BUILDEX-PATCHES.md
   buildexBrain: {
     scan: (request: BrainScanRequest) => Promise<BrainScan>
+  }
+  buildexPacks: {
+    catalog: (request: PackCatalogRequest) => Promise<PackCatalog>
+    install: (request: PackInstallRequest) => Promise<PackInstallResult>
   }
   pet: {
     import: () => Promise<CustomPet | null>
