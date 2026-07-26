@@ -380,8 +380,8 @@ module.exports = {
     afterRemove: 'resources/linux/packaging/after-remove.sh'
   },
   rpm: {
-    packageName: 'orca-ide',
-    artifactName: 'orca-ide-${version}.${arch}.${ext}',
+    packageName: 'buildex',
+    artifactName: 'buildex-${version}.${arch}.${ext}',
     // Why: see deb depends. RPM distros ship Xvfb as xorg-x11-server-Xvfb (there
     // is no `xvfb` package), so the name differs from the deb here.
     depends: [
@@ -404,10 +404,12 @@ module.exports = {
   // on Intel Macs. The beforeBuild hook performs Orca's targeted rebuild and
   // returns false so electron-builder does not rebuild optional cpu-features.
   npmRebuild: true,
+  // Why: must match src/shared/buildex-release.ts. A fork that publishes to (or
+  // updates from) stablyai/orca ships its users into a different product.
   publish: {
     provider: 'github',
-    owner: 'stablyai',
-    repo: 'orca',
+    owner: 'dejankeri',
+    repo: 'buildex-app',
     releaseType: 'release'
   }
 }

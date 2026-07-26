@@ -44,6 +44,8 @@ import {
   hasServeUpdateSupervisor,
   requestServeUpdateHandoff
 } from './serve-update-handoff'
+// BuildEx: release feed must never point upstream. See BUILDEX-PATCHES.md.
+import { BUILDEX_RELEASES_LATEST_DOWNLOAD_URL } from '../shared/buildex-release'
 
 type CheckFailureSource = 'event' | 'promise' | 'fallback-promise'
 type MissingManifestPrereleaseFallbackResult = { userInitiated: boolean }
@@ -1102,7 +1104,7 @@ async function pinDefaultReleaseFeed(
   } else {
     clearPrereleaseFallbackContext()
     clearPublishingWindowLastGoodCheck()
-    const url = 'https://github.com/stablyai/orca/releases/latest/download'
+    const url = BUILDEX_RELEASES_LATEST_DOWNLOAD_URL
     console.info(
       `[updater] release feed fallback: current=${currentVersion} includePrerelease=${includePrerelease} → ${url}`
     )
@@ -1459,7 +1461,7 @@ export function setupAutoUpdater(
   // Why: generic provider avoids the native GitHub provider's RC-channel filtering; per-check repinning to a concrete /releases/download/<tag>/ URL avoids /latest redirect drift between check and download.
   autoUpdater.setFeedURL({
     provider: 'generic',
-    url: 'https://github.com/stablyai/orca/releases/latest/download'
+    url: BUILDEX_RELEASES_LATEST_DOWNLOAD_URL
   })
 
   if (autoUpdaterInitialized) {

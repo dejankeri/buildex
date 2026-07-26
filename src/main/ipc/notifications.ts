@@ -34,7 +34,9 @@ const MAX_RECENT_NOTIFICATION_KEYS = 50
 const NOTIFICATION_DISPLAY_CONFIRMATION_TIMEOUT_MS = 2500
 const NOTIFICATION_RELEASE_FALLBACK_MS = 5 * 60 * 1000
 const MAX_NOTIFICATION_SOUND_BYTES = 10 * 1024 * 1024
-const MACOS_PACKAGED_BUNDLE_ID = 'com.stablyai.orca'
+// Why: must track electron-builder's appId, or macOS notifications resolve to a
+// bundle that is not this app. See BUILDEX-PATCHES.md.
+const MACOS_PACKAGED_BUNDLE_ID = 'com.buildex.app'
 const MACOS_NOTIFICATION_SETTINGS_URL =
   'x-apple.systempreferences:com.apple.Notifications-Settings.extension'
 const NOTIFICATION_SOUND_MIME_BY_EXTENSION: ReadonlyMap<string, string> = new Map([

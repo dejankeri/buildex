@@ -1,16 +1,17 @@
 import { net } from 'electron'
 import { parse } from 'yaml'
 import { compareVersions, isPrereleaseVersion, isValidVersion } from './updater-fallback'
+// BuildEx: release feed must never point upstream. See BUILDEX-PATCHES.md.
+import {
+  BUILDEX_RELEASES_ATOM_FEED_URL,
+  BUILDEX_RELEASES_DOWNLOAD_BASE,
+  createReleaseTagHrefPattern
+} from '../shared/buildex-release'
 
-const ATOM_FEED_URL = 'https://github.com/stablyai/orca/releases.atom'
-const RELEASES_DOWNLOAD_BASE = 'https://github.com/stablyai/orca/releases/download'
+const ATOM_FEED_URL = BUILDEX_RELEASES_ATOM_FEED_URL
+const RELEASES_DOWNLOAD_BASE = BUILDEX_RELEASES_DOWNLOAD_BASE
 const FETCH_TIMEOUT_MS = 5000
 const MAX_MANIFEST_PROBE_CANDIDATES = 6
-
-// Why: GitHub's atom feed lists every release (prerelease or stable) in a
-// single flat list. Each entry has a /releases/tag/<tag> URL we can mine
-// without any channel filtering.
-const TAG_HREF_RE = /href="https:\/\/github\.com\/stablyai\/orca\/releases\/tag\/([^"]+)"/g
 
 export function getReleaseDownloadUrl(tag: string): string {
   return `${RELEASES_DOWNLOAD_BASE}/${encodeURIComponent(tag)}`
@@ -64,7 +65,7 @@ async function fetchReleaseFeedTags(): Promise<ReleaseFeedTag[] | null> {
     const body = await res.text()
     const tags: ReleaseFeedTag[] = []
 
-    for (const match of body.matchAll(TAG_HREF_RE)) {
+    for (const match of body.matchAll(createReleaseTagHrefPattern())) {
       const tag = match[1]
       const version = normalizeTagToVersion(tag)
       if (isValidVersion(version)) {

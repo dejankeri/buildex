@@ -47,7 +47,7 @@ let nativeThemeUpdatedListener: (() => void) | null = null
 // tooltip carries the worktree/branch label so hovering tells them apart.
 function baseTooltip(): string {
   if (!devIndicator) {
-    return 'Orca'
+    return 'BuildEx'
   }
   return devIndicator.label ? `Orca DEV (${devIndicator.label})` : 'Orca DEV'
 }

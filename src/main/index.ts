@@ -2230,7 +2230,10 @@ app.whenReady().then(async () => {
     prepareForClaudeLaunch: (target) => claudeRuntimeAuth!.prepareForClaudeLaunch(target)
   })
   starNag = new StarNagService(store, stats)
-  starNag.start()
+  // BuildEx: start() is deliberately not called. It arms the agent-spawn
+  // listener that prompts users to star stablyai/orca — not an ask to make of a
+  // company operator. IPC handlers stay registered so renderer invocations
+  // still resolve, and the star-nag module and its tests are untouched.
   starNag.registerIpcHandlers()
   runtimeService.setAgentBrowserBridge(
     new AgentBrowserBridge(browserManager, {
