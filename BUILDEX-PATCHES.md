@@ -70,6 +70,18 @@ BUILDEX-PATCHES.md
 `ORCA_POSTHOG_WRITE_KEY` are injected by upstream CI and resolve to `null` in a
 fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 
+### Brain, packs, context — Phases 2-4
+
+| File | Change |
+|---|---|
+| `src/shared/buildex-brain-types.ts`, `buildex-packs-types.ts` | **BuildEx-owned** wire contracts |
+| `src/main/buildex-brain/*`, `src/main/buildex-packs/*` | **BuildEx-owned** domain layers |
+| `src/main/ipc/buildex-brain.ts`, `buildex-packs.ts` | **BuildEx-owned** IPC modules |
+| `src/main/ipc/register-core-handlers.ts` | 2 imports + 2 registration calls |
+| `src/preload/index.ts` | 2 type imports + 2 api namespaces |
+| `src/preload/api-types.ts` | 2 type imports + 2 members on `PreloadApi` |
+| `resources/build/icon.{png,icns,ico}`, `resources/{icon,icon-dev}.png`, `resources/logo.svg` | BuildEx artwork |
+
 ### Surfaces — Phase 0.5
 
 | File | Change |
@@ -108,6 +120,11 @@ Brain would displace Explorer as the default and degrade the developer workflow
 this fork intends to keep.
 
 **4. E2E specs are CJS.** Use `__dirname`, not `import.meta.dirname`.
+
+**4a. `config/*.tsbuildinfo` goes stale.** After editing
+`src/preload/api-types.ts`, `pnpm typecheck` can report a phantom
+"Property does not exist on type 'PreloadApi'". The files are gitignored —
+delete them, or confirm with `pnpm run typecheck:tsc:web` (composite off).
 
 **4b. `Orca` and `orca` are the same directory.** Verified on this machine:
 `~/Library/Application Support/Orca` and `.../orca` share inode `142205264`.
