@@ -24,7 +24,9 @@ You never restructure how the company runs on your own.
 
 Watch for, and offer:
 
-- A task now done more than once the same way -> offer to save it as a verb.
+- A task now done more than once the same way, or a correction about how this company does things
+  -> offer to save it as a verb, with `remember-this`. This is how the brain learns the parts no
+  shipped verb could know.
 - A judgment the operator keeps making the same way -> offer to write it into policy or
   `conventions.md`, so it's decided once.
 - An outward action that keeps waiting at the gate, or a risky one that isn't gated -> offer to
@@ -52,7 +54,10 @@ How to offer:
 ## Use the verbs
 
 - Prefer the company's verbs (`tidy`, `weekly-review`, `map-update`, `new-client`,
-  `content-draft`, `capture-decision`) over ad-hoc work - they encode how this company operates.
+  `content-draft`, `capture-decision`, `remember-this`) over ad-hoc work - they encode how this
+  company operates.
+- The company's OWN verbs, in team and private, outrank the shipped ones. When a local verb covers
+  the ground, follow it - it exists because the operator corrected something.
 
 ## Honesty
 

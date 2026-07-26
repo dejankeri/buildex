@@ -6,7 +6,7 @@ This is **the OS content shipped into every company's `core` repo** (read-only f
 |---|---|
 | `rules/` | operating rules assembled into the workspace agent config |
 | `conventions.md` | the base conventions document (companies extend it) |
-| `skills/` | the generic verbs: `capture-decision`, `tidy`, `weekly-review`, `map-update`, `new-client`, `content-draft` |
+| `skills/` | the generic verbs: `capture-decision`, `remember-this`, `tidy`, `weekly-review`, `map-update`, `new-client`, `content-draft` |
 | `policy/` | the allow/ask/deny preset shipped into every workspace |
 | `knowledge/` | the method, guardrails, connector filing recipes |
 | `templates/` | engagement artifacts + the mini-app starter |

@@ -119,6 +119,13 @@ export interface PackManifest {
   provision?: PackProvision;
   skills?: string[];
   policy?: { allow?: string[]; ask?: string[]; deny?: string[] };
+  /** One sentence naming the nouns this app - not the workspace's files - is the truth for, e.g.
+   *  "Clients, their programs and check-ins live in Protocol." Rendered into the assembled rules
+   *  while the pack is installed (see renderWhereThingsLive). Without it the agent has no way to
+   *  know that installing an app moved a whole domain out from under the markdown, and a generic
+   *  "read the brain" skill will happily answer from stale files. Kept to one sentence because it
+   *  sits in every prompt. */
+  systemOfRecord?: string;
 }
 export interface PackMeta extends PackManifest {
   installed: boolean;
@@ -181,6 +188,12 @@ function validPackPolicy(p: unknown): boolean {
  *  `grants` is required: the operator is told what they are granting before the browser opens, never
  *  after. (The redirect_uri the daemon substitutes is a bare loopback path with no query string of its
  *  own - consent pages commonly append their params with a raw `?`.) */
+/** A system-of-record claim is prompt-resident on every turn, so it must be a short, single
+ *  sentence of prose - not a paragraph a pack author used as a README. */
+function validSystemOfRecord(s: unknown): boolean {
+  return typeof s === "string" && s.trim().length > 0 && s.trim().length <= 300 && !s.includes("\n");
+}
+
 function validProvision(p: PackProvision): boolean {
   const str = (v: unknown) => typeof v === "string" && v.trim().length > 0;
   if (!str(p.authorizeUrl) || !str(p.exchangeUrl) || !str(p.keyPath) || !str(p.envKey)) return false;
@@ -211,6 +224,10 @@ function parsePack(dir: string, id: string): PackManifest | undefined {
     if (m.mcp.policy !== undefined && !validPackPolicy(m.mcp.policy)) return undefined;
   }
   if (m.provision && !validProvision(m.provision)) return undefined;
+  // A claim on the company's nouns rides in every prompt, so it is one sentence or it is dropped.
+  // Rejecting the whole manifest would hide the pack over a cosmetic field; ignoring the field
+  // leaves everything else working and simply omits the claim.
+  if (m.systemOfRecord !== undefined && !validSystemOfRecord(m.systemOfRecord)) delete m.systemOfRecord;
   if (!m.app && !m.mcp && countSkills(dir, m.skills) === 0) return undefined; // must have ≥1 face
   return m;
 }

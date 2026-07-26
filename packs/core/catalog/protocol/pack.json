@@ -3,6 +3,7 @@
   "name": "Protocol",
   "icon": "\ud83c\udfcb\ufe0f",
   "summary": "Coaching CRM - clients, programs, check-ins, and scheduling, drivable by the agent.",
+  "systemOfRecord": "Every client and everything about them - programs, workouts, nutrition plans, weekly check-ins and their measurements, progress reports, forms, appointments and tasks - lives in Protocol; read and write it with the protocol tools, never from workspace files.",
   "app": {
     "url": "https://app.protocolcrm.com"
   },

@@ -18,6 +18,26 @@ about what a given call will do.
 - When you are unsure whether something is even reachable over MCP - see `references/guardrails.md`.
 - When a call returned success but the data looks unchanged - read `references/pitfalls.md` first.
 
+## How this coach works, versus how Protocol works
+
+This reference is the ground truth for the *surface*. It cannot tell you how this particular
+business coaches, and that is the half that makes the work feel right or wrong to the operator.
+Real accounts differ completely: one tracks every meal against a food library, another writes
+recipes as free text with no macros anywhere, a third delivers menus as content sections rather
+than templates at all. Same tools, three unrecognisable houses.
+
+So before a structural write, **check whether this company has already written its own verb** -
+anything in `.claude/skills/` that is not a shipped `protocol-*` skill is the operator's own, and
+it outranks anything here. When the coach corrects you on how it is done here rather than on a
+fact, offer to save it with `remember-this`. The things worth remembering in coaching, from what
+these accounts actually do:
+
+- Naming: what programs, phases and templates are called, and what they are never named after.
+- The nutrition model: food-library macros, recipe text, or menu-as-content.
+- Check-in rhythm: which day, what gets reviewed, what a "bad week" is worth acting on.
+- Rep and load notation, session structure, warm-up and finisher conventions.
+- Who gets seen personally and who runs on templates.
+
 ## Steps
 
 1. Read the reference you need, all in `references/` beside this file:

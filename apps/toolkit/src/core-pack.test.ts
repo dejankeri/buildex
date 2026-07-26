@@ -14,7 +14,18 @@ describe("packs/core - every shipped verb passes the promotion checklist", () =>
 
   it("ships the v1 verb set", () => {
     expect(verbs.sort()).toEqual(
-      ["capture-decision", "content-draft", "map-update", "new-client", "tidy", "weekly-review"].sort(),
+      [
+        "capture-decision",
+        "content-draft",
+        "map-update",
+        "new-client",
+        // How the company works, learned one correction at a time. The operating rules have always
+        // said to offer to save a repeated task as a verb; this is the verb that does it, and
+        // without it the offer had no mechanism behind it.
+        "remember-this",
+        "tidy",
+        "weekly-review",
+      ].sort(),
     );
   });
 

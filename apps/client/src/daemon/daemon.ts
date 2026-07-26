@@ -265,6 +265,11 @@ export interface DaemonDeps {
   /** Force a config rebuild (re-link skills, re-assemble CLAUDE.md, re-pin MCP) then return the fresh
    *  agent view - powers the Agent Context viewer's "Regenerate & re-verify" action. */
   agentViewRegen?: () => { summary: unknown; tree: TreeNode[]; discrepancies?: unknown };
+  /** Re-link skills IF a verb was authored, removed, or re-owned since the last generate - called
+   *  before each turn. The agent writes a remembered verb as a plain file, which nothing else picks
+   *  up, so without this the verb it just promised to remember stays invisible until a restart. A
+   *  no-op (three readdirs) whenever nothing has changed. */
+  ensureSkillsLinked?: () => void;
   /** Live Claude subscription usage for the bottom status strip. `force` bypasses the cache
    *  (the manual-refresh affordance). */
   usageFn?: (force?: boolean) => Promise<UsageReport> | UsageReport;
@@ -757,6 +762,9 @@ export function createDaemon(deps: DaemonDeps): Handler {
       const { prompt, resume, sessionId, model, effort, systemPromptAppend } = await body<{ prompt: string; resume?: string; sessionId?: string; model?: string; effort?: string; systemPromptAppend?: string }>(req, {
         prompt: "string!", resume: "string", sessionId: "string", model: "string", effort: "string", systemPromptAppend: "string",
       });
+      // Pick up any verb authored since the last turn (see ensureSkillsLinked) before the agent
+      // enumerates its skills, so "I'll remember that" is true from the very next message.
+      deps.ensureSkillsLinked?.();
       return streamPrompt(deps, prompt, resume, sessionId, model, effort, systemPromptAppend);
     }
     if (method === "POST" && path === "/api/gate") {

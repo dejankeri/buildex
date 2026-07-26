@@ -47,7 +47,7 @@ import {
   type SyncStatus,
 } from "./sync/scheduler.js";
 import { unsavedAcross, isStale } from "./sync/unsaved.js";
-import { generateAgentConfig } from "./brain/agent-config.js";
+import { generateAgentConfig, skillsLinkStale } from "./brain/agent-config.js";
 import { AppBus } from "./miniapp/app-bus.js";
 import { fetchUsage, nodeTokenReader, anthropicUsageCall, type UsageReport } from "./brain/usage.js";
 import { AccountStore } from "./account/account-store.js";
@@ -437,6 +437,11 @@ export function buildClientHandler(config: ClientConfig): Handler {
       workspace: config.workspace,
       roots: config.roots,
       preset,
+      // What the installed apps own. Derived fresh from installed state on every regen, so an
+      // uninstall drops the claim rather than leaving the agent pointed at tools that are gone.
+      apps: listPacks(catalogSource, config.roots)
+        .filter((p) => p.installed && p.systemOfRecord)
+        .map((p) => ({ name: p.name, systemOfRecord: p.systemOfRecord! })),
       ...(config.gateCommand ? { gateCommand: config.gateCommand } : {}),
     });
     // Re-pin every installed pack's MCP entry, removing stale pins, and keep the
@@ -1019,6 +1024,12 @@ export function buildClientHandler(config: ClientConfig): Handler {
     fileTree,
     agentView,
     agentViewRegen,
+    // Cheap pre-turn reconcile: only regenerates when a verb was actually authored, removed, or
+    // re-owned since the last generate - the agent writing a remembered verb, or a teammate's verb
+    // arriving on a pull. Nothing else links those.
+    ensureSkillsLinked: () => {
+      if (skillsLinkStale(config.workspace, config.roots)) regenConfig();
+    },
     onboarding,
     ...(config.company ? { company: config.company } : {}),
     ...(config.webRoot ? { webRoot: config.webRoot } : {}),

@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 // apps/client/src/brain → repo root → packs/core/catalog
 const CATALOG = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "packs", "core", "catalog");
 const NAME_RE = /^[a-z][a-z0-9-]*$/; // must match catalog.ts
-const PACK_KEYS = new Set(["id", "name", "icon", "summary", "app", "mcp", "apiKey", "provision", "skills", "policy"]);
+const PACK_KEYS = new Set(["id", "name", "icon", "summary", "app", "mcp", "apiKey", "provision", "skills", "policy", "systemOfRecord"]);
 const MCP_KEYS = new Set(["kind", "url", "command", "args", "env", "scopes", "direct", "policy"]);
 const APIKEY_KEYS = new Set(["transport", "header", "prefix", "apiBase", "docsUrl", "hint"]);
 const PROVISION_KEYS = new Set([
@@ -70,6 +70,19 @@ describe("catalog packs - schema validation (a malformed pack must fail CI, neve
       it("app face (if present) has a url", () => {
         if (!mm.app) return;
         expect(typeof (mm.app as { url?: unknown }).url).toBe("string");
+      });
+
+      // A system-of-record claim is appended to the assembled CLAUDE.md and therefore rides in
+      // every single prompt while the pack is installed. One sentence earns that; a paragraph does
+      // not. Over-length or multi-line claims are dropped by the loader, so catch them at the gate
+      // where the author can see it, rather than silently losing the claim on the operator's box.
+      it("systemOfRecord (if present) is one short line - it sits in every prompt", () => {
+        if (mm.systemOfRecord === undefined) return;
+        expect(typeof mm.systemOfRecord).toBe("string");
+        const claim = mm.systemOfRecord as string;
+        expect(claim.trim().length).toBeGreaterThan(0);
+        expect(claim.trim().length).toBeLessThanOrEqual(300);
+        expect(claim).not.toContain("\n");
       });
 
       it("mcp face (if present) is well-formed: kind, url/command, known keys, correct direct/scopes types", () => {
