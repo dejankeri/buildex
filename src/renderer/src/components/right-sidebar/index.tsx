@@ -1,6 +1,6 @@
 /* eslint-disable max-lines -- Why: the right sidebar owns activity-bar visibility, routing, and resize behavior as one interaction surface; splitting the tab table away would make hidden-tab fallbacks harder to audit. */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Plug, Files, GitBranch, ListChecks, PanelRight, Workflow } from 'lucide-react'
+import { Plug, Files, GitBranch, ListChecks, PanelRight, Workflow, Brain } from 'lucide-react'
 import { useAppStore } from '@/store'
 import type { ActiveRightSidebarTab } from '@/store/slices/editor'
 import { useRepoById } from '@/store/selectors'
@@ -97,6 +97,14 @@ function RightSidebarInner(): React.JSX.Element {
         id: 'vault',
         icon: AgentSessionHistoryIcon,
         title: translate('auto.components.right.sidebar.index.aiVaultSessionHistory', 'Agents'),
+        shortcut: ''
+      },
+      // BuildEx: deliberately not first — visibleItems[0] is the fallback tab,
+      // and Explorer must stay the default for developer use. See BUILDEX-PATCHES.md.
+      {
+        id: 'brain',
+        icon: Brain,
+        title: translate('buildex.brain.activityBar.title', 'Company Brain'),
         shortcut: ''
       },
       {

@@ -22,6 +22,8 @@ import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SetupGuideSidebarEntry } from './SetupGuideSidebarEntry'
+// BuildEx: see BUILDEX-PATCHES.md
+import { BuildExNavEntries } from './BuildExNavEntries'
 import { SidebarTaskNavButton } from './SidebarTaskNavButton'
 import { HideSidebarMenu } from './sidebar-nav-controls'
 import { translate } from '@/i18n/i18n'
@@ -174,6 +176,7 @@ const SidebarNav = React.memo(function SidebarNav() {
     >
       <SetupGuideSidebarEntry />
       <SidebarTaskNavButton />
+      <BuildExNavEntries />
       {showAutomationsButton ? (
         <ContextMenu>
           <ContextMenuTrigger asChild>

@@ -3205,6 +3205,8 @@ export type RightSidebarTab =
   | 'source-control'
   | 'checks'
   | 'ports'
+  // BuildEx: the company brain panel. Additive — see BUILDEX-PATCHES.md.
+  | 'brain'
 export type ActiveRightSidebarTab = Exclude<RightSidebarTab, 'search'>
 export type RightSidebarExplorerView = 'files' | 'search'
 
@@ -3227,6 +3229,9 @@ export type TopLevelView =
   | 'space'
   | 'skills'
   | 'mobile'
+  // BuildEx: company-facing sections. Additive — see BUILDEX-PATCHES.md.
+  | 'apps'
+  | 'store'
 
 export type PersistedUIState = {
   lastActiveRepoId: string | null

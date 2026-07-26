@@ -611,6 +611,8 @@ export type UISlice = {
     | 'space'
     | 'skills'
     | 'mobile'
+    | 'apps'
+    | 'store'
   previousViewBeforeSettings:
     | 'terminal'
     | 'tasks'
@@ -619,6 +621,8 @@ export type UISlice = {
     | 'space'
     | 'skills'
     | 'mobile'
+    | 'apps'
+    | 'store'
   previousViewBeforeActivity:
     | 'terminal'
     | 'settings'
@@ -627,6 +631,8 @@ export type UISlice = {
     | 'space'
     | 'skills'
     | 'mobile'
+    | 'apps'
+    | 'store'
   previousViewBeforeAutomations:
     | 'terminal'
     | 'settings'
@@ -635,6 +641,8 @@ export type UISlice = {
     | 'space'
     | 'skills'
     | 'mobile'
+    | 'apps'
+    | 'store'
   previousViewBeforeSpace:
     | 'terminal'
     | 'settings'
@@ -643,6 +651,8 @@ export type UISlice = {
     | 'automations'
     | 'skills'
     | 'mobile'
+    | 'apps'
+    | 'store'
   previousViewBeforeSkills:
     | 'terminal'
     | 'settings'
@@ -651,6 +661,8 @@ export type UISlice = {
     | 'automations'
     | 'space'
     | 'mobile'
+    | 'apps'
+    | 'store'
   previousViewBeforeMobile:
     | 'terminal'
     | 'settings'
@@ -659,6 +671,15 @@ export type UISlice = {
     | 'automations'
     | 'space'
     | 'skills'
+    | 'apps'
+    | 'store'
+  // BuildEx: company surfaces. See BUILDEX-PATCHES.md.
+  previousViewBeforeApps: Exclude<TopLevelView, 'apps'>
+  previousViewBeforeStore: Exclude<TopLevelView, 'store'>
+  openAppsPage: () => void
+  closeAppsPage: () => void
+  openStorePage: () => void
+  closeStorePage: () => void
   setActiveView: (view: UISlice['activeView']) => void
   taskPageData: {
     preselectedRepoId?: string
@@ -1225,6 +1246,8 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   previousViewBeforeSpace: 'terminal',
   previousViewBeforeSkills: 'terminal',
   previousViewBeforeMobile: 'terminal',
+  previousViewBeforeApps: 'terminal',
+  previousViewBeforeStore: 'terminal',
   setActiveView: (view) => set({ activeView: view }),
   taskPageData: {},
   taskResumeState: undefined,
@@ -1479,6 +1502,27 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   closeMobilePage: () =>
     set((state) => ({
       activeView: state.previousViewBeforeMobile
+    })),
+  // BuildEx: company surfaces. See BUILDEX-PATCHES.md.
+  openAppsPage: () =>
+    set((state) => ({
+      activeView: 'apps',
+      previousViewBeforeApps:
+        state.activeView === 'apps' ? state.previousViewBeforeApps : state.activeView
+    })),
+  closeAppsPage: () =>
+    set((state) => ({
+      activeView: state.previousViewBeforeApps
+    })),
+  openStorePage: () =>
+    set((state) => ({
+      activeView: 'store',
+      previousViewBeforeStore:
+        state.activeView === 'store' ? state.previousViewBeforeStore : state.activeView
+    })),
+  closeStorePage: () =>
+    set((state) => ({
+      activeView: state.previousViewBeforeStore
     })),
   setNewWorkspaceDraft: (draft) => set({ newWorkspaceDraft: draft }),
   clearNewWorkspaceDraft: () => set({ newWorkspaceDraft: null }),

@@ -13870,5 +13870,37 @@
     "sidebar": {
       "label": "Agent Dashboard"
     }
+  },
+  "buildex": {
+    "apps": {
+      "page": {
+        "title": "Apps",
+        "emptyTitle": "No apps installed",
+        "emptyHint": "Install a pack from the Store to add apps."
+      }
+    },
+    "store": {
+      "page": {
+        "title": "Store",
+        "emptyTitle": "No packs available yet",
+        "emptyHint": "Skill packs you install are written into your company repo."
+      }
+    },
+    "brain": {
+      "panel": {
+        "title": "Company Brain",
+        "emptyTitle": "No company repo connected",
+        "emptyHint": "Open a company repo to see its map, history, and decisions."
+      },
+      "activityBar": {
+        "title": "Company Brain"
+      }
+    },
+    "sidebar": {
+      "nav": {
+        "apps": "Apps",
+        "store": "Store"
+      }
+    }
   }
 }
