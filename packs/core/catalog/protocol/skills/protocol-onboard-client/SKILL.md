@@ -22,7 +22,12 @@ enough that a program can actually be built from them.
    nutrition, behavioural. These are separate sub-resources on the same call; see
    `../protocol-reference/references/data-model.md`.
 4. Set the lifecycle stage if the operator named one.
-5. Read the client back with `review_client` and tell the operator what is still missing before a
+5. Put them on a check-in. A client nobody measures cannot be coached from data later. Reuse the
+   tenant's existing check-in form (`find` with `kind: "form"`) rather than making a new one -
+   a second form fragments the history. If you do build one, **every question that records a number
+   needs a `mapTo`**, or the answers are stored as text and never reach the client's measurements:
+   see `../protocol-reference/references/mcp-surface.md` under `manage_forms`.
+6. Read the client back with `review_client` and tell the operator what is still missing before a
    program can be built - do not quietly leave gaps.
 
 ## Rules

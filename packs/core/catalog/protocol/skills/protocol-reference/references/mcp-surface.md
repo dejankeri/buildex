@@ -362,7 +362,7 @@ Required: `action`. 3 actions.
 | `progressEntryId` | string | entry | Update this check-in; omit to create. |
 | `clientId` | string | entry, note | |
 | `entryDate` | string | entry (create) | `YYYY-MM-DD` |
-| `measurements` | object | entry (create) | |
+| `measurements` | object | entry (**create and update**) | The numbers. See *Measurements* below. |
 | `userNotes` | string | entry (create) | |
 | `trainerNotes` | string | entry | |
 | `internalNotes` | string | entry, report | |
@@ -376,6 +376,24 @@ Required: `action`. 3 actions.
 | `title` | string | note | |
 | `content` | string | note | |
 | `appointmentId` | string | note | |
+
+#### Measurements - the numbers everything else is computed from
+
+Keys, all optional, all **numbers** (a string `"80"` is discarded, not parsed):
+
+`weightKg` · `bodyFatPercentage` · `muscleMassPercentage` · `leanMassPercentage` · `chestCm` ·
+`waistCm` · `hipsCm` · `leftArmCm` · `rightArmCm` · `leftThighCm` · `rightThighCm` · `squat1rm` ·
+`deadlift1rm` · `benchPress1rm` · `pullupsMax` · `kmTimeSeconds` · `vo2Max` · `sleepAverageHours`
+
+`energy` · `mood` · `adherence` · `sleepQualityScore` are a **1-10 scale, not a percentage** - pass
+8, not 80. Out of range is rejected outright.
+
+- **Create** merges by client + date: a second check-in for the same day updates the first rather
+  than duplicating. So re-recording a day is safe.
+- **Update** (with `progressEntryId`) merges the keys you send over the existing ones - send only
+  what you are correcting. Body-composition weights are recomputed from a new `weightKg`.
+- Both paths echo the resulting `measurements`. Read it back; that is how you know the correction
+  landed rather than assuming it.
 
 `entry` create honors `clientId`/`entryDate`/`measurements`/`userNotes`/`trainerNotes`/
 `internalNotes`; `entry` update honors `progressEntryId`/`status`/`trainerNotes`/`internalNotes`/
@@ -411,9 +429,37 @@ Required: `action`. 2 actions.
 | `title` | string | |
 | `description` | string | |
 | `presentationType` | string | `SINGLE_PAGE` · `MULTI_PAGE` · `HABIT_TRACKING` · `PROGRESS_TRACKING` — **not** schema-validated; a bad value passes straight through. |
-| `questions` | object[] | **Replaces the whole question array.** `get` the form first. |
+| `questions` | object[] | **Replaces the whole question array.** `get` the form first. See *Question rows* below. |
 | `theme` | object | |
 | `settings` | object | |
+
+#### Question rows - and `mapTo`, which decides whether a check-in is analysable
+
+**`mapTo` is the whole answers-to-measurements pipeline.** On submission, every answer carrying a
+`mapTo` is written into the check-in's `measurements` (`WEIGHT` → `weightKg`, `WAIST` → `waistCm`,
+…) - which is what every chart, trend and progress report reads. A question with **no** `mapTo` is
+stored as text and is invisible to all of it. Build a weekly check-in without it and the form looks
+perfect, collects diligently, and produces nothing you can plot. Set it on every question that
+records a number; use `CUSTOM` for a qualitative question, `INFO` for a screen that asks nothing.
+
+Both write paths return the resulting `questions` (id, type, title, mapTo) plus
+`unmappedQuestionCount` - check it, it is how you catch this.
+
+Row fields: `id` · `type` · `title` · `description` · `placeholder` · `required` · `purpose` ·
+`options[{id,label}]` · `allowMultiple` · `maxRating` · `mapTo` · `pinned`.
+
+`type` is one of `welcome` · `multiple_choice` · `picture_choice` · `yes_no` · `dropdown` ·
+`short_text` · `long_text` · `legal` · `rating` · `upload_media` · `end_screen`. **There is no
+`number` type** - a numeric field is `short_text` with `purpose: "number"`.
+
+**Two families, two row shapes.** Questionnaires (`SINGLE_PAGE`, `MULTI_PAGE`) take full rows and
+get welcome/end screens added automatically. Trackers (`PROGRESS_TRACKING` for weekly measurement
+check-ins, `HABIT_TRACKING` for daily habits) take minimal rows - often just `{ mapTo, pinned }`,
+no type or title - and get no bookends. Real accounts use both shapes; read the form you are
+editing before assuming which.
+
+**Keep each surviving question's `id`.** Submitted answers are stored against it, so replacing the
+array with fresh ids orphans every past answer and loses that question's history.
 
 Form reads go through `find` / `get`, never this verb.
 
@@ -492,8 +538,14 @@ No required param — `action` defaults to `overview`. 5 actions.
 | `action` | string enum | `overview` (default) · `mark_read` · `mark_all_read` · `dismiss_insight` · `mark_insight_read` |
 | `notificationId` | string | `mark_read` |
 | `insightId` | string | `dismiss_insight`, `mark_insight_read` |
+| `insightLimit` | number | `overview`: how many insights (default 25, max 200), highest priority first. |
 
-`overview` returns `{ dashboard, notifications, unreadCount, insights }`, each section null-safe.
+`overview` returns `{ dashboard, notifications, unreadCount, insights, insightsTotal,
+insightBreakdown }`, each section null-safe. **`insights` is the top 25, not all of them** - a real
+account had 518. `insightsTotal` and `insightBreakdown` (counts by type and severity) describe the
+whole set, so describe the pile honestly - "518 active, mostly plateau warnings, here are the 25
+that matter" - rather than reporting 25 as if it were everything. Raise `insightLimit` only when
+you are genuinely working the whole list; it is the most expensive read on the surface.
 
 ### `report_to_developers`
 

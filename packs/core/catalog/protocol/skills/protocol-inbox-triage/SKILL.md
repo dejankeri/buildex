@@ -16,6 +16,11 @@ actually need the operator.
 ## Steps
 
 1. Call `review_inbox` with `action: "overview"` - one bundle of what is waiting.
+   It returns the **top 25 insights, not all of them**, plus `insightsTotal` and an
+   `insightBreakdown` counting the whole set by type and severity. Lead with the shape of the pile
+   before the individual items - "518 active, mostly plateau warnings, three worth your morning" is
+   the answer to "what needs me"; listing 25 rows is not. Only raise `insightLimit` when you are
+   genuinely working the whole list.
 2. Read `message` for unread client conversations. This verb is **read-only**; it never sends
    anything, so reading is free.
 3. Group what you find: needs a decision / needs a reply / can be cleared / can wait.
