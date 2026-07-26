@@ -66,7 +66,7 @@ describe('ModelManager Windows model path handling', () => {
       const manager = new ModelManager()
 
       expect(manager.getModelsDir()).not.toContain(userDataDir)
-      expect(manager.getModelsDir()).toContain(join(programDataDir, 'Orca', 'speech-models'))
+      expect(manager.getModelsDir()).toContain(join(programDataDir, 'BuildEx', 'speech-models'))
       expect(isAsciiPath(manager.getModelsDir())).toBe(true)
       expect(existsSync(manager.getModelsDir())).toBe(true)
     } finally {
