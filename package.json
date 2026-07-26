@@ -1,9 +1,9 @@
 {
-  "name": "orca",
+  "name": "buildex",
   "version": "1.4.159-rc.0",
-  "description": "Next-gen IDE for parallel agentic development",
-  "homepage": "https://github.com/stablyai/orca",
-  "author": "stablyai",
+  "description": "The eXponential ORGanization Operating System — a company brain on top of Orca",
+  "homepage": "https://github.com/dejankeri/buildex-app",
+  "author": "BuildEx",
   "bin": {
     "orca": "./out/cli/index.js",
     "orca-dev": "./config/scripts/orca-dev.mjs"
