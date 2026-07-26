@@ -2,7 +2,7 @@
   "name": "buildex",
   "version": "1.4.159-rc.0",
   "description": "The eXponential ORGanization Operating System — a company brain on top of Orca",
-  "homepage": "https://github.com/dejankeri/buildex-app",
+  "homepage": "https://github.com/dejankeri/buildex",
   "author": "BuildEx",
   "bin": {
     "orca": "./out/cli/index.js",

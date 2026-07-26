@@ -409,7 +409,7 @@ module.exports = {
   publish: {
     provider: 'github',
     owner: 'dejankeri',
-    repo: 'buildex-app',
+    repo: 'buildex',
     releaseType: 'release'
   }
 }

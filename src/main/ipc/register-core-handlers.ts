@@ -43,6 +43,8 @@ import { registerWorkspaceSpaceHandlers } from './workspace-space'
 import { registerWorkspacePortHandlers } from './workspace-ports'
 import { registerLocalhostWorktreeLabelHandlers } from './localhost-worktree-labels'
 import { registerAutomationHandlers } from './automations'
+// BuildEx: see BUILDEX-PATCHES.md
+import { registerBuildExBrainHandlers } from './buildex-brain'
 import { registerKeybindingHandlers } from './keybindings'
 import { registerTelemetryHandlers } from './telemetry'
 import { registerBrowserHandlers } from './browser'
@@ -171,6 +173,7 @@ export function registerCoreHandlers(
   registerComputerUsePermissionHandlers()
   registerSettingsHandlers(store, agentAwakeService)
   registerSkillsHandlers(store)
+  registerBuildExBrainHandlers()
   if (automations) {
     registerAutomationHandlers(store, automations)
   }

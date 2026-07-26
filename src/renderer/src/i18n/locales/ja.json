@@ -13890,7 +13890,12 @@
       "panel": {
         "title": "Company Brain",
         "emptyTitle": "No company repo connected",
-        "emptyHint": "Open a company repo to see its map, history, and decisions."
+        "emptyHint": "Open a company repo to see its map, history, and decisions.",
+        "rescan": "Rescan company brain",
+        "noDocsTitle": "No documents yet",
+        "noDocsHint": "The company brain is built from markdown files in this repo.",
+        "unsaved": "unsaved",
+        "filter": "Filter documents"
       },
       "activityBar": {
         "title": "Company Brain"

@@ -15,14 +15,29 @@ function proofPath(name: string): string {
   return path.join(PROOF_DIR, name)
 }
 
-test('company brain tab opens in the right sidebar', async ({ orcaPage }) => {
+test('company brain maps the active repo', async ({ orcaPage }) => {
   const brainTab = orcaPage.getByRole('button', { name: 'Company Brain' })
   await expect(brainTab).toBeVisible()
-
   await brainTab.click()
-  await expect(orcaPage.getByText('No company repo connected')).toBeVisible()
+
+  // The seeded e2e repo ships CLAUDE.md and README.md at its root, so the brain
+  // must find real documents rather than falling through to an empty state.
+  // Not `exact`: the folder row's text is the label plus its count badge.
+  await expect(orcaPage.getByText('Root').first()).toBeVisible()
+  await expect(orcaPage.getByText('README', { exact: true })).toBeVisible()
+  await expect(orcaPage.getByPlaceholder('Filter documents')).toBeVisible()
 
   await orcaPage.screenshot({ path: proofPath('brain-tab.png') })
+})
+
+test('company brain filter narrows the document list', async ({ orcaPage }) => {
+  await orcaPage.getByRole('button', { name: 'Company Brain' }).click()
+  await expect(orcaPage.getByText('README', { exact: true })).toBeVisible()
+
+  await orcaPage.getByPlaceholder('Filter documents').fill('readme')
+
+  await expect(orcaPage.getByText('README', { exact: true })).toBeVisible()
+  await expect(orcaPage.getByText('CLAUDE', { exact: true })).toHaveCount(0)
 })
 
 test('apps and store open from the sidebar', async ({ orcaPage }) => {

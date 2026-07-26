@@ -344,6 +344,8 @@ import type {
   ShellOpenLocalPathResult
 } from '../shared/shell-open-types'
 import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
+// BuildEx: see BUILDEX-PATCHES.md
+import type { BrainScan, BrainScanRequest } from '../shared/buildex-brain-types'
 import type { SkillFreshnessInventory } from '../shared/skill-freshness'
 import type {
   CrashReportBreadcrumbData,
@@ -2321,6 +2323,10 @@ export type PreloadApi = {
   skills: {
     discover: (target?: SkillDiscoveryTarget) => Promise<SkillDiscoveryResult>
     freshnessInventory: () => Promise<SkillFreshnessInventory>
+  }
+  // BuildEx: see BUILDEX-PATCHES.md
+  buildexBrain: {
+    scan: (request: BrainScanRequest) => Promise<BrainScan>
   }
   pet: {
     import: () => Promise<CustomPet | null>

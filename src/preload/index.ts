@@ -86,6 +86,8 @@ import type {
   ShellOpenLocalPathResult
 } from '../shared/shell-open-types'
 import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
+// BuildEx: see BUILDEX-PATCHES.md
+import type { BrainScan, BrainScanRequest } from '../shared/buildex-brain-types'
 import type { SkillFreshnessInventory } from '../shared/skill-freshness'
 import type {
   RuntimeBrowserDriverState,
@@ -2259,6 +2261,12 @@ const api = {
       ipcRenderer.invoke('skills:discover', target),
     freshnessInventory: (): Promise<SkillFreshnessInventory> =>
       ipcRenderer.invoke('skills:freshnessInventory')
+  },
+
+  // BuildEx: see BUILDEX-PATCHES.md
+  buildexBrain: {
+    scan: (request: BrainScanRequest): Promise<BrainScan> =>
+      ipcRenderer.invoke('buildex-brain:scan', request)
   },
 
   pet: {
