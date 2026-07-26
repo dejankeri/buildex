@@ -48,6 +48,28 @@ BUILDEX-PATCHES.md
 > `<userData>/cli/bin`. Changing the main process alone points the app at
 > `buildex-dev` while wrappers land in `orca-dev`.
 
+### Release, bundle IDs, attribution — Phase 1
+
+| File | Change |
+|---|---|
+| `src/shared/buildex-release.ts` | **BuildEx-owned.** Single source of truth for the release repo |
+| `src/main/updater.ts` | import + 2 feed URLs |
+| `src/main/updater-prerelease-feed.ts` | atom feed, download base, tag regex |
+| `config/electron-builder.config.cjs` | `publish` owner/repo; linux `packageName`/`artifactName` |
+| `src/main/ipc/notifications.ts` | `MACOS_PACKAGED_BUNDLE_ID` |
+| `src/main/computer/macos-computer-use-permissions.ts` | computer-use bundle ID |
+| `config/scripts/{run-electron-vite-dev,build-notification-status-macos,build-computer-macos}.mjs` | bundle IDs |
+| `native/computer-use-macos/.../main.swift` | sidecar peer allowlist |
+| `src/main/window/createMainWindow.ts` | window title ×2 |
+| `src/main/tray/system-tray.ts` | tray label |
+| `src/main/attribution/terminal-attribution.ts` | PR/issue footers (written into *other people's* repos) |
+| `src/main/index.ts` | do not call `starNag.start()` |
+| `src/main/updater.test.ts`, `src/main/updater-prerelease-feed.test.ts` | URL fixtures |
+
+**Telemetry needs no patch.** It fails closed — `ORCA_BUILD_IDENTITY` and
+`ORCA_POSTHOG_WRITE_KEY` are injected by upstream CI and resolve to `null` in a
+fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
+
 ### Surfaces — Phase 0.5
 
 | File | Change |
@@ -86,6 +108,17 @@ Brain would displace Explorer as the default and degrade the developer workflow
 this fork intends to keep.
 
 **4. E2E specs are CJS.** Use `__dirname`, not `import.meta.dirname`.
+
+**4b. `Orca` and `orca` are the same directory.** Verified on this machine:
+`~/Library/Application Support/Orca` and `.../orca` share inode `142205264`.
+APFS is case-insensitive by default, so any fork still named `orca` writes into
+the user's real Orca profile. This is why identity must be renamed *before the
+first launch*, not in a later branding pass.
+
+**4c. Disable features at the call site, not inside the module.** Gating
+`shouldShowStarNagThresholdPrompt` internally broke 20+ star-nag tests for no
+benefit. Skipping `starNag.start()` in `index.ts` disables the nag, keeps IPC
+handlers registered, and leaves the module's suite fully green.
 
 **5. i18n is nearly free.** `pnpm run sync:localization-catalog` generates every
 key across all five locales. Run it before `pnpm lint`.
