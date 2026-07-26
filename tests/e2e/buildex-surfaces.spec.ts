@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { test, expect } from './helpers/orca-app'
 import { getStoreState } from './helpers/store'
 
@@ -28,6 +28,30 @@ test('company brain maps the active repo', async ({ orcaPage }) => {
   await expect(orcaPage.getByPlaceholder('Filter documents')).toBeVisible()
 
   await orcaPage.screenshot({ path: proofPath('brain-tab.png') })
+})
+
+test('brain feeds company context to the agent', async ({ orcaPage, testRepoPath }) => {
+  const contextPath = path.join(testRepoPath, '.buildex', 'company-context.md')
+  const claudeMdPath = path.join(testRepoPath, 'CLAUDE.md')
+  const originalClaudeMd = readFileSync(claudeMdPath, 'utf8')
+
+  try {
+    await orcaPage.getByRole('button', { name: 'Company Brain' }).click()
+    await orcaPage.getByRole('button', { name: 'Feed context to agent' }).click()
+    await expect(orcaPage.getByText(/Company context (updated|already current)/)).toBeVisible()
+
+    // The agent reads CLAUDE.md at session start, so the import is what makes
+    // the company context reach it — assert both files, not just the message.
+    expect(existsSync(contextPath)).toBe(true)
+    expect(readFileSync(contextPath, 'utf8')).toContain('# Company context')
+    expect(readFileSync(claudeMdPath, 'utf8')).toContain('@.buildex/company-context.md')
+
+    // The operator's own CLAUDE.md content must survive.
+    expect(readFileSync(claudeMdPath, 'utf8')).toContain(originalClaudeMd.trim().split('\n')[0]!)
+  } finally {
+    writeFileSync(claudeMdPath, originalClaudeMd, 'utf8')
+    rmSync(path.join(testRepoPath, '.buildex'), { recursive: true, force: true })
+  }
 })
 
 test('company brain filter narrows the document list', async ({ orcaPage }) => {

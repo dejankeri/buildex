@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Brain, FileText, Link2, RefreshCw, Unlink } from 'lucide-react'
+import { Brain, FileText, Link2, RefreshCw, Sparkles, Unlink } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useActiveWorktree } from '@/store/selectors'
 import { cn } from '@/lib/utils'
@@ -23,6 +23,29 @@ export default function BrainPanel(): React.JSX.Element {
   const [scan, setScan] = useState<BrainScan>(EMPTY_BRAIN_SCAN)
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
+  const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
+
+  // Writes .buildex/company-context.md and the CLAUDE.md import, so the next
+  // agent session starts already knowing the company.
+  const syncContext = useCallback(async (): Promise<void> => {
+    if (!repoPath) {
+      return
+    }
+    setSyncing(true)
+    try {
+      const result = await window.api.buildexBrain.syncContext({ repoPath })
+      setSyncMessage(
+        result.ok
+          ? result.contextChanged || result.claudeMdChanged
+            ? translate('buildex.brain.panel.syncUpdated', 'Company context updated')
+            : translate('buildex.brain.panel.syncCurrent', 'Company context already current')
+          : (result.error ?? translate('buildex.brain.panel.syncFailed', 'Context sync failed'))
+      )
+    } finally {
+      setSyncing(false)
+    }
+  }, [repoPath])
 
   const runScan = useCallback(async (): Promise<void> => {
     if (!repoPath) {
@@ -83,6 +106,19 @@ export default function BrainPanel(): React.JSX.Element {
         </span>
         <button
           type="button"
+          onClick={() => void syncContext()}
+          disabled={!repoPath || syncing}
+          title={translate(
+            'buildex.brain.panel.syncContextHint',
+            'Write the company context the agent reads at session start'
+          )}
+          aria-label={translate('buildex.brain.panel.syncContext', 'Feed context to agent')}
+          className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-muted-foreground disabled:opacity-40"
+        >
+          <Sparkles size={12} className={cn(syncing && 'animate-pulse')} />
+        </button>
+        <button
+          type="button"
           onClick={() => void runScan()}
           disabled={!repoPath || loading}
           aria-label={translate('buildex.brain.panel.rescan', 'Rescan company brain')}
@@ -91,6 +127,12 @@ export default function BrainPanel(): React.JSX.Element {
           <RefreshCw size={12} className={cn(loading && 'animate-spin')} />
         </button>
       </div>
+
+      {syncMessage ? (
+        <div className="shrink-0 border-b border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+          {syncMessage}
+        </div>
+      ) : null}
 
       {!repoPath ? (
         <BrainEmptyState

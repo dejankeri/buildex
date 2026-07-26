@@ -87,7 +87,12 @@ import type {
 } from '../shared/shell-open-types'
 import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
 // BuildEx: see BUILDEX-PATCHES.md
-import type { BrainScan, BrainScanRequest } from '../shared/buildex-brain-types'
+import type {
+  BrainScan,
+  BrainScanRequest,
+  ContextSyncRequest,
+  ContextSyncResponse
+} from '../shared/buildex-brain-types'
 import type {
   PackCatalog,
   PackCatalogRequest,
@@ -2272,7 +2277,9 @@ const api = {
   // BuildEx: see BUILDEX-PATCHES.md
   buildexBrain: {
     scan: (request: BrainScanRequest): Promise<BrainScan> =>
-      ipcRenderer.invoke('buildex-brain:scan', request)
+      ipcRenderer.invoke('buildex-brain:scan', request),
+    syncContext: (request: ContextSyncRequest): Promise<ContextSyncResponse> =>
+      ipcRenderer.invoke('buildex-brain:syncContext', request)
   },
 
   buildexPacks: {

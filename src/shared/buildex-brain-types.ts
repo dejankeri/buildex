@@ -46,3 +46,15 @@ export const EMPTY_BRAIN_SCAN: BrainScan = {
   totalLinks: 0,
   scannedAt: 0
 }
+
+export type ContextSyncRequest = {
+  repoPath: string
+}
+
+export type ContextSyncResponse = {
+  ok: boolean
+  contextPath: string
+  contextChanged: boolean
+  claudeMdChanged: boolean
+  error?: string
+}

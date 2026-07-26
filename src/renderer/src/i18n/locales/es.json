@@ -13898,7 +13898,12 @@
         "noDocsTitle": "No documents yet",
         "noDocsHint": "The company brain is built from markdown files in this repo.",
         "unsaved": "unsaved",
-        "filter": "Filter documents"
+        "filter": "Filter documents",
+        "syncUpdated": "Company context updated",
+        "syncCurrent": "Company context already current",
+        "syncFailed": "Context sync failed",
+        "syncContextHint": "Write the company context the agent reads at session start",
+        "syncContext": "Feed context to agent"
       },
       "activityBar": {
         "title": "Company Brain"

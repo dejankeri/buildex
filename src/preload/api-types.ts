@@ -345,7 +345,12 @@ import type {
 } from '../shared/shell-open-types'
 import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
 // BuildEx: see BUILDEX-PATCHES.md
-import type { BrainScan, BrainScanRequest } from '../shared/buildex-brain-types'
+import type {
+  BrainScan,
+  BrainScanRequest,
+  ContextSyncRequest,
+  ContextSyncResponse
+} from '../shared/buildex-brain-types'
 import type {
   PackCatalog,
   PackCatalogRequest,
@@ -2333,6 +2338,7 @@ export type PreloadApi = {
   // BuildEx: see BUILDEX-PATCHES.md
   buildexBrain: {
     scan: (request: BrainScanRequest) => Promise<BrainScan>
+    syncContext: (request: ContextSyncRequest) => Promise<ContextSyncResponse>
   }
   buildexPacks: {
     catalog: (request: PackCatalogRequest) => Promise<PackCatalog>
