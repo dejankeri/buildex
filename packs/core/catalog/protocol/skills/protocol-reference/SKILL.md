@@ -41,7 +41,14 @@ these accounts actually do:
 ## Steps
 
 1. Read the reference you need, all in `references/` beside this file:
-   - `mcp-surface.md` - all 18 verbs, real parameter names, entity kinds, action enums.
+   - `surface-core.md` - **start here**: `find`/`get`, the entity kinds, and the replace grammar
+     every array parameter follows. The three below assume it.
+   - `surface-programming.md` - `build_program`, `build_workout`, `build_nutrition`,
+     `assign_program`, `manage_library`.
+   - `surface-clients.md` - `manage_client`, `record_progress`, `manage_forms`, `review_client`,
+     `message`.
+   - `surface-operations.md` - `manage_tasks`, `manage_media`, `schedule`, `manage_automations`,
+     `review_inbox`.
    - `data-model.md` - clients, profiles, programs, templates, lifecycle stages.
    - `guardrails.md` - what Protocol deliberately will not do, and the access tiers.
    - `pitfalls.md` - the failure modes, led by parameter-name fidelity.
@@ -54,4 +61,4 @@ these accounts actually do:
   the data saved - verify structural writes by reading them back.
 - Array parameters like `exercises` and `questions` **replace** the whole array. Read, merge, then
   write the complete list, or you will delete the rest of it.
-- Never invent an entity kind or an action value. If it is not in `mcp-surface.md`, it does not exist.
+- Never invent an entity kind or an action value. If it is not in the surface files, it does not exist.

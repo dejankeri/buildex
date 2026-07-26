@@ -13,7 +13,7 @@ at all - just a much shorter road.
 
 - The operator asks to message a client, take a payment, issue a refund, or permanently delete
   something.
-- You have checked `../protocol-reference/references/mcp-surface.md` and there is genuinely no verb.
+- You have checked `../protocol-reference/references/surface-core.md` and there is genuinely no verb.
 - **Or: the analysis needs bulk history and the MCP reads would take dozens of calls.**
 
 ## Bulk reads for analysis

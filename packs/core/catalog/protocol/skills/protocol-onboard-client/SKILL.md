@@ -26,7 +26,7 @@ enough that a program can actually be built from them.
    tenant's existing check-in form (`find` with `kind: "form"`) rather than making a new one -
    a second form fragments the history. If you do build one, **every question that records a number
    needs a `mapTo`**, or the answers are stored as text and never reach the client's measurements:
-   see `../protocol-reference/references/mcp-surface.md` under `manage_forms`.
+   see `../protocol-reference/references/surface-clients.md` under `manage_forms`.
 6. Read the client back with `review_client` and tell the operator what is still missing before a
    program can be built - do not quietly leave gaps.
 

@@ -17,7 +17,7 @@ client's profile, and confusing a template with a client's copy.
 
 1. Read the client first (see `../protocol-client-review`). Training age, injuries, available days,
    and equipment all come from the profiles - build to those, not to a generic template.
-2. Confirm the exact parameter names in `../protocol-reference/references/mcp-surface.md` before
+2. Confirm the exact parameter names in `../protocol-reference/references/surface-programming.md` before
    writing. `build_program` and `build_workout` have specific, easy-to-mistake argument shapes.
 3. Build the structure with `build_program` (metadata, phases, content), and individual sessions with
    `build_workout`. **Send a workout's metadata and its `exercises` in the SAME call.** Creating the
@@ -45,7 +45,7 @@ client's profile, and confusing a template with a client's copy.
   replaces the ENTIRE phase list, and each row needs one control key: `{ add: true, name: "Week 1" }`
   to create, `{ ref: "<phaseId>" }` to keep a week untouched, `{ modify: "<phaseId>", … }` to change
   one. A week you omit is deleted. Note `add` is a **boolean** here - in `build_nutrition` it names
-  the row type instead. Full grammar: `../protocol-reference/references/mcp-surface.md`.
+  the row type instead. Full grammar: `../protocol-reference/references/surface-programming.md`.
 - `exercises` **replaces** the whole exercise list on a workout - and so does a group's own nested
   `exercises` array. Changing one movement in a superset means sending that group's complete list
   with `{ ref: <exerciseId> }` for the ones you are keeping. Read the current list, merge, write it

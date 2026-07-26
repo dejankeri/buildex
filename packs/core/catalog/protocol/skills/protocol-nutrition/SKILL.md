@@ -71,7 +71,7 @@ content: { collections: [ { name: "JELOVNIK", type: "recipes", items: [
 ```
 
 The recipes themselves are still nutrition templates - create them with `build_nutrition` first,
-then reference them by id. Full grammar: `../protocol-reference/references/mcp-surface.md`.
+then reference them by id. Full grammar: `../protocol-reference/references/surface-programming.md`.
 
 ## Rules
 

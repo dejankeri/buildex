@@ -41,7 +41,7 @@ week's numbers back at the operator.
 
    Numbers are numbers, never strings, and `energy` / `mood` / `adherence` / `sleepQualityScore`
    are **1-10, not percentages**. Full key list in
-   `../protocol-reference/references/mcp-surface.md`.
+   `../protocol-reference/references/surface-clients.md`.
 4. Where the trend genuinely warrants a programming change, say so and hand off to
    `../protocol-build-program` or `../protocol-nutrition`. Do not silently change the plan.
 5. Summarise for the operator by exception - who needs them, and why.
@@ -62,4 +62,4 @@ week's numbers back at the operator.
 - **If the numbers aren't there, the form is why.** A check-in question only becomes a measurement
   when it carries a `mapTo`; without one the answer is stored as text and never charts. When a
   client's history is all prose and no numbers, check their check-in form before concluding they
-  aren't tracking - see `mapTo` in `../protocol-reference/references/mcp-surface.md`.
+  aren't tracking - see `mapTo` in `../protocol-reference/references/surface-clients.md`.

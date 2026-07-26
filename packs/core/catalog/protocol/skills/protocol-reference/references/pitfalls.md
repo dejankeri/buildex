@@ -17,7 +17,7 @@ survived the trip. So:
 > than you asked — sometimes far less. **Data loss looks exactly like success.**
 
 This is the single highest-risk thing about operating Protocol. Treat parameter names as exact
-strings copied from `mcp-surface.md`, never as things to guess, pluralize, or "correct" to whatever
+strings copied from the surface files, never as things to guess, pluralize, or "correct" to whatever
 seems more natural.
 
 ### Known concrete examples

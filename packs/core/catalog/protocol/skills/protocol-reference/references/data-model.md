@@ -1,6 +1,6 @@
 # Protocol data model — the domain underneath the verbs
 
-The verbs in `mcp-surface.md` are thin: they forward your input into these entities almost
+The verbs in the surface files are thin: they forward your input into these entities almost
 verbatim. Knowing the real shapes is what lets you predict *why* a call that returned success
 saved something different from what you asked for.
 
