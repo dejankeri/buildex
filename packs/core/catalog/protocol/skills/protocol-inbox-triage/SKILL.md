@@ -27,7 +27,11 @@ actually need the operator.
 4. Clear only what is genuinely noise, using `review_inbox` (`mark_read`, `dismiss_insight`,
    `mark_insight_read`) - and say what you cleared.
 5. Manage tasks and boards with `manage_tasks` when the operator asks. It covers the whole kanban
-   surface; check the action list in `../protocol-reference/references/mcp-surface.md`.
+   surface behind one `action`, and the per-action parameter list is published on the action enum -
+   read it, because a param an action does not use is silently dropped rather than rejected. Two
+   that bite: a task is named by `title` while a board, column or label is named by `name` (send the
+   wrong one and the write succeeds having changed nothing), and creating a task needs a `boardId`
+   or `columnId`, not just a title.
 6. Report the short list. Three real items beats forty rows.
 
 ## Rules

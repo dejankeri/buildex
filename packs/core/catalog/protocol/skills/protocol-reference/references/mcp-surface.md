@@ -500,6 +500,12 @@ Everything except `action` is forwarded verbatim; pass the fields that action ne
 
 Task/board reads go through `find` (`kind=task`, `kind=board`) and `get`.
 
+**`title` names a task or subtask; `name` names a board, column or label.** Send the wrong one and
+it is silently dropped - the write returns success and nothing changes. `create_task` also needs a
+`boardId` or a `columnId`; a title alone is refused. The per-action parameter list is published on
+the `action` enum - read it rather than guessing, because anything an action does not read is
+dropped rather than rejected. `reorder_subtasks` / `reorder_columns` take the COMPLETE id list.
+
 ### `manage_media`
 
 Required: `action`. 6 actions.
@@ -528,6 +534,9 @@ Required: `action`. 6 actions.
 | `isActive` | boolean | |
 
 Shares never send an email.
+
+`categoryIds` **replaces** the media's category set. To add one more folder, `get` the media, send
+all its existing ids plus the new one - otherwise you quietly unfile it from the rest.
 
 ### `review_inbox`
 
@@ -589,7 +598,7 @@ Required: `action`. 7 actions.
 | `read` | boolean | booking_config | `true` reads the config instead of writing it. |
 | `trainerId` | string | booking_config | |
 | `bookingUrlSlug` | string | booking_config | |
-| `sharedAvailabilities` | object[] | booking_config | |
+| `sharedAvailabilities` | object[] | booking_config | `{dayOfWeek 1-7, startTime "HH:MM:SS", endTime, timezoneId, isActive}`. Full replace — **omit to preserve**. |
 | `globalSettings` | object | booking_config | |
 | `eventConfigurations` | object[] | booking_config | |
 
@@ -599,6 +608,24 @@ does not mark them required. `globalSettings.maximumAdvanceDays` is restricted t
 `7` · `14` · `30` · `60` · `90` to stay in lock-step with the coach dashboard's own preset picker.
 
 `send_reminder` is outward — it reaches the client. Confirm before firing it.
+
+#### Recurring check-ins, and the booking page
+
+`action: "reminder"` is how a weekly check-in gets scheduled: `clientId` + `formId` + `startTime`
+(the FIRST occurrence) + `recurrenceRule`, an iCal RRULE - `FREQ=WEEKLY;BYDAY=MO`, or
+`FREQ=WEEKLY;INTERVAL=2;BYDAY=FR` for fortnightly. Defaults: `responseWindowHours` 48,
+`reminderHoursBefore` 0 (fires at the occurrence), `reminderType` PROGRESS_CHECK_IN.
+
+`action: "booking_config"` writes the coach's **public** booking page. **Read it first**
+(`read: true`). `globalSettings` is merged, so send only the keys you are changing;
+`sharedAvailabilities` and `eventConfigurations` are whole-array replaces, so **omit them unless
+you mean to rewrite them** - a real coach has ~66 availability slots and a short list deletes the
+rest. `maximumAdvanceDays` must be one of 7 / 14 / 30 / 60 / 90.
+
+`modality` is closed: `IN_PERSON` · `VIRTUAL` · `HYBRID` · `ASYNCHRONOUS`.
+
+**Only `send_reminder` is outward.** Everything else on this verb is a plain write and works on a
+write-tier key.
 
 ### `manage_automations`
 
@@ -616,3 +643,10 @@ Required: `action`. 6 actions.
 
 `create` lands the automation in DRAFT. `run` **dispatches an execution now** — outward. Read a
 run's outcome with `find kind=automation_run` + `automationId`.
+`PROGRESS_REPORT` is the one registered kind (triggers `PROGRESS_ENTRY_CREATED` and `MANUAL`);
+confirm with `find kind=automation_kind` before assuming another exists. `run` needs
+`triggerData` - for PROGRESS_REPORT that is `{ entryId: "<progress entry uuid>" }`. **`run` is the
+only outward action here** and it is approval-gated, so getting the payload wrong spends the
+operator's tap for nothing. Authoring (create/update/activate/pause/archive) is a plain write.
+Read what an execution actually did with `find kind=automation_run`.
+
