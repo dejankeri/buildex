@@ -98,6 +98,28 @@ Required: `kind`, `id`.
 
 ---
 
+### Paging, and knowing what you did not read
+
+Every `find` carries `limit` (default 20-25, max 50-100 by kind) and, on the paged kinds, `offset`.
+A paged response tells you where you stand:
+
+```
+{ kind, count, total, hasMore, nextOffset, items: [...] }
+```
+
+**Loop while `nextOffset` comes back**, passing it as the next `offset`. `total` is the real count,
+so "86 check-ins, I read all 86" is a statement you can make honestly. Paged today: `progress`,
+`task`, `appointment`, plus the kinds that already had it (`client`, `form`, `automation`, `media`,
+`report`, `submission`, `automation_run`).
+
+On kinds without paging there is no `total`, and the response falls back to a warning instead:
+`defaultLimitApplied` (you set no limit, so a default cap applied) or `truncated` (you got exactly
+the number you asked for, so there are probably more). Both mean *you are not looking at
+everything* — raise the limit, or say what you covered.
+
+Never describe a trend, a count, or "all of X" from a response carrying `hasMore: true`,
+`truncated`, or `defaultLimitApplied`.
+
 ### `find` / `get` kind table
 
 23 `find` kinds; `get` covers a 17-kind subset. The 6 list-only kinds have **no by-id fetch**.

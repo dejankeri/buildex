@@ -49,6 +49,11 @@ this verb.** Sending a client message is a coach-approval matter (see `guardrail
 
 ---
 
+**Listing clients.** `find kind=client` takes `isActive` — and it matters more than it sounds. A
+roster holds everyone who ever signed up: on a live account, 168 clients of whom **31 are active**.
+Answering "how many clients do you have?" without it is wrong by five times. Also takes
+`lifecycleStageId` for a pipeline stage, and a free-text `query` over name and email.
+
 ### `manage_client`
 
 No schema-level required params, but you must pass either `clientId` **or** `create`.

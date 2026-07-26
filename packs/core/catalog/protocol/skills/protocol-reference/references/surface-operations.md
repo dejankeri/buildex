@@ -53,6 +53,19 @@ Everything except `action` is forwarded verbatim; pass the fields that action ne
 
 Task/board reads go through `find` (`kind=task`, `kind=board`) and `get`.
 
+**Labels.** `create_label` makes one (name + color, both required); `find kind=task_label` lists
+them; `labelIds` on create_task/update_task puts them ON a task, replacing whatever was there. Ids
+that do not resolve are skipped silently by the service, so the write reports back
+`unresolvedLabelIds` — check it. Filter by them with `find kind=task labelIds=[...]`.
+
+**Assignees.** A task can have several: `assigneeIds` replaces the set, `assigneeId` is a
+one-owner convenience. Unresolved ids come back as `unresolvedAssigneeIds`. Subtasks take a single
+`assigneeId`.
+
+**The filters that answer the usual questions.** `find kind=task` takes `isOverdue` ("what's
+late?"), `assigneeId` ("what's on Ana's plate?"), `labelIds`, `dueAfter`/`dueBefore`, `priority`,
+`columnId`, `boardId`, `isArchived` and a free-text `searchTerm` that also matches label names.
+
 **`title` names a task or subtask; `name` names a board, column or label.** Send the wrong one and
 it is silently dropped - the write returns success and nothing changes. `create_task` also needs a
 `boardId` or a `columnId`; a title alone is refused. The per-action parameter list is published on
