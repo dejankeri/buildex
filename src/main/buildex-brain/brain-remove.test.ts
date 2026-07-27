@@ -13,9 +13,17 @@ vi.mock('node:os', async () => {
   return { ...actual, homedir: () => home, default: { ...actual, homedir: () => home } }
 })
 
-const { BACKUP_ROOT, backupStamp, planBrainRemoval, pruneDanglingSkillLinks, removeBrain } =
-  await import('./brain-remove')
+const {
+  BACKUP_ROOT,
+  backupStamp,
+  disconnectBrain,
+  planBrainRemoval,
+  pruneDanglingSkillLinks,
+  removeBrain
+} = await import('./brain-remove')
 const { gitExecFileAsync } = await import('../git/runner')
+const { bindRepoToBrain, readBrainBindings } = await import('./brain-bindings')
+const { embeddedLocation, readBrainPointer, writeBrainPointer } = await import('./brain-location')
 
 let repo = ''
 
@@ -56,7 +64,7 @@ describe('planBrainRemoval', () => {
   it('says a copy is needed when there is no git to fall back on', async () => {
     write('.buildex/strategy/overview.md', '# Strategy\n')
 
-    const plan = await planBrainRemoval(repo)
+    const plan = await planBrainRemoval(embeddedLocation(repo))
 
     expect(plan.documentCount).toBe(1)
     expect(plan.canCommit).toBe(false)
@@ -69,7 +77,7 @@ describe('planBrainRemoval', () => {
     await git('add', '-A')
     await git('commit', '-m', 'First save')
 
-    const plan = await planBrainRemoval(repo)
+    const plan = await planBrainRemoval(embeddedLocation(repo))
 
     expect(plan.canCommit).toBe(true)
     expect(plan.willBackUp).toBe(false)
@@ -78,7 +86,7 @@ describe('planBrainRemoval', () => {
 
 describe('removeBrain', () => {
   it('refuses when there is no brain to remove', async () => {
-    const result = await removeBrain(repo, NOW)
+    const result = await removeBrain(repo, embeddedLocation(repo), NOW)
 
     expect(result.ok).toBe(false)
   })
@@ -86,7 +94,7 @@ describe('removeBrain', () => {
   it('backs the brain up before removing it when git cannot get it back', async () => {
     write('.buildex/strategy/overview.md', '# Strategy\n')
 
-    const result = await removeBrain(repo, NOW)
+    const result = await removeBrain(repo, embeddedLocation(repo), NOW)
 
     expect(result.ok).toBe(true)
     expect(result.backupPath).toBeDefined()
@@ -102,7 +110,7 @@ describe('removeBrain', () => {
     await git('add', '-A')
     await git('commit', '-m', 'First save')
 
-    const result = await removeBrain(repo, NOW)
+    const result = await removeBrain(repo, embeddedLocation(repo), NOW)
 
     expect(result.committed).toBe(true)
     expect(result.backupPath).toBeUndefined()
@@ -120,7 +128,7 @@ describe('removeBrain', () => {
     await git('commit', '-m', 'First save')
     write('.buildex/strategy/draft.md', '# Half a thought\n')
 
-    const result = await removeBrain(repo, NOW)
+    const result = await removeBrain(repo, embeddedLocation(repo), NOW)
 
     expect(result.committed).toBe(true)
     expect(readFileSync(path.join(result.backupPath!, 'strategy', 'draft.md'), 'utf8')).toBe(
@@ -136,7 +144,7 @@ describe('removeBrain', () => {
     await git('commit', '-m', 'First save')
     writeFileSync(path.join(repo, 'src', 'index.ts'), 'export const x = 2\n', 'utf8')
 
-    await removeBrain(repo, NOW)
+    await removeBrain(repo, embeddedLocation(repo), NOW)
 
     // Why: the operator asked to remove their brain, not to commit whatever they
     // happened to be editing at the time.
@@ -171,5 +179,29 @@ describe('pruneDanglingSkillLinks', () => {
 
     expect(pruneDanglingSkillLinks(repo)).toEqual([])
     expect(existsSync(path.join(repo, '.claude', 'skills', 'ours', 'SKILL.md'))).toBe(true)
+  })
+})
+
+describe('disconnectBrain', () => {
+  it('unbinds this repo and leaves a shared brain completely alone', () => {
+    const brain = mkdtempSync(path.join(tmpdir(), 'buildex-shared-brain-'))
+    const bindingsFile = path.join(brain, 'bindings.json')
+    try {
+      mkdirSync(path.join(brain, 'decisions'), { recursive: true })
+      writeFileSync(path.join(brain, 'decisions', 'pricing.md'), '# Pricing\n', 'utf8')
+      bindRepoToBrain(repo, brain, bindingsFile)
+      writeBrainPointer(repo, 'git@github.com:acme/brain.git')
+
+      const result = disconnectBrain(repo, { bindingsFile })
+
+      expect(result.ok).toBe(true)
+      // The point of the whole split: other repos share this brain, and one of
+      // them pressing Remove must not take it from the rest.
+      expect(existsSync(path.join(brain, 'decisions', 'pricing.md'))).toBe(true)
+      expect(readBrainBindings(bindingsFile).brainByRepo[repo]).toBeUndefined()
+      expect(readBrainPointer(repo)).toBeNull()
+    } finally {
+      rmSync(brain, { recursive: true, force: true })
+    }
   })
 })

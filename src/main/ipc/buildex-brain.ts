@@ -26,7 +26,7 @@ import { EMPTY_AGENT_VIEW, EMPTY_BRAIN_SCAN } from '../../shared/buildex-brain-t
 import { scanCompanyBrain } from '../buildex-brain/company-brain-service'
 import { BRAIN_SECTIONS, scaffoldCompanyBrain } from '../buildex-brain/brain-scaffold'
 import { buildAgentView } from '../buildex-brain/agent-view'
-import { planBrainRemoval, removeBrain } from '../buildex-brain/brain-remove'
+import { disconnectBrain, planBrainRemoval, removeBrain } from '../buildex-brain/brain-remove'
 import { createBrainDocument } from '../buildex-brain/brain-document-create'
 import { requireBrainLocation } from '../buildex-brain/brain-location'
 import { commitBrain, readBrainHistory } from '../buildex-brain/brain-history'
@@ -193,10 +193,11 @@ export function registerBuildExBrainHandlers(): void {
     'buildex-brain:removalPlan',
     async (_event, request?: BrainRemovalRequest): Promise<BrainRemovalPlan> => {
       const repoPath = request?.repoPath?.trim()
-      if (!repoPath) {
+      const location = repoPath ? requireBrainLocation(repoPath) : null
+      if (!location) {
         return { documentCount: 0, unsavedPaths: [], canCommit: false, willBackUp: false }
       }
-      return planBrainRemoval(repoPath)
+      return planBrainRemoval(location)
     }
   )
 
@@ -204,10 +205,17 @@ export function registerBuildExBrainHandlers(): void {
     'buildex-brain:remove',
     async (_event, request?: BrainRemovalRequest): Promise<BrainRemovalResult> => {
       const repoPath = request?.repoPath?.trim()
-      if (!repoPath) {
+      const location = repoPath ? requireBrainLocation(repoPath) : null
+      if (!repoPath || !location) {
         return { ok: false, committed: false, error: 'Missing repoPath' }
       }
-      const result = await removeBrain(repoPath, Date.now())
+      // External brains are shared across repos, so this button may only ever
+      // disconnect from one, never delete it. Task 12 gives disconnect its own
+      // channel; until then, mode decides here.
+      const result =
+        location.mode === 'external'
+          ? disconnectBrain(repoPath)
+          : await removeBrain(repoPath, location, Date.now())
       if (result.ok) {
         // The agent's context still names every document that was just removed.
         void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })

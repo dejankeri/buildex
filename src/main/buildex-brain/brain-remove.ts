@@ -2,11 +2,16 @@ import { cpSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync } from 
 import type { Dirent } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
-import type { BrainRemovalPlan, BrainRemovalResult } from '../../shared/buildex-brain-types'
+import type {
+  BrainLocation,
+  BrainRemovalPlan,
+  BrainRemovalResult
+} from '../../shared/buildex-brain-types'
 import { gitExecFileAsync } from '../git/runner'
 import { AGENT_SKILLS_DIR } from '../buildex-packs/skill-link'
-import { BRAIN_ROOT, isBrainInitialized } from './company-brain-scan'
-import { embeddedLocation } from './brain-location'
+import { isBrainInitialized } from './company-brain-scan'
+import { removeBrainPointer } from './brain-location'
+import { unbindRepo } from './brain-bindings'
 import { readBrainHistory } from './brain-history'
 
 // Removing the company brain, without ever destroying it.
@@ -31,10 +36,9 @@ export function backupStamp(now: number): string {
   return new Date(now).toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '')
 }
 
-export async function planBrainRemoval(repoPath: string): Promise<BrainRemovalPlan> {
-  // Embedded until removal learns the external case, matching removeBrain below.
-  const history = await readBrainHistory(embeddedLocation(repoPath), 1)
-  const documentCount = countDocuments(path.join(repoPath, BRAIN_ROOT))
+export async function planBrainRemoval(location: BrainLocation): Promise<BrainRemovalPlan> {
+  const history = await readBrainHistory(location, 1)
+  const documentCount = countDocuments(location.root)
   return {
     documentCount,
     unsavedPaths: history.unsavedPaths,
@@ -114,15 +118,17 @@ export function pruneDanglingSkillLinks(repoPath: string): string[] {
  * `now` is passed in rather than read so the backup path is deterministic and
  * this can be tested without waiting for a clock to move.
  */
-export async function removeBrain(repoPath: string, now: number): Promise<BrainRemovalResult> {
-  // Embedded until removal learns the external case, where deleting a shared brain would be wrong.
-  const location = embeddedLocation(repoPath)
+export async function removeBrain(
+  repoPath: string,
+  location: BrainLocation,
+  now: number
+): Promise<BrainRemovalResult> {
   const brainRoot = location.root
   if (!isBrainInitialized(location)) {
     return { ok: false, committed: false, error: 'There is no company brain here' }
   }
 
-  const plan = await planBrainRemoval(repoPath)
+  const plan = await planBrainRemoval(location)
 
   let backupPath: string | undefined
   if (plan.willBackUp) {
@@ -146,8 +152,12 @@ export async function removeBrain(repoPath: string, now: number): Promise<BrainR
     try {
       // Forced because the backup above already covers anything git would refuse
       // to drop, and pathspec-scoped so no other work in the tree is swept up.
-      await gitExecFileAsync(['rm', '-r', '-f', '--quiet', '--', BRAIN_ROOT], { cwd: repoPath })
-      await gitExecFileAsync(['commit', '-m', REMOVAL_MESSAGE, '--', BRAIN_ROOT], { cwd: repoPath })
+      await gitExecFileAsync(['rm', '-r', '-f', '--quiet', '--', location.pathspec], {
+        cwd: location.gitRoot
+      })
+      await gitExecFileAsync(['commit', '-m', REMOVAL_MESSAGE, '--', location.pathspec], {
+        cwd: location.gitRoot
+      })
       committed = true
     } catch {
       // Fall through to the plain removal: the copy is already taken, or git had
@@ -164,6 +174,29 @@ export async function removeBrain(repoPath: string, now: number): Promise<BrainR
 
   pruneDanglingSkillLinks(repoPath)
   return { ok: true, committed, backupPath }
+}
+
+/**
+ * Let go of an external brain without touching it.
+ *
+ * Removal in embedded mode deletes files, because they are this repo's. An
+ * external brain may be shared by every repo the company opens, and the blast
+ * radius of deleting it is not visible from the button. So this drops the
+ * pointer and the binding, prunes the links the agent would be left holding,
+ * and stops there.
+ */
+export function disconnectBrain(
+  repoPath: string,
+  options: { bindingsFile?: string } = {}
+): BrainRemovalResult {
+  try {
+    removeBrainPointer(repoPath)
+    unbindRepo(repoPath, options.bindingsFile)
+  } catch (error) {
+    return { ok: false, committed: false, error: message(error) }
+  }
+  pruneDanglingSkillLinks(repoPath)
+  return { ok: true, committed: false }
 }
 
 function message(error: unknown): string {
