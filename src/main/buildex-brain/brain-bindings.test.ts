@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -57,11 +57,22 @@ describe('brain bindings', () => {
     expect(readBrainBindings(file).defaultBrainPath).toBeUndefined()
   })
 
-  it('survives a corrupt file rather than throwing at startup', () => {
-    bindRepoToBrain('/code/api', '/brains/acme', file)
-    // A half-written file is machine state, not the operator's work: start over.
-    rmSync(file)
+  it('returns safe defaults when JSON is invalid', () => {
+    writeFileSync(file, '{not json', 'utf8')
 
     expect(readBrainBindings(file)).toEqual({ clonesByRemote: {}, brainByRepo: {} })
+  })
+
+  it('ignores malformed fields while preserving valid ones', () => {
+    writeFileSync(
+      file,
+      JSON.stringify({ clonesByRemote: 5, brainByRepo: { '/code/api': '/brains/acme' } }),
+      'utf8'
+    )
+
+    expect(readBrainBindings(file)).toEqual({
+      clonesByRemote: {},
+      brainByRepo: { '/code/api': '/brains/acme' }
+    })
   })
 })

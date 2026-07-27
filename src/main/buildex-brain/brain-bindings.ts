@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { getCanonicalUserDataPath } from '../persistence'
 
@@ -94,9 +94,4 @@ export function setDefaultBrain(brainPath: string | null, file = brainBindingsFi
       delete bindings.defaultBrainPath
     }
   })
-}
-
-/** True when the file exists, so callers can tell "never configured" from "configured empty". */
-export function hasBrainBindings(file = brainBindingsFile()): boolean {
-  return existsSync(file)
 }
