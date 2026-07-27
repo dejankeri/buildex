@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { readPackCatalog } from '../buildex-packs/pack-catalog'
 import { envKeyForPack, hasPackCredential } from '../buildex-packs/pack-credentials'
+import { resolveBrainLocation } from './brain-location'
 import { scanCompanyBrain } from './company-brain-service'
 import { syncCompanyContext, type InstalledAppSummary } from './company-context'
 
@@ -56,7 +57,13 @@ export async function refreshCompanyContext(
   deps: ContextRefreshDeps
 ): Promise<void> {
   try {
-    const scan = await scanCompanyBrain(repoPath, Date.now())
+    // Interim: resolves for itself until Task 11 threads the location in from
+    // its caller, the same way the IPC handlers already do.
+    const resolution = resolveBrainLocation(repoPath)
+    if (resolution.status !== 'ready') {
+      return
+    }
+    const scan = await scanCompanyBrain(repoPath, resolution.location, resolution, Date.now())
     syncCompanyContext(repoPath, scan, installedApps(repoPath, deps))
   } catch {
     // Nothing to do about it here, and nothing worth taking a surface down for.

@@ -3,8 +3,17 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { scanCompanyBrain } from './company-brain-service'
+import { embeddedLocation } from './brain-location'
+import type { BrainResolution } from '../../shared/buildex-brain-types'
 
 let repo = ''
+
+// Named to avoid shadowing the `scan` result variable each test declares.
+function runScan(now: number) {
+  const location = embeddedLocation(repo)
+  const resolution: BrainResolution = { status: 'ready', location }
+  return scanCompanyBrain(repo, location, resolution, now)
+}
 
 // The brain is `.buildex/`, so fixtures are written there and referred to by the
 // id the scanner reports — relative to that folder, not the repo.
@@ -31,7 +40,7 @@ describe('scanCompanyBrain', () => {
     write('rules/operating.md', '# Operating')
     write('templates/engagement.md', '# Engagement')
 
-    const scan = await scanCompanyBrain(repo, 1)
+    const scan = await runScan(1)
     const method = scan.documents.find((d) => d.id === 'knowledge/method.md')
 
     expect(method?.linksTo).toEqual(['rules/operating.md', 'templates/engagement.md'])
@@ -46,8 +55,8 @@ describe('scanCompanyBrain', () => {
     write('b.md', '# B\n[[c]]')
     write('c.md', '# C')
 
-    const first = await scanCompanyBrain(repo, 1)
-    const second = await scanCompanyBrain(repo, 1)
+    const first = await runScan(1)
+    const second = await runScan(1)
 
     expect(JSON.stringify(second)).toBe(JSON.stringify(first))
   })
@@ -55,7 +64,7 @@ describe('scanCompanyBrain', () => {
   it('drops links that leave the repo or point at missing documents', async () => {
     write('a.md', '# A\n[[nowhere]] [up](../../escape.md) [gone](./missing.md)')
 
-    const scan = await scanCompanyBrain(repo, 1)
+    const scan = await runScan(1)
 
     expect(scan.documents[0]?.linksTo).toEqual([])
     expect(scan.totalLinks).toBe(0)
@@ -65,7 +74,7 @@ describe('scanCompanyBrain', () => {
     write('a.md', '# A\n```\n[[b]]\n```\nand `[[b]]` inline')
     write('b.md', '# B')
 
-    const scan = await scanCompanyBrain(repo, 1)
+    const scan = await runScan(1)
 
     expect(scan.documents.find((d) => d.id === 'a.md')?.linksTo).toEqual([])
   })
@@ -76,7 +85,7 @@ describe('scanCompanyBrain', () => {
     write('.hidden/secret.md', '# Hidden')
     write('keep.md', '# Keep')
 
-    const scan = await scanCompanyBrain(repo, 1)
+    const scan = await runScan(1)
 
     expect(scan.documents.map((d) => d.id)).toEqual(['keep.md'])
   })
@@ -86,7 +95,7 @@ describe('scanCompanyBrain', () => {
     write('linked-b.md', '# B')
     write('notes/lonely.md', '# Lonely')
 
-    const scan = await scanCompanyBrain(repo, 1)
+    const scan = await runScan(1)
 
     expect(scan.orphanIds).toEqual(['notes/lonely.md'])
     expect(scan.folders).toEqual([
@@ -99,7 +108,7 @@ describe('scanCompanyBrain', () => {
     write('a.md', '[[target|Nice label]] and [[target#section]]')
     write('target.md', '# Target')
 
-    const scan = await scanCompanyBrain(repo, 1)
+    const scan = await runScan(1)
 
     expect(scan.documents.find((d) => d.id === 'a.md')?.linksTo).toEqual(['target.md'])
   })
@@ -107,7 +116,7 @@ describe('scanCompanyBrain', () => {
   it('returns an empty scan for a directory with no markdown', async () => {
     mkdirSync(path.join(repo, 'empty'), { recursive: true })
 
-    const scan = await scanCompanyBrain(repo, 7)
+    const scan = await runScan(7)
 
     expect(scan.documents).toEqual([])
     expect(scan.scannedAt).toBe(7)

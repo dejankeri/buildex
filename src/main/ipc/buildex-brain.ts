@@ -19,7 +19,8 @@ import type {
   BrainCreateDocumentResult,
   BrainSectionsResult,
   BrainScan,
-  BrainScanRequest
+  BrainScanRequest,
+  BrainResolution
 } from '../../shared/buildex-brain-types'
 import { EMPTY_AGENT_VIEW, EMPTY_BRAIN_SCAN } from '../../shared/buildex-brain-types'
 import { scanCompanyBrain } from '../buildex-brain/company-brain-service'
@@ -27,6 +28,7 @@ import { BRAIN_SECTIONS, scaffoldCompanyBrain } from '../buildex-brain/brain-sca
 import { buildAgentView } from '../buildex-brain/agent-view'
 import { planBrainRemoval, removeBrain } from '../buildex-brain/brain-remove'
 import { createBrainDocument } from '../buildex-brain/brain-document-create'
+import { requireBrainLocation } from '../buildex-brain/brain-location'
 import { readBrainHistory, saveBrain } from '../buildex-brain/brain-history'
 import { createBrainSkill, listBrainSkills } from '../buildex-brain/brain-skills'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
@@ -92,7 +94,11 @@ export function registerBuildExBrainHandlers(): void {
       if (!repoPath || !title) {
         return { ok: false, error: 'Missing repoPath or title' }
       }
-      const result = createBrainDocument(repoPath, request?.folder ?? '', title)
+      const location = requireBrainLocation(repoPath)
+      if (!location) {
+        return { ok: false, error: 'Missing repoPath or title' }
+      }
+      const result = createBrainDocument(location, request?.folder ?? '', title)
       if (result.ok) {
         // Why: a new document the agent does not know about is the most common
         // way the context goes stale. Not awaited — the operator is waiting to
@@ -113,7 +119,12 @@ export function registerBuildExBrainHandlers(): void {
       // Why: the Brain is often the first BuildEx surface a run opens, so this is
       // the earliest reliable moment to put the gate and the packs in order.
       initializeCompanyRepo(repoPath)
-      const scan = await scanCompanyBrain(repoPath, Date.now())
+      const location = requireBrainLocation(repoPath)
+      if (!location) {
+        return EMPTY_BRAIN_SCAN
+      }
+      const resolution: BrainResolution = { status: 'ready', location }
+      const scan = await scanCompanyBrain(repoPath, location, resolution, Date.now())
       // Why: opening the Brain is the moment to catch up on anything that changed
       // outside the app — a document pulled from a teammate, a file written by
       // the agent itself. Not awaited: the screen should not wait for it.
@@ -134,8 +145,12 @@ export function registerBuildExBrainHandlers(): void {
     if (folders.length === 0) {
       return { ok: false, created: [], error: 'Choose at least one section' }
     }
+    const location = requireBrainLocation(repoPath)
+    if (!location) {
+      return { ok: false, created: [], error: 'Missing repoPath' }
+    }
     try {
-      const result = scaffoldCompanyBrain(repoPath, { folders, summary: request?.summary })
+      const result = scaffoldCompanyBrain(location, { folders, summary: request?.summary })
       void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
       return { ok: true, created: result.created }
     } catch (error) {
@@ -154,10 +169,16 @@ export function registerBuildExBrainHandlers(): void {
       if (!repoPath) {
         return EMPTY_AGENT_VIEW
       }
+      const location = requireBrainLocation(repoPath)
+      if (!location) {
+        return EMPTY_AGENT_VIEW
+      }
       // Why: the context file is rewritten first, so the dialog shows what the
       // next session will actually get rather than what the last one got.
       await refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
-      return buildAgentView(repoPath, await scanCompanyBrain(repoPath, Date.now()))
+      const resolution: BrainResolution = { status: 'ready', location }
+      const scan = await scanCompanyBrain(repoPath, location, resolution, Date.now())
+      return buildAgentView(repoPath, scan)
     }
   )
 

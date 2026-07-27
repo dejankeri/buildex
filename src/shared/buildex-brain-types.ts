@@ -32,6 +32,8 @@ export type BrainScan = {
    * showing nine empty sections nobody asked for.
    */
   initialized: boolean
+  /** How this repo's brain was resolved. Null only when there is no repo. */
+  resolution: BrainResolution | null
   documents: BrainDocument[]
   folders: BrainFolder[]
   /** Documents nothing links to and which link nowhere — the brain's dead ends. */
@@ -47,6 +49,7 @@ export type BrainScanRequest = {
 export const EMPTY_BRAIN_SCAN: BrainScan = {
   repoPath: '',
   initialized: false,
+  resolution: null,
   documents: [],
   folders: [],
   orphanIds: [],

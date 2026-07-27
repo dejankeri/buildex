@@ -2,10 +2,11 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { BrainScan } from '../../shared/buildex-brain-types'
+import type { BrainResolution, BrainScan } from '../../shared/buildex-brain-types'
 import { EMPTY_BRAIN_SCAN } from '../../shared/buildex-brain-types'
 import { renderCompanyContext, syncCompanyContext } from './company-context'
 import { scanCompanyBrain } from './company-brain-service'
+import { embeddedLocation } from './brain-location'
 
 let repo = ''
 
@@ -36,7 +37,9 @@ afterEach(() => {
 })
 
 async function scan(): Promise<BrainScan> {
-  return scanCompanyBrain(repo, 1)
+  const location = embeddedLocation(repo)
+  const resolution: BrainResolution = { status: 'ready', location }
+  return scanCompanyBrain(repo, location, resolution, 1)
 }
 
 describe('renderCompanyContext', () => {

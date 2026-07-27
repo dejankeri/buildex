@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { BRAIN_ROOT } from './company-brain-scan'
+import type { BrainLocation } from '../../shared/buildex-brain-types'
 
 // The shape a new company brain starts in.
 //
@@ -166,10 +166,10 @@ function seedBody(section: BrainSection, summary: string): string {
  * what the company has already written.
  */
 export function scaffoldCompanyBrain(
-  repoPath: string,
+  location: BrainLocation,
   options: ScaffoldOptions = {}
 ): ScaffoldResult {
-  const brainRoot = path.join(repoPath, BRAIN_ROOT)
+  const brainRoot = location.root
   const chosen = options.folders ? new Set(options.folders) : null
   const summary = options.summary?.trim() ?? ''
   const created: string[] = []

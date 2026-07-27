@@ -2,12 +2,20 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { BrainResolution } from '../../shared/buildex-brain-types'
 import { EMPTY_BRAIN_SCAN } from '../../shared/buildex-brain-types'
 import { buildAgentView, findImports } from './agent-view'
 import { describeSecret } from './agent-view-mcp'
 import { scanCompanyBrain } from './company-brain-service'
+import { embeddedLocation } from './brain-location'
 
 let repo = ''
+
+function runScan(now: number) {
+  const location = embeddedLocation(repo)
+  const resolution: BrainResolution = { status: 'ready', location }
+  return scanCompanyBrain(repo, location, resolution, now)
+}
 
 function write(relativePath: string, contents: string): void {
   const absolute = path.join(repo, ...relativePath.split('/'))
@@ -81,7 +89,7 @@ describe('buildAgentView', () => {
     write('.buildex/strategy/overview.md', '# Strategy\n')
     write('.claude/CLAUDE.md', '# Rules\n')
 
-    const view = buildAgentView(repo, await scanCompanyBrain(repo, 1))
+    const view = buildAgentView(repo, await runScan(1))
 
     expect(view.alwaysLoaded.map((file) => file.path)).toEqual(['.claude/CLAUDE.md'])
     expect(view.reachable).toContainEqual({

@@ -6,6 +6,7 @@ import type { BrainRemovalPlan, BrainRemovalResult } from '../../shared/buildex-
 import { gitExecFileAsync } from '../git/runner'
 import { AGENT_SKILLS_DIR } from '../buildex-packs/skill-link'
 import { BRAIN_ROOT, isBrainInitialized } from './company-brain-scan'
+import { embeddedLocation } from './brain-location'
 import { readBrainHistory } from './brain-history'
 
 // Removing the company brain, without ever destroying it.
@@ -113,8 +114,10 @@ export function pruneDanglingSkillLinks(repoPath: string): string[] {
  * this can be tested without waiting for a clock to move.
  */
 export async function removeBrain(repoPath: string, now: number): Promise<BrainRemovalResult> {
-  const brainRoot = path.join(repoPath, BRAIN_ROOT)
-  if (!isBrainInitialized(repoPath)) {
+  // Embedded until removal learns the external case, where deleting a shared brain would be wrong.
+  const location = embeddedLocation(repoPath)
+  const brainRoot = location.root
+  if (!isBrainInitialized(location)) {
     return { ok: false, committed: false, error: 'There is no company brain here' }
   }
 
