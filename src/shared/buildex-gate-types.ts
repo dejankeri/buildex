@@ -1,0 +1,44 @@
+// The gate: which of the agent's actions run on their own, and which wait for a
+// human tap. BuildEx's stance is wide autonomy with few gates — local work,
+// edits, reads and web access are autonomous; money, outbound-to-people and
+// irreversible destruction wait for a person.
+//
+// The same preset drives two things, and they must never disagree: the policy
+// this app evaluates, and the permissions written into the company repo's
+// .claude/settings.json, which the agent's own runtime enforces.
+
+export type GateDecision = 'allow' | 'ask' | 'deny'
+
+export type GatePreset = {
+  allow: string[]
+  ask: string[]
+  deny: string[]
+  /** Decision for a tool no rule matches. */
+  default: GateDecision
+}
+
+/** One tool call the agent wants to make, as the policy sees it. */
+export type ToolInvocation = {
+  name: string
+  input: Record<string, unknown>
+}
+
+/** Where the effective preset came from, for the UI to explain itself. */
+export type GatePresetSource = 'repo' | 'bundle'
+
+export type GateSettingsRequest = {
+  repoPath: string
+}
+
+export type GateSettingsResult = {
+  preset: GatePreset
+  source: GatePresetSource
+  /** True when .claude/settings.json changed on this sync. */
+  settingsChanged: boolean
+  /** Rules the operator added by hand that this sync preserved. */
+  preservedRules: string[]
+  error?: string
+}
+
+export const GATE_PRESET_RELATIVE_PATH = '.buildex/gate-preset.json'
+export const CLAUDE_SETTINGS_RELATIVE_PATH = '.claude/settings.json'

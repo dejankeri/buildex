@@ -8,6 +8,7 @@ import type {
 import { EMPTY_BRAIN_SCAN } from '../../shared/buildex-brain-types'
 import { scanCompanyBrain } from '../buildex-brain/company-brain-service'
 import { syncCompanyContext } from '../buildex-brain/company-context'
+import { initializeCompanyRepo } from '../buildex-repo-init'
 
 export function registerBuildExBrainHandlers(): void {
   ipcMain.handle(
@@ -17,6 +18,9 @@ export function registerBuildExBrainHandlers(): void {
       if (!repoPath) {
         return EMPTY_BRAIN_SCAN
       }
+      // Why: the Brain is often the first BuildEx surface a run opens, so this is
+      // the earliest reliable moment to put the gate and the packs in order.
+      initializeCompanyRepo(repoPath)
       return scanCompanyBrain(repoPath, Date.now())
     }
   )

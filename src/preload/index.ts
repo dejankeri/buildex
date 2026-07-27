@@ -93,6 +93,7 @@ import type {
   ContextSyncRequest,
   ContextSyncResponse
 } from '../shared/buildex-brain-types'
+import type { GateSettingsRequest, GateSettingsResult } from '../shared/buildex-gate-types'
 import type {
   PackCatalog,
   PackCatalogRequest,
@@ -2290,6 +2291,11 @@ const api = {
       ipcRenderer.invoke('buildex-packs:install', request),
     refresh: (request: PackCatalogRequest): Promise<PackRefreshResult> =>
       ipcRenderer.invoke('buildex-packs:refresh', request)
+  },
+
+  buildexGate: {
+    sync: (request: GateSettingsRequest): Promise<GateSettingsResult> =>
+      ipcRenderer.invoke('buildex-gate:sync', request)
   },
 
   pet: {

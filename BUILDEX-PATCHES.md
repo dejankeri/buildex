@@ -159,3 +159,42 @@ Rebase **weekly**. At ~20 touch points of 1-3 lines each it is a 10-minute job;
 let it slide a month and the renderer will have moved underneath you.
 
 Drill result 2026-07-26: rebased 2 commits across 1 upstream commit — **clean, zero conflicts**.
+
+## Traps found while shipping the catalog and the gate
+
+**Scoped test runs hide regressions.** Four real breakages survived weeks of
+scoped runs and only surfaced when the full 37 000-test suite ran: the updater
+readiness tests mocked upstream's atom feed, `UpdateCard` linked to Orca's
+releases, the git commit trailer still said `Co-authored-by: Orca`, and
+`register-core-handlers`' electron mock had no `ipcMain`. Run the whole suite
+before claiming a phase is green. It takes about six minutes.
+
+**The full suite is load-flaky on this box.** Roughly seven files (relay, ssh,
+pty, git integration, agent-hooks) fail under full fan-out and pass in isolation,
+and the set changes run to run. The only deterministic failure is
+`src/relay/agent-exec-handler.test.ts` (2 tests), which also fails on a pristine
+`upstream/main` worktree. Confirm any suspected regression by re-running the file
+alone, and against `git worktree add /tmp/orca-pristine upstream/main`.
+
+**Two lint gates fail silently behind the first.** `pnpm lint` is a chain of
+`&&`, so the Ghostty localization failure at the end masks nothing — but
+`check-styled-scrollbars` sits *before* it and had been failing on the three
+BuildEx surfaces. Read the whole log, not the tail.
+
+**The Windows ICO has a fill gate.** `resources/build/icon.ico` must fill ≥92% of
+its largest frame. Do not hand-build it — run
+`node config/scripts/trim-windows-icon-source.mjs`, which derives it from
+`resources/build/icon.png`.
+
+**Initializing a repo from two entry points needs one resolver.** The Brain and
+the Store both call `initializeCompanyRepo`, which is once-per-repo-per-run. An
+early version let the Brain pass `null` for the bundled catalog root and then
+mark the repo done, silently skipping the pack refresh the Store would have run.
+The root is resolved inside the module now; keep it that way.
+
+**Hook state is global and shared with the operator's real Orca.** Managed hooks
+install to `~/.orca/agent-hooks/` and `~/.claude/settings.json` — not to
+userData. Anything this fork does with agent hooks reaches the Orca they run
+every day. This is why the gate is enforced through the repo's
+`.claude/settings.json` (project-scoped, ours alone) rather than a PreToolUse
+hook.

@@ -45,6 +45,7 @@ import { registerLocalhostWorktreeLabelHandlers } from './localhost-worktree-lab
 import { registerAutomationHandlers } from './automations'
 // BuildEx: see BUILDEX-PATCHES.md
 import { registerBuildExBrainHandlers } from './buildex-brain'
+import { registerBuildExGateHandlers } from './buildex-gate'
 import { registerBuildExPackHandlers } from './buildex-packs'
 import { registerKeybindingHandlers } from './keybindings'
 import { registerTelemetryHandlers } from './telemetry'
@@ -175,6 +176,7 @@ export function registerCoreHandlers(
   registerSettingsHandlers(store, agentAwakeService)
   registerSkillsHandlers(store)
   registerBuildExBrainHandlers()
+  registerBuildExGateHandlers()
   registerBuildExPackHandlers()
   if (automations) {
     registerAutomationHandlers(store, automations)

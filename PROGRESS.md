@@ -14,6 +14,8 @@ Tracking `upstream/main` = `github.com/stablyai/orca`.
 | 3 — Store, capability packs, Apps | ✅ |
 | 4 — auto-feed company context to the agent | ✅ |
 | 5 — sync | ✅ *by decision — see below* |
+| 6 — shipped catalog: Store works on first run | ✅ |
+| 7 — gate: allow/ask/deny, enforced by the agent runtime | ✅ *engine + settings; approval cards blocked — see below* |
 
 ## Phase 5: why there is no sync code
 
@@ -34,6 +36,17 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
 - **Apps** — installed packs with an app face, opening externally.
 - **Agent context** — writes `.buildex/company-context.md` and an `@`-import into
   `CLAUDE.md`, so the next agent session starts knowing the company.
+- **Store, on first run** — 11 capability packs (Slack, Stripe, Linear, Notion,
+  HubSpot, Asana, Calendly, Canva, Intercom, HeyGen, Protocol) ship inside the
+  app, so a repo with no catalog of its own still has a full shelf. A repo
+  catalog overrides a shipped pack by id. App updates re-sync installed packs;
+  files the operator edited are kept and reported, never overwritten.
+- **The gate** — the allow/ask/deny preset is written into the company repo's
+  `.claude/settings.json`, so the agent's own runtime enforces it. Wide
+  autonomy: reading, editing, searching, shell and web run without interruption;
+  `rm -rf`, force-push and `reset --hard` wait for a person. A company can
+  override the preset in `.buildex/gate-preset.json`; a broken override falls
+  back to the shipped one rather than to no gates.
 - **Everything Orca does** — untouched. Worktrees, terminals, diffs, agents, SSH.
 
 ## Verification
@@ -42,11 +55,37 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
 |---|---|
 | `pnpm typecheck` (3 projects) | exit 0 |
 | `pnpm lint` | only the pre-existing upstream Ghostty failure |
-| BuildEx unit tests | 39 passed (brain 15, packs 12, rows 12) |
-| `tests/e2e/buildex-surfaces.spec.ts` | 6/6 in real headless Electron |
+| Full unit suite | 37 014 tests; only the recorded upstream baseline fails |
+| BuildEx unit tests | 57 passed (brain, packs, gate, rows) |
+| `tests/e2e/buildex-surfaces.spec.ts` | 8/8 in real headless Electron |
 | Rebase drills vs live upstream | 3× clean, zero conflicts |
 
 Screenshots in `.buildex-proofs/`. Baseline in `.buildex-proofs/UPSTREAM-BASELINE.md`.
+
+## The gate: what is done and what is not
+
+Done, and real today: the preset, the policy engine, and the write into
+`.claude/settings.json`. That is what makes an `ask` rule actually stop a call —
+the agent runtime reads that file and puts the question to the operator itself.
+
+Not done: **inline approval cards and the activity ledger.** Those need the
+PreToolUse hook to block on a BuildEx decision, and that is the one piece with a
+real hazard attached:
+
+> Orca installs its managed hooks to **`~/.orca/agent-hooks/`** and
+> **`~/.claude/settings.json`** — both global, both shared with the Orca you run
+> every day. Two instances arbitrate ownership with a lock, so nothing corrupts,
+> but whichever holds it receives the hook traffic. Wiring BuildEx's own gate
+> hook into that shared state can take hook telemetry away from your real Orca.
+
+So the approval-card half needs a decision before it is built: give BuildEx its
+own hook identity and config dir, or share Orca's and accept the interference.
+Worth noting the same caveat applies to simply *running* this fork alongside
+Orca today — it has not been launched outside the isolated e2e profile.
+
+Also outstanding: the gate is applied the first time a BuildEx surface touches a
+repo, not the instant a worktree opens. A worktree-activation trigger is upstream
+surface this fork has deliberately kept thin.
 
 ## Read before touching anything
 

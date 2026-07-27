@@ -13887,7 +13887,9 @@
         "skills": "skills",
         "installed": "Installed",
         "install": "Install",
-        "keptEdits": "Kept your edited files, so {{value0}} was not fully replaced: {{value1}}"
+        "keptEdits": "Kept your edited files, so {{value0}} was not fully replaced: {{value1}}",
+        "gateHint": "The agent works on its own, except for these — they wait for you.",
+        "gate": "{{value0}} actions ask first"
       }
     },
     "brain": {

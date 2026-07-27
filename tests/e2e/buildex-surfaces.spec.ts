@@ -124,6 +124,29 @@ test('the shipped catalog fills the store for a repo with no catalog', async ({ 
   await orcaPage.screenshot({ path: proofPath('store-bundled.png') })
 })
 
+test('the gate lands in the settings the agent enforces', async ({ orcaPage, testRepoPath }) => {
+  // Why: the gate is only real if it reaches .claude/settings.json — that is the
+  // file the agent runtime reads. Asserting the UI badge alone would pass even
+  // if nothing were written.
+  const settingsPath = path.join(testRepoPath, '.claude', 'settings.json')
+
+  try {
+    await orcaPage.getByRole('button', { name: 'Store', exact: true }).click()
+    await expect(orcaPage.getByText(/actions ask first/)).toBeVisible()
+
+    const permissions = JSON.parse(readFileSync(settingsPath, 'utf8')).permissions
+    expect(permissions.ask).toContain('Bash(rm -rf:*)')
+    expect(permissions.ask).toContain('Bash(git push --force:*)')
+    // Wide autonomy: ordinary work is not gated.
+    expect(permissions.allow).toContain('Bash')
+    expect(permissions.allow).toContain('Edit')
+    await orcaPage.screenshot({ path: proofPath('store-gate.png') })
+  } finally {
+    rmSync(path.join(testRepoPath, '.claude'), { recursive: true, force: true })
+    rmSync(path.join(testRepoPath, '.buildex'), { recursive: true, force: true })
+  }
+})
+
 test('apps and store open from the sidebar', async ({ orcaPage }) => {
   const appsNav = orcaPage.getByRole('button', { name: 'Apps', exact: true })
   await expect(appsNav).toBeVisible()

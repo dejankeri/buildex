@@ -351,6 +351,7 @@ import type {
   ContextSyncRequest,
   ContextSyncResponse
 } from '../shared/buildex-brain-types'
+import type { GateSettingsRequest, GateSettingsResult } from '../shared/buildex-gate-types'
 import type {
   PackCatalog,
   PackCatalogRequest,
@@ -2345,6 +2346,9 @@ export type PreloadApi = {
     catalog: (request: PackCatalogRequest) => Promise<PackCatalog>
     install: (request: PackInstallRequest) => Promise<PackInstallResult>
     refresh: (request: PackCatalogRequest) => Promise<PackRefreshResult>
+  }
+  buildexGate: {
+    sync: (request: GateSettingsRequest) => Promise<GateSettingsResult>
   }
   pet: {
     import: () => Promise<CustomPet | null>

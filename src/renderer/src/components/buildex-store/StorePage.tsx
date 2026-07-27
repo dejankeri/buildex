@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Check, Loader2, Store } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { Check, Loader2, ShieldCheck, Store } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
@@ -16,6 +16,25 @@ export default function StorePage(): React.JSX.Element {
   const [installingId, setInstallingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [gateRuleCount, setGateRuleCount] = useState<number | null>(null)
+
+  // The gate belongs next to the Store: installing a capability and deciding
+  // which of its actions wait for a person are the same question asked twice.
+  useEffect(() => {
+    let cancelled = false
+    if (!repoPath) {
+      setGateRuleCount(null)
+      return
+    }
+    void window.api.buildexGate.sync({ repoPath }).then((result) => {
+      if (!cancelled) {
+        setGateRuleCount(result.preset.ask.length + result.preset.deny.length)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [repoPath])
 
   const install = async (pack: BuildExPack): Promise<void> => {
     if (!repoPath) {
@@ -52,6 +71,20 @@ export default function StorePage(): React.JSX.Element {
         <h1 className="flex-1 text-[14px] font-semibold tracking-tight">
           {translate('buildex.store.page.title', 'Store')}
         </h1>
+        {gateRuleCount !== null ? (
+          <span
+            className="flex items-center gap-1 text-[11px] text-muted-foreground"
+            title={translate(
+              'buildex.store.page.gateHint',
+              'The agent works on its own, except for these — they wait for you.'
+            )}
+          >
+            <ShieldCheck size={12} />
+            {translate('buildex.store.page.gate', '{{value0}} actions ask first', {
+              value0: String(gateRuleCount)
+            })}
+          </span>
+        ) : null}
         {loading ? <Loader2 size={13} className="animate-spin text-muted-foreground" /> : null}
       </div>
 
