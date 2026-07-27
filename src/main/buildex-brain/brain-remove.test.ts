@@ -23,7 +23,8 @@ const {
 } = await import('./brain-remove')
 const { gitExecFileAsync } = await import('../git/runner')
 const { bindRepoToBrain, readBrainBindings } = await import('./brain-bindings')
-const { embeddedLocation, readBrainPointer, writeBrainPointer } = await import('./brain-location')
+const { embeddedLocation, externalLocation, readBrainPointer, writeBrainPointer } =
+  await import('./brain-location')
 
 let repo = ''
 
@@ -134,6 +135,25 @@ describe('removeBrain', () => {
     expect(readFileSync(path.join(result.backupPath!, 'strategy', 'draft.md'), 'utf8')).toBe(
       '# Half a thought\n'
     )
+  })
+
+  it('refuses to delete an external brain, however it is called', async () => {
+    const brain = mkdtempSync(path.join(tmpdir(), 'buildex-external-brain-'))
+    try {
+      mkdirSync(path.join(brain, 'decisions'), { recursive: true })
+      writeFileSync(path.join(brain, 'decisions', 'pricing.md'), '# Pricing\n', 'utf8')
+
+      const result = await removeBrain(repo, externalLocation(brain), NOW)
+
+      // Why: the IPC dispatch is a routing decision, not the only lock on this
+      // door — removeBrain must refuse on its own even if a future caller
+      // forgets to check the mode first.
+      expect(result.ok).toBe(false)
+      expect(result.committed).toBe(false)
+      expect(existsSync(path.join(brain, 'decisions', 'pricing.md'))).toBe(true)
+    } finally {
+      rmSync(brain, { recursive: true, force: true })
+    }
   })
 
   it('leaves everything outside the brain exactly as it was', async () => {

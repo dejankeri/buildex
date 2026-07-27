@@ -123,6 +123,14 @@ export async function removeBrain(
   location: BrainLocation,
   now: number
 ): Promise<BrainRemovalResult> {
+  // Defence in depth: an external brain may be shared, so deleting it is never this function's job.
+  if (location.mode !== 'embedded') {
+    return {
+      ok: false,
+      committed: false,
+      error: 'An external brain is disconnected, not removed'
+    }
+  }
   const brainRoot = location.root
   if (!isBrainInitialized(location)) {
     return { ok: false, committed: false, error: 'There is no company brain here' }
