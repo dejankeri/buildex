@@ -57,4 +57,25 @@ describe('cloneBrain', () => {
     expect(result.error).toBeTruthy()
     expect(readBrainBindings(bindingsFile).clonesByRemote[origin]).toBeUndefined()
   })
+
+  it('refuses a remote starting with dash and records no binding', async () => {
+    const target = path.join(dir, 'brain')
+    const maliciousRemote = '--upload-pack=touch /tmp/pwned'
+
+    const result = await cloneBrain(maliciousRemote, target, { bindingsFile })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBeTruthy()
+    expect(readBrainBindings(bindingsFile).clonesByRemote[maliciousRemote]).toBeUndefined()
+  })
+
+  it('refuses a target path starting with dash and records no binding', async () => {
+    const maliciousTarget = '-e /tmp/pwned'
+
+    const result = await cloneBrain(origin, maliciousTarget, { bindingsFile })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBeTruthy()
+    expect(readBrainBindings(bindingsFile).clonesByRemote[origin]).toBeUndefined()
+  })
 })

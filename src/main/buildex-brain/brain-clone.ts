@@ -13,6 +13,11 @@ export async function cloneBrain(
   targetPath: string,
   options: { bindingsFile?: string } = {}
 ): Promise<BrainCloneResult> {
+  // A leading dash makes git read the value as an option; the remote comes from a tracked file we did not write.
+  if (remote.startsWith('-') || targetPath.startsWith('-')) {
+    return { ok: false, error: `Refusing a brain remote or target path that starts with "-"` }
+  }
+
   if (existsSync(targetPath)) {
     // Somebody cloned it by hand, which is a perfectly good way to have a brain.
     if (existsSync(path.join(targetPath, '.git'))) {
@@ -24,7 +29,7 @@ export async function cloneBrain(
 
   try {
     mkdirSync(path.dirname(targetPath), { recursive: true })
-    await gitExecFileAsync(['clone', '--quiet', remote, targetPath], {
+    await gitExecFileAsync(['clone', '--quiet', '--', remote, targetPath], {
       cwd: path.dirname(targetPath),
       useConfiguredSshCommandForNetwork: true
     })
