@@ -90,7 +90,7 @@ describe('refreshInstalledPacks', () => {
     const result = refreshInstalledPacks(repo, bundle)
 
     expect(result.updatedPackIds).toEqual(['slack'])
-    expect(readRepo('skills/slack-search/SKILL.md')).toBe('# v2 - better steps')
+    expect(readRepo('.buildex/skills/slack-search/SKILL.md')).toBe('# v2 - better steps')
   })
 
   it('adds a file a newer pack version introduces', () => {
@@ -100,20 +100,20 @@ describe('refreshInstalledPacks', () => {
     writeIn(bundle, 'slack/skills/slack-search/references/limits.md', '# rate limits')
     const result = refreshInstalledPacks(repo, bundle)
 
-    expect(result.writtenPaths).toContain('skills/slack-search/references/limits.md')
+    expect(result.writtenPaths).toContain('.buildex/skills/slack-search/references/limits.md')
   })
 
   it("keeps the operator's edits and reports them instead of overwriting", () => {
     writeBundledPack('slack', '# v1')
     installPack(repo, 'slack', bundle)
-    writeIn(repo, 'skills/slack-search/SKILL.md', '# tuned for us')
+    writeIn(repo, '.buildex/skills/slack-search/SKILL.md', '# tuned for us')
 
     writeBundledPack('slack', '# v2')
     const result = refreshInstalledPacks(repo, bundle)
 
     expect(result.updatedPackIds).toEqual([])
-    expect(result.keptOperatorEdits).toEqual(['skills/slack-search/SKILL.md'])
-    expect(readRepo('skills/slack-search/SKILL.md')).toBe('# tuned for us')
+    expect(result.keptOperatorEdits).toEqual(['.buildex/skills/slack-search/SKILL.md'])
+    expect(readRepo('.buildex/skills/slack-search/SKILL.md')).toBe('# tuned for us')
   })
 
   it('never installs a pack the company did not ask for', () => {
@@ -136,7 +136,7 @@ describe('refreshInstalledPacks', () => {
     const result = refreshInstalledPacks(repo, bundle)
 
     expect(result.updatedPackIds).toEqual([])
-    expect(readRepo('skills/slack-search/SKILL.md')).toBe('# v1')
+    expect(readRepo('.buildex/skills/slack-search/SKILL.md')).toBe('# v1')
   })
 
   it('is idempotent — a second refresh writes nothing', () => {

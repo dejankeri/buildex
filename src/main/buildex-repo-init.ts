@@ -1,7 +1,11 @@
 import { resolve } from 'node:path'
 import { app } from 'electron'
 import { buildexCatalogRootFrom } from './buildex-packs/bundled-catalog'
+import { scaffoldCompanyBrain } from './buildex-brain/brain-scaffold'
+import { readPackCatalog } from './buildex-packs/pack-catalog'
+import { syncPackMcpConfig } from './buildex-packs/pack-mcp-config'
 import { refreshInstalledPacks } from './buildex-packs/pack-refresh'
+import { ensureBuildExGitExclude } from './buildex-packs/repo-git-exclude'
 import { syncGateSettings } from './buildex-gate/gate-settings'
 
 // What BuildEx does the first time a run touches a company repo: bring installed
@@ -34,10 +38,29 @@ export function initializeCompanyRepo(repoPath: string): void {
     return
   }
   initialized.add(repoPath)
+  // First, so nothing BuildEx writes below can reach the operator's git index.
+  try {
+    ensureBuildExGitExclude(repoPath)
+  } catch {
+    // A folder with no .git simply has no git to keep clean.
+  }
+  // Why: a brand-new project opens on an empty Brain, which teaches the operator
+  // nothing about what to put there. Seeding the sections gives them somewhere to
+  // start; it only ever adds, so it is safe to run on every open.
+  try {
+    scaffoldCompanyBrain(repoPath)
+  } catch {
+    // A repo we cannot write to still deserves a readable Brain.
+  }
   try {
     refreshInstalledPacks(repoPath, bundledCatalogRoot())
   } catch {
     // A repo we cannot write to still deserves a readable Store and Brain.
+  }
+  try {
+    syncPackMcpConfig(repoPath, readPackCatalog(repoPath, bundledCatalogRoot()).packs)
+  } catch {
+    // Same: never let connector bookkeeping take a surface down.
   }
   try {
     syncGateSettings(repoPath)

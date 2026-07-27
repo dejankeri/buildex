@@ -87,19 +87,32 @@ import type {
 } from '../shared/shell-open-types'
 import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
 // BuildEx: see BUILDEX-PATCHES.md
+import type { BrainScan, BrainScanRequest } from '../shared/buildex-brain-types'
 import type {
-  BrainScan,
-  BrainScanRequest,
-  ContextSyncRequest,
-  ContextSyncResponse
+  BrainCreateDocumentRequest,
+  BrainCreateDocumentResult,
+  BrainHistoryRequest,
+  BrainHistoryResult,
+  BrainSaveRequest,
+  BrainSaveResult,
+  BrainSectionsResult,
+  BrainSkillCreateRequest,
+  BrainSkillCreateResult,
+  BrainSkillsRequest,
+  BrainSkillsResult
 } from '../shared/buildex-brain-types'
 import type { GateSettingsRequest, GateSettingsResult } from '../shared/buildex-gate-types'
 import type {
   PackCatalog,
   PackCatalogRequest,
   PackInstallRequest,
+  PackCredentialClearRequest,
+  PackCredentialResult,
+  PackCredentialSaveRequest,
   PackInstallResult,
-  PackRefreshResult
+  PackRefreshResult,
+  PackUninstallRequest,
+  PackUninstallResult
 } from '../shared/buildex-packs-types'
 import type { SkillFreshnessInventory } from '../shared/skill-freshness'
 import type {
@@ -2279,9 +2292,21 @@ const api = {
   // BuildEx: see BUILDEX-PATCHES.md
   buildexBrain: {
     scan: (request: BrainScanRequest): Promise<BrainScan> =>
-      ipcRenderer.invoke('buildex-brain:scan', request),
-    syncContext: (request: ContextSyncRequest): Promise<ContextSyncResponse> =>
-      ipcRenderer.invoke('buildex-brain:syncContext', request)
+      ipcRenderer.invoke('buildex-brain:scan', request)
+  },
+
+  buildexBrainSections: {
+    list: (): Promise<BrainSectionsResult> => ipcRenderer.invoke('buildex-brain:sections'),
+    createDocument: (request: BrainCreateDocumentRequest): Promise<BrainCreateDocumentResult> =>
+      ipcRenderer.invoke('buildex-brain:createDocument', request),
+    history: (request: BrainHistoryRequest): Promise<BrainHistoryResult> =>
+      ipcRenderer.invoke('buildex-brain:history', request),
+    save: (request: BrainSaveRequest): Promise<BrainSaveResult> =>
+      ipcRenderer.invoke('buildex-brain:save', request),
+    skills: (request: BrainSkillsRequest): Promise<BrainSkillsResult> =>
+      ipcRenderer.invoke('buildex-brain:skills', request),
+    createSkill: (request: BrainSkillCreateRequest): Promise<BrainSkillCreateResult> =>
+      ipcRenderer.invoke('buildex-brain:createSkill', request)
   },
 
   buildexPacks: {
@@ -2289,8 +2314,14 @@ const api = {
       ipcRenderer.invoke('buildex-packs:catalog', request),
     install: (request: PackInstallRequest): Promise<PackInstallResult> =>
       ipcRenderer.invoke('buildex-packs:install', request),
+    uninstall: (request: PackUninstallRequest): Promise<PackUninstallResult> =>
+      ipcRenderer.invoke('buildex-packs:uninstall', request),
     refresh: (request: PackCatalogRequest): Promise<PackRefreshResult> =>
-      ipcRenderer.invoke('buildex-packs:refresh', request)
+      ipcRenderer.invoke('buildex-packs:refresh', request),
+    saveCredential: (request: PackCredentialSaveRequest): Promise<PackCredentialResult> =>
+      ipcRenderer.invoke('buildex-packs:saveCredential', request),
+    clearCredential: (request: PackCredentialClearRequest): Promise<PackCredentialResult> =>
+      ipcRenderer.invoke('buildex-packs:clearCredential', request)
   },
 
   buildexGate: {

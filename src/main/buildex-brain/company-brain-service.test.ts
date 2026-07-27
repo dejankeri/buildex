@@ -6,8 +6,10 @@ import { scanCompanyBrain } from './company-brain-service'
 
 let repo = ''
 
+// The brain is `.buildex/`, so fixtures are written there and referred to by the
+// id the scanner reports — relative to that folder, not the repo.
 function write(relativePath: string, contents: string): void {
-  const absolute = path.join(repo, relativePath)
+  const absolute = path.join(repo, '.buildex', relativePath)
   mkdirSync(path.dirname(absolute), { recursive: true })
   writeFileSync(absolute, contents, 'utf8')
 }

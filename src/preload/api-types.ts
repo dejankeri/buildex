@@ -345,19 +345,32 @@ import type {
 } from '../shared/shell-open-types'
 import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
 // BuildEx: see BUILDEX-PATCHES.md
+import type { BrainScan, BrainScanRequest } from '../shared/buildex-brain-types'
 import type {
-  BrainScan,
-  BrainScanRequest,
-  ContextSyncRequest,
-  ContextSyncResponse
+  BrainCreateDocumentRequest,
+  BrainCreateDocumentResult,
+  BrainHistoryRequest,
+  BrainHistoryResult,
+  BrainSaveRequest,
+  BrainSaveResult,
+  BrainSectionsResult,
+  BrainSkillCreateRequest,
+  BrainSkillCreateResult,
+  BrainSkillsRequest,
+  BrainSkillsResult
 } from '../shared/buildex-brain-types'
 import type { GateSettingsRequest, GateSettingsResult } from '../shared/buildex-gate-types'
 import type {
   PackCatalog,
   PackCatalogRequest,
   PackInstallRequest,
+  PackCredentialClearRequest,
+  PackCredentialResult,
+  PackCredentialSaveRequest,
   PackInstallResult,
-  PackRefreshResult
+  PackRefreshResult,
+  PackUninstallRequest,
+  PackUninstallResult
 } from '../shared/buildex-packs-types'
 import type { SkillFreshnessInventory } from '../shared/skill-freshness'
 import type {
@@ -2340,12 +2353,22 @@ export type PreloadApi = {
   // BuildEx: see BUILDEX-PATCHES.md
   buildexBrain: {
     scan: (request: BrainScanRequest) => Promise<BrainScan>
-    syncContext: (request: ContextSyncRequest) => Promise<ContextSyncResponse>
+  }
+  buildexBrainSections: {
+    list: () => Promise<BrainSectionsResult>
+    createDocument: (request: BrainCreateDocumentRequest) => Promise<BrainCreateDocumentResult>
+    history: (request: BrainHistoryRequest) => Promise<BrainHistoryResult>
+    save: (request: BrainSaveRequest) => Promise<BrainSaveResult>
+    skills: (request: BrainSkillsRequest) => Promise<BrainSkillsResult>
+    createSkill: (request: BrainSkillCreateRequest) => Promise<BrainSkillCreateResult>
   }
   buildexPacks: {
     catalog: (request: PackCatalogRequest) => Promise<PackCatalog>
     install: (request: PackInstallRequest) => Promise<PackInstallResult>
+    uninstall: (request: PackUninstallRequest) => Promise<PackUninstallResult>
     refresh: (request: PackCatalogRequest) => Promise<PackRefreshResult>
+    saveCredential: (request: PackCredentialSaveRequest) => Promise<PackCredentialResult>
+    clearCredential: (request: PackCredentialClearRequest) => Promise<PackCredentialResult>
   }
   buildexGate: {
     sync: (request: GateSettingsRequest) => Promise<GateSettingsResult>

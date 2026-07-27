@@ -1,4 +1,9 @@
-import type { BuildExPack, PackAppFace, PackMcpFace } from '../../shared/buildex-packs-types'
+import type {
+  BuildExPack,
+  PackApiKeyFace,
+  PackAppFace,
+  PackMcpFace
+} from '../../shared/buildex-packs-types'
 
 // Parsing and validation for a pack.json. Manifests are authored by hand and
 // arrive from a company repo, so every field is treated as untrusted: a
@@ -44,6 +49,39 @@ function parseMcpFace(value: unknown): PackMcpFace | undefined {
   }
   if (raw.direct === true) {
     face.direct = true
+  }
+  return face
+}
+
+function parseApiKeyFace(value: unknown): PackApiKeyFace | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+  const raw = value as Record<string, unknown>
+  const transport =
+    raw.transport === 'mcp-bearer' || raw.transport === 'rest' ? raw.transport : null
+  if (!transport) {
+    return undefined
+  }
+  const face: PackApiKeyFace = { transport }
+  const apiBase = asString(raw.apiBase)
+  // Why: an api base is a URL the skills will call. Same reasoning as the app
+  // face — restrict the scheme so a manifest cannot point it somewhere local.
+  if (apiBase && /^https?:\/\//i.test(apiBase)) {
+    face.apiBase = apiBase
+  }
+  const docsUrl = asString(raw.docsUrl)
+  if (docsUrl && /^https?:\/\//i.test(docsUrl)) {
+    face.docsUrl = docsUrl
+  }
+  const hint = asString(raw.hint)
+  if (hint) {
+    face.hint = hint
+  }
+  const envKey = asString(raw.envKey)
+  // Why: this becomes an environment variable name in a spawned shell.
+  if (envKey && /^[A-Z][A-Z0-9_]*$/.test(envKey)) {
+    face.envKey = envKey
   }
   return face
 }
@@ -98,6 +136,7 @@ export function parsePackManifest(json: string, manifestPath: string): ParsedPac
     summary: asString(record.summary) ?? '',
     app: parseAppFace(record.app),
     mcp: parseMcpFace(record.mcp),
+    apiKey: parseApiKeyFace(record.apiKey),
     skills: parseSkills(record.skills),
     manifestPath
   }

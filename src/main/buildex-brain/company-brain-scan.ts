@@ -4,6 +4,14 @@ import path from 'node:path'
 // Filesystem walk for the company brain. Sorted at every level so two scans of
 // an unchanged tree produce identical output — the determinism the trust
 // surfaces depend on.
+//
+// The brain is `.buildex/`, not the whole repo. That folder is where the company
+// keeps what it knows — decisions, rules, the skills it wrote — kept deliberately
+// apart from the codebase so a project's own README and design docs do not drown
+// the company's own thinking. One folder, versioned with the repo like anything
+// else the team owns.
+
+export const BRAIN_ROOT = '.buildex'
 
 const IGNORED_DIRECTORIES = new Set([
   '.git',
@@ -15,13 +23,23 @@ const IGNORED_DIRECTORIES = new Set([
   'out'
 ])
 
-// Why: skill manifests are the agent's verbs, not company knowledge. A repo with
-// a dozen packs installed has a dozen identical `SKILL.md` nodes, which drowns
-// the actual brain. They belong in a Skills surface, not the map.
-const SKILL_MANIFEST_RE = /(^|\/)skills\/.*\/SKILL\.md$/i
+// Why: skills are the agent's verbs, not company knowledge — and a pack ships
+// reference documents beside its SKILL.md, so excluding only the manifest let a
+// dozen installed packs drown the map anyway. The whole tree is out.
+const SKILLS_TREE_RE = /^skills\//i
+
+// Left in the brain folder by an older BuildEx, which generated the agent's
+// company context here before it moved to `.claude/`. Skipped so a repo that
+// still carries one does not map BuildEx's own output as company knowledge in
+// the window before the sync removes it.
+const GENERATED_BRAIN_FILES = new Set(['company-context.md'])
 
 export function isSkillManifest(relativeId: string): boolean {
-  return SKILL_MANIFEST_RE.test(relativeId)
+  return SKILLS_TREE_RE.test(relativeId)
+}
+
+export function isGeneratedBrainFile(relativeId: string): boolean {
+  return GENERATED_BRAIN_FILES.has(relativeId.toLowerCase())
 }
 
 function toPosix(value: string): string {
@@ -31,6 +49,7 @@ function toPosix(value: string): string {
 /** Repo-relative POSIX paths of every brain document, sorted. */
 export function listBrainDocumentPaths(repoPath: string): string[] {
   const found: string[] = []
+  const brainRoot = path.join(repoPath, BRAIN_ROOT)
 
   const walk = (absoluteDir: string): void => {
     let entries: string[]
@@ -42,6 +61,9 @@ export function listBrainDocumentPaths(repoPath: string): string[] {
       return
     }
     for (const entry of entries) {
+      // Why: dot-entries are skipped inside the brain too — `.buildex` itself is
+      // the root we start from, so nothing below it needs to be a dot-name, and
+      // a stray one is machine state rather than company knowledge.
       if (entry.startsWith('.') || IGNORED_DIRECTORIES.has(entry)) {
         continue
       }
@@ -59,20 +81,23 @@ export function listBrainDocumentPaths(repoPath: string): string[] {
       if (!entry.toLowerCase().endsWith('.md')) {
         continue
       }
-      const id = toPosix(path.relative(repoPath, absolute))
-      if (!isSkillManifest(id)) {
+      // Why: ids stay relative to the brain root, not the repo, so a document
+      // reads as `decisions/pricing.md` rather than `.buildex/decisions/…`. The
+      // folder is plumbing; the operator should not have to see it.
+      const id = toPosix(path.relative(brainRoot, absolute))
+      if (!isSkillManifest(id) && !isGeneratedBrainFile(id)) {
         found.push(id)
       }
     }
   }
 
-  walk(repoPath)
+  walk(brainRoot)
   return found.sort()
 }
 
 export function readDocumentText(repoPath: string, documentId: string): string {
   try {
-    return readFileSync(path.join(repoPath, documentId), 'utf8')
+    return readFileSync(path.join(repoPath, BRAIN_ROOT, documentId), 'utf8')
   } catch {
     return ''
   }

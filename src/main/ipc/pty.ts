@@ -92,6 +92,9 @@ import {
   applyTerminalAttributionEnv,
   resolveAttributionShellFamily
 } from '../attribution/terminal-attribution'
+import { readPackCatalog } from '../buildex-packs/pack-catalog'
+import { collectPackEnv } from '../buildex-packs/pack-env'
+import { bundledCatalogRoot } from '../buildex-repo-init'
 import { ensureLinuxTerminalOrcaCliShimDir } from '../cli/linux-terminal-orca-cli-shim'
 import { registerPty, unregisterPty } from '../memory/pty-registry'
 import { advertisedUrlWatcher } from '../ports/advertised-url-watcher'
@@ -658,6 +661,28 @@ function finishPtyShutdown(
   return incarnationId
 }
 
+// BuildEx: see BUILDEX-PATCHES.md
+function applyBuildExPackEnv(
+  baseEnv: Record<string, string>,
+  opts: Pick<BuildPtyHostEnvOptions, 'buildexRepoPath' | 'userDataPath'>
+): void {
+  if (!opts.buildexRepoPath) {
+    return
+  }
+  try {
+    const catalog = readPackCatalog(opts.buildexRepoPath, bundledCatalogRoot())
+    for (const [key, value] of Object.entries(
+      collectPackEnv({ userDataPath: opts.userDataPath }, catalog.packs)
+    )) {
+      // Why: never override a variable the operator already exported — their
+      // shell environment outranks a stored key.
+      baseEnv[key] ??= value
+    }
+  } catch {
+    // A terminal must open even when the catalog cannot be read.
+  }
+}
+
 // ─── Host PTY env assembly ──────────────────────────────────────────
 // Why: centralize host-local env injections so both spawn paths (local + daemon) get them; implemented twice they drifted, silently breaking daemon PTYs.
 
@@ -685,6 +710,9 @@ export type BuildPtyHostEnvOptions = {
   networkProxySettings?: NetworkProxySettings
   /** Keep indexed Git config off the sparse daemon wire; the daemon appends guard entries after merging its inherited env. */
   deferGitConfigGuardToDaemon?: boolean
+  /** BuildEx: the company repo this PTY runs in, so installed packs' API keys
+   *  reach the agent's environment. Undefined for shells outside a worktree. */
+  buildexRepoPath?: string
 }
 
 function readInheritedPath(baseEnv: Record<string, string>): string {
@@ -1178,6 +1206,10 @@ export function buildPtyHostEnv(
       isWsl: opts.isWsl
     })
   })
+
+  // BuildEx: installed packs' keys, read from encrypted storage and handed to the
+  // agent here. This is the only point at which they are in the clear.
+  applyBuildExPackEnv(baseEnv, opts)
 
   return baseEnv
 }
@@ -1685,6 +1717,7 @@ export function registerPtyHandlers(
         const env = buildPtyHostEnv(id, baseEnv, {
           isPackaged: app.isPackaged,
           userDataPath: app.getPath('userData'),
+          ...(ctx?.cwd ? { buildexRepoPath: ctx.cwd } : {}),
           selectedCodexHomePath,
           skipCodexHomeEnv,
           stripInheritedOrcaCodexHome: shouldStripInheritedOrcaCodexHome({

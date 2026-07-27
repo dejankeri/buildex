@@ -13889,33 +13889,91 @@
         "install": "Install",
         "keptEdits": "Kept your edited files, so {{value0}} was not fully replaced: {{value1}}",
         "gateHint": "The agent works on its own, except for these — they wait for you.",
-        "gate": "{{value0}} actions ask first"
+        "gate": "{{value0}} actions ask first",
+        "noRepo": "Open a project to install packs — they are written into its repo.",
+        "keptOnUninstall": "Removed {{value0}}, but kept files you had edited: {{value1}}",
+        "uninstall": "Uninstall",
+        "uninstallHint": "Removes the files BuildEx installed. Anything you edited stays."
+      },
+      "connect": {
+        "connected": "Connected",
+        "disconnect": "Disconnect",
+        "connect": "Connect",
+        "placeholder": "Paste the key",
+        "save": "Save",
+        "later": "Later",
+        "where": "Where do I find this?",
+        "mcpManual": "Sign in with /mcp in a Claude session.",
+        "mcpHint": "Opens a session and runs /mcp, where the provider signs you in.",
+        "signIn": "Sign in"
       }
     },
     "brain": {
-      "panel": {
-        "title": "Company Brain",
-        "emptyTitle": "No company repo connected",
-        "emptyHint": "Open a company repo to see its map, history, and decisions.",
-        "rescan": "Rescan company brain",
-        "noDocsTitle": "No documents yet",
-        "noDocsHint": "The company brain is built from markdown files in this repo.",
-        "unsaved": "unsaved",
-        "filter": "Filter documents",
-        "syncUpdated": "Company context updated",
-        "syncCurrent": "Company context already current",
-        "syncFailed": "Context sync failed",
-        "syncContextHint": "Write the company context the agent reads at session start",
-        "syncContext": "Feed context to agent"
+      "history": {
+        "unavailable": "This project has no git history yet, so there is nothing to show and nothing to save into.",
+        "none": "No saves yet.",
+        "clean": "Everything is saved.",
+        "pending": "{{value0}} changed since the last save: {{value1}}",
+        "namePlaceholder": "What changed? e.g. \"Q3 pricing and the Northwind call\"",
+        "save": "Save",
+        "scope": "Saves the .buildex folder only. Nothing else in this project is touched."
       },
-      "activityBar": {
-        "title": "Company Brain"
+      "page": {
+        "sections": "Sections",
+        "history": "History",
+        "title": "Company Brain",
+        "noProject": "No project open",
+        "noProjectHint": "Open a project and its company brain lives in .buildex, versioned with the repo.",
+        "documents": "documents",
+        "sectionsFilled": "sections filled",
+        "unsaved": "unsaved",
+        "lastSave": "Last save · {{value0}}",
+        "rescan": "Rescan",
+        "skills": "Skills"
+      },
+      "sections": {
+        "empty": "Nothing here yet",
+        "nameIt": "Name it, then Enter",
+        "add": "Add"
+      },
+      "skills": {
+        "intro": "Skills live in .buildex/skills and travel with the repo — push, and your team has them.",
+        "new": "New skill",
+        "namePlaceholder": "What should the agent be able to do? e.g. \"onboard a new client\"",
+        "company": "Written here",
+        "companyHint": "Yours. Edit freely — nothing overwrites these.",
+        "packs": "From installed apps",
+        "packsHint": "Updated when the app updates — unless you have edited them, which is kept.",
+        "empty": "No skills yet. Write one, or install an app from the Store."
+      },
+      "document": {
+        "back": "Back",
+        "save": "Save",
+        "placeholder": "Write it the way you would explain it to someone joining tomorrow.",
+        "unsaved": "Unsaved",
+        "saved": "Saved",
+        "hint": "⌘S to save"
+      },
+      "editor": {
+        "placeholder": "Write it the way you would explain it to someone joining tomorrow.",
+        "label": "Document"
       }
     },
     "sidebar": {
       "nav": {
         "apps": "Apps",
-        "store": "Store"
+        "store": "Store",
+        "brain": "Brain"
+      }
+    },
+    "composer": {
+      "apps": {
+        "label": "Apps"
+      }
+    },
+    "quickLaunch": {
+      "apps": {
+        "hint": "Start a chat set up to work in {{value0}}"
       }
     }
   }

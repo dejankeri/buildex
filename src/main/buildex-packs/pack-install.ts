@@ -3,6 +3,9 @@ import { readPackCatalog } from './pack-catalog'
 import { planSkillFiles, writePlannedFile } from './pack-files'
 import { readPackState, recordedHash, writePackState } from './pack-state'
 import type { PackState } from './pack-state'
+import { syncPackMcpConfig } from './pack-mcp-config'
+import { ensureBuildExGitExclude } from './repo-git-exclude'
+import { linkSkillIntoAgentDir } from './skill-link'
 
 // Installing a pack copies its real skill files out of the catalog into the
 // company repo. They are ordinary files from that point on: `git status` after
@@ -43,7 +46,45 @@ export function applyPack(repoPath: string, pack: BuildExPack, state: PackState)
   }
 
   state.packs[pack.id] = { files }
+
+  // Why: files under .buildex/skills are invisible to the agent — it only
+  // discovers skills under .claude/skills. Without this link an install looks
+  // like it worked and the pack does nothing.
+  for (const skill of pack.skills) {
+    if (linkSkillIntoAgentDir(repoPath, skill) === 'needs-copy') {
+      copyLinkFallback(repoPath, pack, skill, files, writtenPaths)
+    }
+  }
+
   return { writtenPaths: writtenPaths.sort(), keptOperatorEdits: keptOperatorEdits.sort() }
+}
+
+/**
+ * Where a symlink is unavailable (Windows without developer mode) or something
+ * already occupies the path, place real files instead. Costs a duplicate; never
+ * costs the operator a working skill.
+ */
+function copyLinkFallback(
+  repoPath: string,
+  pack: BuildExPack,
+  skill: string,
+  files: Record<string, string>,
+  writtenPaths: string[]
+): void {
+  for (const file of planSkillFiles(pack.sourceDir, [skill])) {
+    const mirrored = {
+      ...file,
+      relativePath: file.relativePath.replace('.buildex/skills/', '.claude/skills/')
+    }
+    const decision = writePlannedFile(repoPath, mirrored, files[mirrored.relativePath] ?? null)
+    if (decision.outcome === 'kept-operator-edit') {
+      continue
+    }
+    files[mirrored.relativePath] = decision.hash
+    if (decision.outcome === 'written') {
+      writtenPaths.push(mirrored.relativePath)
+    }
+  }
 }
 
 /**
@@ -69,6 +110,10 @@ export function installPack(
     }
   }
 
+  // Machine state, not company work: make sure this clone ignores it before
+  // anything lands, so it never shows up in the operator's `git status`.
+  ensureBuildExGitExclude(repoPath)
+
   const state = readPackState(repoPath)
   let applied: ApplyPackResult
   try {
@@ -80,6 +125,15 @@ export function installPack(
       keptOperatorEdits: [],
       error: error instanceof Error ? error.message : String(error)
     }
+  }
+
+  // Why: connect the pack's MCP server in the same step that installs its
+  // skills — a pack whose skills exist but whose server is absent is a pack that
+  // reads as installed and cannot do its job.
+  try {
+    syncPackMcpConfig(repoPath, readPackCatalog(repoPath, bundledRoot).packs)
+  } catch {
+    // The skills are the install; a missing server is recoverable and visible.
   }
 
   try {

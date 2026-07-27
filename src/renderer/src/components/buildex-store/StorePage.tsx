@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react'
-import { Check, Loader2, ShieldCheck, Store } from 'lucide-react'
+import { Check, Loader2, ShieldCheck, Store, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
+import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 import type { BuildExPack } from '../../../../shared/buildex-packs-types'
+import PackConnectRow from './PackConnectRow'
 import { usePackCatalog } from './use-pack-catalog'
 
 // The app store: capability packs a company installs into its own repo.
@@ -13,6 +14,7 @@ import { usePackCatalog } from './use-pack-catalog'
 export default function StorePage(): React.JSX.Element {
   useTranslation()
   const { catalog, repoPath, loading, refresh } = usePackCatalog()
+  const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
   const [installingId, setInstallingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -35,6 +37,34 @@ export default function StorePage(): React.JSX.Element {
       cancelled = true
     }
   }, [repoPath])
+
+  const uninstall = async (pack: BuildExPack): Promise<void> => {
+    if (!repoPath) {
+      return
+    }
+    setInstallingId(pack.id)
+    setError(null)
+    setNotice(null)
+    try {
+      const result = await window.api.buildexPacks.uninstall({ repoPath, packId: pack.id })
+      if (!result.ok) {
+        setError(result.error ?? 'Uninstall failed')
+      } else if (result.keptOperatorEdits.length > 0) {
+        // Why: files the operator changed are theirs. Removing the pack must not
+        // quietly take their edits with it, and they should know what stayed.
+        setNotice(
+          translate(
+            'buildex.store.page.keptOnUninstall',
+            'Removed {{value0}}, but kept files you had edited: {{value1}}',
+            { value0: pack.name, value1: result.keptOperatorEdits.join(', ') }
+          )
+        )
+      }
+      await refresh()
+    } finally {
+      setInstallingId(null)
+    }
+  }
 
   const install = async (pack: BuildExPack): Promise<void> => {
     if (!repoPath) {
@@ -100,6 +130,15 @@ export default function StorePage(): React.JSX.Element {
         </div>
       ) : null}
 
+      {!repoPath ? (
+        <div className="shrink-0 border-b border-border px-4 py-2 text-[12px] text-muted-foreground">
+          {translate(
+            'buildex.store.page.noRepo',
+            'Open a project to install packs — they are written into its repo.'
+          )}
+        </div>
+      ) : null}
+
       {catalog.packs.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
           <Store size={22} className="text-muted-foreground/40" />
@@ -109,7 +148,7 @@ export default function StorePage(): React.JSX.Element {
           <p className="max-w-sm text-[12px] text-muted-foreground/70">
             {translate(
               'buildex.store.page.emptyHint',
-              'Skill packs you install are written into your company repo.'
+              'The catalog that ships with BuildEx could not be read. Reinstall the app, or add a catalog to your company repo.'
             )}
           </p>
         </div>
@@ -133,33 +172,51 @@ export default function StorePage(): React.JSX.Element {
                 <p className="line-clamp-3 min-h-[2.5rem] text-[12px] text-muted-foreground">
                   {pack.summary}
                 </p>
-                <button
-                  type="button"
-                  aria-label={`${
-                    pack.installed
-                      ? translate('buildex.store.page.installed', 'Installed')
-                      : translate('buildex.store.page.install', 'Install')
-                  } ${pack.name}`}
-                  disabled={pack.installed || installingId === pack.id || !repoPath}
-                  onClick={() => void install(pack)}
-                  className={cn(
-                    'inline-flex h-7 items-center justify-center gap-1 rounded-md px-2 text-[12px] font-medium transition-colors',
-                    pack.installed
-                      ? 'text-muted-foreground'
-                      : 'bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50'
-                  )}
-                >
-                  {pack.installed ? (
-                    <>
+                {pack.installed ? (
+                  <div className="flex items-center gap-1">
+                    <span className="inline-flex h-7 flex-1 items-center justify-center gap-1 text-[12px] font-medium text-muted-foreground">
                       <Check size={12} />
                       {translate('buildex.store.page.installed', 'Installed')}
-                    </>
-                  ) : installingId === pack.id ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    translate('buildex.store.page.install', 'Install')
-                  )}
-                </button>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`${translate('buildex.store.page.uninstall', 'Uninstall')} ${pack.name}`}
+                      disabled={installingId === pack.id || !repoPath}
+                      onClick={() => void uninstall(pack)}
+                      title={translate(
+                        'buildex.store.page.uninstallHint',
+                        'Removes the files BuildEx installed. Anything you edited stays.'
+                      )}
+                      className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-destructive disabled:opacity-50"
+                    >
+                      {installingId === pack.id ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={12} />
+                      )}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    aria-label={`${translate('buildex.store.page.install', 'Install')} ${pack.name}`}
+                    disabled={installingId === pack.id || !repoPath}
+                    onClick={() => void install(pack)}
+                    className="inline-flex h-7 items-center justify-center gap-1 rounded-md bg-primary px-2 text-[12px] font-medium text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-50"
+                  >
+                    {installingId === pack.id ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      translate('buildex.store.page.install', 'Install')
+                    )}
+                  </button>
+                )}
+
+                {/* Why: connecting only matters once the skills are there, so it
+                    appears after install rather than competing with it. */}
+                {pack.installed ? (
+                  <PackConnectRow pack={pack} worktreeId={activeWorktreeId} onChanged={refresh} />
+                ) : null}
               </div>
             ))}
           </div>

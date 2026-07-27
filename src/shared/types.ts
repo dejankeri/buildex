@@ -3230,7 +3230,7 @@ export type TopLevelView =
   | 'skills'
   | 'mobile'
   // BuildEx: company-facing sections. Additive — see BUILDEX-PATCHES.md.
-  | 'apps'
+  | 'brain'
   | 'store'
 
 export type PersistedUIState = {

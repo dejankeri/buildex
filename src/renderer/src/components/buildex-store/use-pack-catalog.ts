@@ -19,14 +19,13 @@ export function usePackCatalog(): PackCatalogState {
   const [catalog, setCatalog] = useState<PackCatalog>(EMPTY_PACK_CATALOG)
   const [loading, setLoading] = useState(false)
 
+  // Why: the request is made even with no project open. The main process answers
+  // with the catalog BuildEx ships, so the Store has a shelf to show on first
+  // launch; every pack simply reads back as not-installed.
   const refresh = useCallback(async (): Promise<void> => {
-    if (!repoPath) {
-      setCatalog(EMPTY_PACK_CATALOG)
-      return
-    }
     setLoading(true)
     try {
-      setCatalog(await window.api.buildexPacks.catalog({ repoPath }))
+      setCatalog(await window.api.buildexPacks.catalog({ repoPath: repoPath ?? '' }))
     } finally {
       setLoading(false)
     }
@@ -37,13 +36,9 @@ export function usePackCatalog(): PackCatalogState {
     // Why: switching worktrees mid-fetch must not let a stale catalog land on
     // top of the newer repo's packs.
     void (async () => {
-      if (!repoPath) {
-        setCatalog(EMPTY_PACK_CATALOG)
-        return
-      }
       setLoading(true)
       try {
-        const next = await window.api.buildexPacks.catalog({ repoPath })
+        const next = await window.api.buildexPacks.catalog({ repoPath: repoPath ?? '' })
         if (!cancelled) {
           setCatalog(next)
         }

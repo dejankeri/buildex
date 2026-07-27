@@ -42,6 +42,12 @@ function toPosix(value: string): string {
 }
 
 export function findCatalogRoots(repoPath: string): string[] {
+  // Why: with no repo, path.join('', 'catalog') is the RELATIVE path 'catalog',
+  // which resolves against the process working directory — the app's own source
+  // tree in a dev run. Reading a catalog from there would be nonsense.
+  if (!repoPath) {
+    return []
+  }
   return REPO_CATALOG_CANDIDATES.filter((candidate) => isDirectory(path.join(repoPath, candidate)))
 }
 
@@ -67,10 +73,14 @@ export function resolveCatalogSources(
 
 /** A pack counts as installed once every skill it declares exists in the repo. */
 export function isPackInstalled(repoPath: string, skills: string[]): boolean {
-  if (skills.length === 0) {
+  // Same relative-path hazard as findCatalogRoots: with no repo there is nothing
+  // for a pack to be installed into.
+  if (!repoPath || skills.length === 0) {
     return false
   }
-  return skills.every((skill) => existsSync(path.join(repoPath, 'skills', skill, 'SKILL.md')))
+  return skills.every((skill) =>
+    existsSync(path.join(repoPath, '.buildex', 'skills', skill, 'SKILL.md'))
+  )
 }
 
 function readPacksFrom(

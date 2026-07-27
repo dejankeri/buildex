@@ -44,7 +44,10 @@ export function planSkillFiles(packSourceDir: string, skills: string[]): Planned
     const sourceDir = path.join(packSourceDir, 'skills', skill)
     for (const relative of walkFiles(sourceDir)) {
       planned.push({
-        relativePath: `skills/${skill}/${toPosix(relative)}`,
+        // Why: .buildex/ is the one place BuildEx owns, so everything it writes
+        // can be excluded, inspected or deleted as a unit. The agent runtime
+        // reaches these files through a link in .claude/skills (see skill-link).
+        relativePath: `.buildex/skills/${skill}/${toPosix(relative)}`,
         absoluteSource: path.join(sourceDir, relative)
       })
     }

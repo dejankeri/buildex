@@ -24,10 +24,7 @@ export function normalizeRightSidebarRoute(
     tab === 'pr-checks' ||
     tab === 'source-control' ||
     tab === 'checks' ||
-    tab === 'ports' ||
-    // BuildEx: this allowlist is a runtime string check, so a missing entry
-    // silently routes back to Explorer instead of failing typecheck.
-    tab === 'brain'
+    tab === 'ports'
   ) {
     return {
       rightSidebarTab: tab,

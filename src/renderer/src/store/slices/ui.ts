@@ -611,7 +611,7 @@ export type UISlice = {
     | 'space'
     | 'skills'
     | 'mobile'
-    | 'apps'
+    | 'brain'
     | 'store'
   previousViewBeforeSettings:
     | 'terminal'
@@ -621,7 +621,7 @@ export type UISlice = {
     | 'space'
     | 'skills'
     | 'mobile'
-    | 'apps'
+    | 'brain'
     | 'store'
   previousViewBeforeActivity:
     | 'terminal'
@@ -631,7 +631,7 @@ export type UISlice = {
     | 'space'
     | 'skills'
     | 'mobile'
-    | 'apps'
+    | 'brain'
     | 'store'
   previousViewBeforeAutomations:
     | 'terminal'
@@ -641,7 +641,7 @@ export type UISlice = {
     | 'space'
     | 'skills'
     | 'mobile'
-    | 'apps'
+    | 'brain'
     | 'store'
   previousViewBeforeSpace:
     | 'terminal'
@@ -651,7 +651,7 @@ export type UISlice = {
     | 'automations'
     | 'skills'
     | 'mobile'
-    | 'apps'
+    | 'brain'
     | 'store'
   previousViewBeforeSkills:
     | 'terminal'
@@ -661,7 +661,7 @@ export type UISlice = {
     | 'automations'
     | 'space'
     | 'mobile'
-    | 'apps'
+    | 'brain'
     | 'store'
   previousViewBeforeMobile:
     | 'terminal'
@@ -671,13 +671,13 @@ export type UISlice = {
     | 'automations'
     | 'space'
     | 'skills'
-    | 'apps'
+    | 'brain'
     | 'store'
   // BuildEx: company surfaces. See BUILDEX-PATCHES.md.
-  previousViewBeforeApps: Exclude<TopLevelView, 'apps'>
+  previousViewBeforeBrain: Exclude<TopLevelView, 'brain'>
   previousViewBeforeStore: Exclude<TopLevelView, 'store'>
-  openAppsPage: () => void
-  closeAppsPage: () => void
+  openBrainPage: () => void
+  closeBrainPage: () => void
   openStorePage: () => void
   closeStorePage: () => void
   setActiveView: (view: UISlice['activeView']) => void
@@ -1246,7 +1246,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   previousViewBeforeSpace: 'terminal',
   previousViewBeforeSkills: 'terminal',
   previousViewBeforeMobile: 'terminal',
-  previousViewBeforeApps: 'terminal',
+  previousViewBeforeBrain: 'terminal',
   previousViewBeforeStore: 'terminal',
   setActiveView: (view) => set({ activeView: view }),
   taskPageData: {},
@@ -1504,15 +1504,15 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       activeView: state.previousViewBeforeMobile
     })),
   // BuildEx: company surfaces. See BUILDEX-PATCHES.md.
-  openAppsPage: () =>
+  openBrainPage: () =>
     set((state) => ({
-      activeView: 'apps',
-      previousViewBeforeApps:
-        state.activeView === 'apps' ? state.previousViewBeforeApps : state.activeView
+      activeView: 'brain',
+      previousViewBeforeBrain:
+        state.activeView === 'brain' ? state.previousViewBeforeBrain : state.activeView
     })),
-  closeAppsPage: () =>
+  closeBrainPage: () =>
     set((state) => ({
-      activeView: state.previousViewBeforeApps
+      activeView: state.previousViewBeforeBrain
     })),
   openStorePage: () =>
     set((state) => ({

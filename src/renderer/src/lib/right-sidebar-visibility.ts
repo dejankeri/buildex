@@ -10,7 +10,12 @@ const RIGHT_SIDEBAR_SUPPRESSED_VIEWS = new Set<ActiveView>([
   'automations',
   'space',
   'skills',
-  'mobile'
+  'mobile',
+  // BuildEx: full-screen surfaces, like Automations. Leaving the file explorer
+  // beside them let the operator click a file and watch nothing happen — the
+  // page stayed put and the editor opened behind it.
+  'store',
+  'brain'
 ])
 
 export function canShowRightSidebarForView(activeView: ActiveView): boolean {

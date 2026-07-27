@@ -1,5 +1,5 @@
 import React from 'react'
-import { LayoutGrid, Store } from 'lucide-react'
+import { Brain, Store } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
@@ -45,16 +45,17 @@ export function BuildExNavEntries(): React.JSX.Element {
   // own language subscription to re-render when the locale changes.
   useTranslation()
   const activeView = useAppStore((s) => s.activeView)
-  const openAppsPage = useAppStore((s) => s.openAppsPage)
+  const openBrainPage = useAppStore((s) => s.openBrainPage)
   const openStorePage = useAppStore((s) => s.openStorePage)
 
+  // The company's two surfaces: what it knows, and what it can do.
   return (
     <>
       <BuildExNavButton
-        active={activeView === 'apps'}
-        onClick={openAppsPage}
-        icon={LayoutGrid}
-        label={translate('buildex.sidebar.nav.apps', 'Apps')}
+        active={activeView === 'brain'}
+        onClick={openBrainPage}
+        icon={Brain}
+        label={translate('buildex.sidebar.nav.brain', 'Brain')}
       />
       <BuildExNavButton
         active={activeView === 'store'}

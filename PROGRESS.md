@@ -10,7 +10,7 @@ Tracking `upstream/main` = `github.com/stablyai/orca`.
 | 0 — toolchain, isolated clone, identity before first launch | ✅ |
 | 0.5 — seam spike + rebase drill (**GO/NO-GO**) | ✅ **GO** |
 | 1 — release feed, bundle IDs, branding, icons, star-nag off | ✅ |
-| 2 — Brain panel: deterministic map of the company repo | ✅ |
+| 2 — Brain: full-screen surface over `.buildex/`, edited in place | ✅ |
 | 3 — Store, capability packs, Apps | ✅ |
 | 4 — auto-feed company context to the agent | ✅ |
 | 5 — sync | ✅ *by decision — see below* |
@@ -28,14 +28,24 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
 
 ## What works
 
-- **Company Brain** (right panel) — every markdown document, the link graph from
-  `[[wikilinks]]` and relative links, folder grouping, orphan detection, unsaved
-  markers, live filter. Deterministic: same repo in, byte-identical output.
+- **Company Brain** (left rail, full screen) — nine sections over `.buildex/`
+  with coverage bars, the skills the company wrote and the ones its apps brought,
+  and history of every save. Documents are written **in the Brain** with the app's
+  own rich markdown editor; YAML front matter is held back from the editor and
+  put back byte for byte, so a skill's `name:` and `description:` survive editing.
+  Deterministic: same repo in, byte-identical output.
 - **Store** — reads capability packs from the repo's catalog, installs by writing
   skill scaffolds into the repo. Never overwrites an existing skill.
 - **Apps** — installed packs with an app face, opening externally.
-- **Agent context** — writes `.buildex/company-context.md` and an `@`-import into
-  `CLAUDE.md`, so the next agent session starts knowing the company.
+- **Agent context** — writes `.claude/company-context.md` and an `@`-import into
+  `.claude/CLAUDE.md`, so the next agent session starts knowing the company.
+  Refreshed automatically whenever the map can have changed: the Brain opening, a
+  document created, an app installed or removed. There is no button — a context
+  someone has to remember to refresh is a context that is usually wrong. Both
+  files sit in `.claude/`, git-excluded: this is derived machine state, so
+  committing it would churn the company's history for nothing. A tracked
+  `company-context.md` left by an older build is removed on sight, but only when
+  it carries our generated header.
 - **Store, on first run** — 11 capability packs (Slack, Stripe, Linear, Notion,
   HubSpot, Asana, Calendly, Canva, Intercom, HeyGen, Protocol) ship inside the
   app, so a repo with no catalog of its own still has a full shelf. A repo
@@ -56,7 +66,7 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
 | `pnpm typecheck` (3 projects) | exit 0 |
 | `pnpm lint` | only the pre-existing upstream Ghostty failure |
 | Full unit suite | 37 014 tests; only the recorded upstream baseline fails |
-| BuildEx unit tests | 57 passed (brain, packs, gate, rows) |
+| BuildEx unit tests | 114 passed (brain, packs, gate, store) |
 | `tests/e2e/buildex-surfaces.spec.ts` | 8/8 in real headless Electron |
 | Rebase drills vs live upstream | 3× clean, zero conflicts |
 
