@@ -132,6 +132,10 @@ export type BrainSaveResult = {
   ok: boolean
   /** Brain-relative paths committed, sorted. */
   savedPaths: string[]
+  /** True when the save also reached the brain's remote. External mode only. */
+  pushed?: boolean
+  /** Why the push did not happen, when the commit succeeded but the push did not. */
+  pushError?: string
   error?: string
 }
 
@@ -234,3 +238,24 @@ export type BrainRemovalResult = {
   committed: boolean
   error?: string
 }
+
+export type BrainMode = 'embedded' | 'external'
+
+/** Where a repo's brain is, resolved. The value that replaces `repoPath + '.buildex'`. */
+export type BrainLocation = {
+  /** Absolute path to the brain folder. */
+  root: string
+  /** Absolute path to the git repo versioning it; equals `root` in external mode. */
+  gitRoot: string
+  /** Pathspec scoping git commands to the brain: `.buildex` embedded, `.` external. */
+  pathspec: string
+  mode: BrainMode
+  /** The brain repo's remote, when it has one. External only. */
+  remote?: string
+}
+
+export type BrainResolution =
+  | { status: 'ready'; location: BrainLocation }
+  /** A pointer names a brain this machine has not cloned yet. */
+  | { status: 'needs-clone'; remote: string; suggestedPath: string }
+  | { status: 'broken'; reason: 'missing' | 'not-a-repo'; path: string }
