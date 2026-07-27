@@ -21,6 +21,7 @@ src/renderer/src/components/sidebar/BuildExNavEntries.tsx
 src/renderer/src/components/buildex-apps/AppsPage.tsx
 src/renderer/src/components/buildex-store/StorePage.tsx
 tests/e2e/buildex-surfaces.spec.ts
+config/scripts/verify-buildex-macos-release-env.mjs
 BUILDEX-PATCHES.md
 ```
 
@@ -64,6 +65,26 @@ BUILDEX-PATCHES.md
 | `src/main/attribution/terminal-attribution.ts` | PR/issue footers (written into *other people's* repos) |
 | `src/main/index.ts` | do not call `starNag.start()` |
 | `src/main/updater.test.ts`, `src/main/updater-prerelease-feed.test.ts` | URL fixtures |
+
+### Signing and release artifacts
+
+| File | Change |
+|---|---|
+| `package.json` | `version` follows BuildEx's own line (`0.1.6`), not Orca's. **Expect a conflict here on every rebase** — always keep ours |
+| `package.json` | `build:mac:release` calls `verify-buildex-macos-release-env.mjs`, not upstream's |
+| `config/electron-builder.config.cjs` | `dmg.artifactName` → `buildex-macos-${arch}.${ext}`; `mac.extendInfo` permission strings say BuildEx |
+
+Upstream's `config/scripts/verify-macos-release-env.mjs` is left untouched and
+unused. It demands Apple ID + app-specific password + a base64 `.p12` in
+`CSC_LINK`; this machine notarizes with an App Store Connect API key and signs
+from a Developer ID in the login keychain. Both are valid — the BuildEx-owned
+validator accepts either, so the upstream file never conflicts.
+
+`config/scripts/verify-release-required-assets.mjs` still lists `orca-macos-*`
+names, and `.github/workflows/homebrew-bump.yml` still greps for them. Neither
+runs here: the release workflows are guarded by
+`if: github.repository == 'stablyai/orca'`. Rename them if this fork ever cuts
+releases from CI.
 
 **Telemetry needs no patch.** It fails closed — `ORCA_BUILD_IDENTITY` and
 `ORCA_POSTHOG_WRITE_KEY` are injected by upstream CI and resolve to `null` in a
