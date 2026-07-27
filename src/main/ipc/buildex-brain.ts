@@ -29,7 +29,7 @@ import { buildAgentView } from '../buildex-brain/agent-view'
 import { planBrainRemoval, removeBrain } from '../buildex-brain/brain-remove'
 import { createBrainDocument } from '../buildex-brain/brain-document-create'
 import { requireBrainLocation } from '../buildex-brain/brain-location'
-import { readBrainHistory, saveBrain } from '../buildex-brain/brain-history'
+import { commitBrain, readBrainHistory } from '../buildex-brain/brain-history'
 import { createBrainSkill, listBrainSkills } from '../buildex-brain/brain-skills'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { bundledCatalogRoot, initializeCompanyRepo } from '../buildex-repo-init'
@@ -71,23 +71,25 @@ export function registerBuildExBrainHandlers(): void {
     'buildex-brain:history',
     async (_event, request?: BrainHistoryRequest): Promise<BrainHistoryResult> => {
       const repoPath = request?.repoPath?.trim()
-      if (!repoPath) {
+      const location = repoPath ? requireBrainLocation(repoPath) : null
+      if (!location) {
         return { saves: [], unavailable: true, unsavedPaths: [] }
       }
-      return readBrainHistory(repoPath, request?.limit)
+      return readBrainHistory(location, request?.limit)
     }
   )
 
   // Why: this is the one BuildEx action that writes company history. It is
-  // scoped to `.buildex/` end to end — see brain-history.ts.
+  // scoped to the brain's own pathspec end to end — see brain-history.ts.
   ipcMain.handle(
     'buildex-brain:save',
     async (_event, request?: BrainSaveRequest): Promise<BrainSaveResult> => {
       const repoPath = request?.repoPath?.trim()
-      if (!repoPath) {
+      const location = repoPath ? requireBrainLocation(repoPath) : null
+      if (!location) {
         return { ok: false, savedPaths: [], error: 'Missing repoPath' }
       }
-      return saveBrain(repoPath, request?.message ?? '')
+      return commitBrain(location, request?.message ?? '')
     }
   )
 

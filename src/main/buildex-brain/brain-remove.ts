@@ -32,7 +32,8 @@ export function backupStamp(now: number): string {
 }
 
 export async function planBrainRemoval(repoPath: string): Promise<BrainRemovalPlan> {
-  const history = await readBrainHistory(repoPath, 1)
+  // Embedded until removal learns the external case, matching removeBrain below.
+  const history = await readBrainHistory(embeddedLocation(repoPath), 1)
   const documentCount = countDocuments(path.join(repoPath, BRAIN_ROOT))
   return {
     documentCount,

@@ -2,33 +2,40 @@ import path from 'node:path'
 import { gitExecFileAsync } from '../git/runner'
 import type {
   BrainHistoryResult,
+  BrainLocation,
   BrainSave,
   BrainSaveResult
 } from '../../shared/buildex-brain-types'
-import { BRAIN_ROOT } from './company-brain-scan'
 
 // The brain's history, and the one action that adds to it.
 //
 // Git already is the version store — that is the point of keeping the brain as
-// files. So this reads `git log -- .buildex/` and renders it, rather than
-// keeping a parallel record that could disagree with the repo.
+// files. So this reads `git log -- <pathspec>` against the brain's own git root
+// and renders it, rather than keeping a parallel record that could disagree
+// with the repo.
 //
-// Saving commits ONLY `.buildex/`. An operator naming a snapshot of their
-// company's thinking should not sweep up whatever else is in the working tree;
-// in a mixed repo that would quietly commit code someone was still writing.
+// Saving commits ONLY the brain's pathspec. An operator naming a snapshot of
+// their company's thinking should not sweep up whatever else is in the working
+// tree; in an embedded, mixed repo that would quietly commit code someone was
+// still writing.
 
 // Why: separators that cannot appear in a commit subject, so the log parses
-// exactly instead of heuristically.  and  are the ASCII unit and
-// record separators, which is what they are for.
-const FIELD = ''
-const RECORD = ''
+// exactly instead of heuristically. The ASCII unit and record separators are
+// what they are for.
+const FIELD = '\x1f'
+const RECORD = '\x1e'
 
-function toBrainRelative(repoRelative: string): string {
-  const prefix = `${BRAIN_ROOT}/`
+// Embedded mode's pathspec is a prefix to strip; external's `.` already yields
+// brain-relative paths, and stripping there would eat the first path segment.
+function toBrainRelative(location: BrainLocation, repoRelative: string): string {
+  if (location.pathspec === '.') {
+    return repoRelative
+  }
+  const prefix = `${location.pathspec}/`
   return repoRelative.startsWith(prefix) ? repoRelative.slice(prefix.length) : repoRelative
 }
 
-export function parseBrainLog(stdout: string): BrainSave[] {
+export function parseBrainLog(location: BrainLocation, stdout: string): BrainSave[] {
   const saves: BrainSave[] = []
   for (const record of stdout.split(RECORD)) {
     const trimmed = record.trim()
@@ -51,7 +58,7 @@ export function parseBrainLog(stdout: string): BrainSave[] {
           pathLines
             .map((line) => line.trim())
             .filter(Boolean)
-            .map(toBrainRelative)
+            .map((line) => toBrainRelative(location, line))
         )
       ].sort()
     })
@@ -60,23 +67,26 @@ export function parseBrainLog(stdout: string): BrainSave[] {
 }
 
 /** Brain-relative paths with uncommitted changes. */
-export async function readUnsavedBrainPaths(repoPath: string): Promise<string[]> {
+export async function readUnsavedBrainPaths(location: BrainLocation): Promise<string[]> {
   try {
     const { stdout } = await gitExecFileAsync(
-      ['status', '--porcelain', '-z', '--untracked-files=all', '--', BRAIN_ROOT],
-      { cwd: repoPath }
+      ['status', '--porcelain', '-z', '--untracked-files=all', '--', location.pathspec],
+      { cwd: location.gitRoot }
     )
     return stdout
       .split('\0')
       .filter((entry) => entry.length > 3)
-      .map((entry) => toBrainRelative(entry.slice(3)))
+      .map((entry) => toBrainRelative(location, entry.slice(3)))
       .sort()
   } catch {
     return []
   }
 }
 
-export async function readBrainHistory(repoPath: string, limit = 50): Promise<BrainHistoryResult> {
+export async function readBrainHistory(
+  location: BrainLocation,
+  limit = 50
+): Promise<BrainHistoryResult> {
   try {
     const { stdout } = await gitExecFileAsync(
       [
@@ -85,14 +95,14 @@ export async function readBrainHistory(repoPath: string, limit = 50): Promise<Br
         `--format=${RECORD}%H${FIELD}%h${FIELD}%s${FIELD}%an${FIELD}%at`,
         '--name-only',
         '--',
-        BRAIN_ROOT
+        location.pathspec
       ],
-      { cwd: repoPath }
+      { cwd: location.gitRoot }
     )
     return {
-      saves: parseBrainLog(stdout),
+      saves: parseBrainLog(location, stdout),
       unavailable: false,
-      unsavedPaths: await readUnsavedBrainPaths(repoPath)
+      unsavedPaths: await readUnsavedBrainPaths(location)
     }
   } catch {
     // No git, or a repo with no commits yet. Saying so beats an empty list that
@@ -101,20 +111,25 @@ export async function readBrainHistory(repoPath: string, limit = 50): Promise<Br
   }
 }
 
-export async function saveBrain(repoPath: string, message: string): Promise<BrainSaveResult> {
+export async function commitBrain(
+  location: BrainLocation,
+  message: string
+): Promise<BrainSaveResult> {
   const subject = message.trim()
   if (!subject) {
     return { ok: false, savedPaths: [], error: 'Give this save a name' }
   }
-  const savedPaths = await readUnsavedBrainPaths(repoPath)
+  const savedPaths = await readUnsavedBrainPaths(location)
   if (savedPaths.length === 0) {
     return { ok: false, savedPaths: [], error: 'Nothing has changed since the last save' }
   }
   try {
-    // Pathspec-scoped throughout: stage and commit `.buildex/` and nothing else,
+    // Pathspec-scoped throughout: stage and commit the brain and nothing else,
     // however dirty the rest of the working tree is.
-    await gitExecFileAsync(['add', '--', BRAIN_ROOT], { cwd: repoPath })
-    await gitExecFileAsync(['commit', '-m', subject, '--', BRAIN_ROOT], { cwd: repoPath })
+    await gitExecFileAsync(['add', '--', location.pathspec], { cwd: location.gitRoot })
+    await gitExecFileAsync(['commit', '-m', subject, '--', location.pathspec], {
+      cwd: location.gitRoot
+    })
     return { ok: true, savedPaths }
   } catch (error) {
     return {
@@ -126,6 +141,6 @@ export async function saveBrain(repoPath: string, message: string): Promise<Brai
 }
 
 /** Absolute path of a brain document, for opening it in the editor. */
-export function brainDocumentPath(repoPath: string, documentId: string): string {
-  return path.join(repoPath, BRAIN_ROOT, ...documentId.split('/'))
+export function brainDocumentPath(location: BrainLocation, documentId: string): string {
+  return path.join(location.root, ...documentId.split('/'))
 }
