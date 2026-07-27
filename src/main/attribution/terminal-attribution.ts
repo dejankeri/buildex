@@ -282,7 +282,7 @@ for arg in "$@"; do
   esac
 done
 
-trailer="\${ORCA_GIT_COMMIT_TRAILER:-Co-authored-by: Orca <help@stably.ai>}"
+trailer="\${ORCA_GIT_COMMIT_TRAILER:-Co-authored-by: BuildEx <noreply@buildex.app>}"
 
 has_explicit_commit_message() {
   local arg

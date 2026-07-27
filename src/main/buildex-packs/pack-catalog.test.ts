@@ -1,10 +1,11 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readPackCatalog } from './pack-catalog'
 import { installPack } from './pack-install'
 import { parsePackManifest } from './pack-manifest'
+import { readPackState } from './pack-state'
 
 let repo = ''
 
@@ -100,31 +101,59 @@ describe('readPackCatalog', () => {
 })
 
 describe('installPack', () => {
-  it('writes a scaffold for every declared skill', () => {
+  it('copies every file the pack ships, not just SKILL.md', () => {
     writePack('catalog', 'linear', { skills: ['linear-search', 'linear-issue'] })
+    write('catalog/linear/skills/linear-search/SKILL.md', '# search')
+    write('catalog/linear/skills/linear-search/references/api.md', '# api')
+    write('catalog/linear/skills/linear-issue/SKILL.md', '# issue')
 
     const result = installPack(repo, 'linear')
 
     expect(result.ok).toBe(true)
     expect(result.writtenPaths).toEqual([
       'skills/linear-issue/SKILL.md',
-      'skills/linear-search/SKILL.md'
+      'skills/linear-search/SKILL.md',
+      'skills/linear-search/references/api.md'
     ])
-    expect(existsSync(path.join(repo, 'skills/linear-search/SKILL.md'))).toBe(true)
+    expect(readFileSync(path.join(repo, 'skills/linear-search/SKILL.md'), 'utf8')).toBe('# search')
     expect(readPackCatalog(repo).packs[0]?.installed).toBe(true)
+  })
+
+  it('is a no-op the second time, so re-installing produces no diff', () => {
+    writePack('catalog', 'linear', { skills: ['linear-search'] })
+    write('catalog/linear/skills/linear-search/SKILL.md', '# search')
+
+    installPack(repo, 'linear')
+    const second = installPack(repo, 'linear')
+
+    expect(second.writtenPaths).toEqual([])
+    expect(second.keptOperatorEdits).toEqual([])
   })
 
   it('never overwrites a skill the operator already edited', () => {
     writePack('catalog', 'linear', { skills: ['linear-search'] })
+    write('catalog/linear/skills/linear-search/SKILL.md', '# from the catalog')
     write('skills/linear-search/SKILL.md', '# my own words')
 
     const result = installPack(repo, 'linear')
 
     expect(result.writtenPaths).toEqual([])
-    expect(
-      readPackCatalog(repo).packs[0]?.installed,
-      'already-present skills still count as installed'
-    ).toBe(true)
+    expect(result.keptOperatorEdits).toEqual(['skills/linear-search/SKILL.md'])
+    expect(readFileSync(path.join(repo, 'skills/linear-search/SKILL.md'), 'utf8')).toBe(
+      '# my own words'
+    )
+  })
+
+  it('records a receipt so a later refresh can tell our copy from an edit', () => {
+    writePack('catalog', 'linear', { skills: ['linear-search'] })
+    write('catalog/linear/skills/linear-search/SKILL.md', '# search')
+
+    installPack(repo, 'linear')
+
+    expect(existsSync(path.join(repo, '.buildex/packs.json'))).toBe(true)
+    expect(readPackState(repo).packs.linear.files['skills/linear-search/SKILL.md']).toMatch(
+      /^[a-f0-9]{64}$/
+    )
   })
 
   it('reports an unknown pack instead of writing anything', () => {

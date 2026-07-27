@@ -36,7 +36,20 @@ const relayExtraResource = {
 // from package directories where pnpm's symlink farm is absent. Copy the exact
 // runtime dependency closure to Resources/node_modules so bare require() calls
 // do not fall through to a developer checkout's node_modules.
-const commonExtraResources = [relayExtraResource, skillFreshnessResources]
+// BuildEx: the capability-pack catalog ships with the app, not with the company
+// repo. A fresh operator has an empty repo, so a repo-only catalog would leave
+// the Store permanently empty; and shipping it here means an app update also
+// refreshes the skills of packs the operator already installed.
+const buildexCatalogResource = {
+  from: 'resources/buildex/catalog',
+  to: 'buildex/catalog'
+}
+
+const commonExtraResources = [
+  relayExtraResource,
+  skillFreshnessResources,
+  buildexCatalogResource
+]
 const macSpeechNativeResource = {
   from: 'node_modules/sherpa-onnx-darwin-${arch}',
   to: 'node_modules/sherpa-onnx-darwin-${arch}'
@@ -87,6 +100,10 @@ module.exports = {
     // it from process.resourcesPath; exclude the source copy from app.asar.
     '!resources/onboarding/feature-wall/**',
     '!resources/skills/**',
+    // Why: the BuildEx catalog ships via extraResources so runtime reads it from
+    // process.resourcesPath as real directories; exclude the source copy so it is
+    // not duplicated inside app.asar.
+    '!resources/buildex{,/**/*}',
     // Why: the Windows CLI shim ships via extraResources to resources/bin/orca.cmd
     // (beside the native resources/bin/orca.exe). Packing the source tree into
     // app.asar too lets asarUnpack:['resources/**'] extract a second copy at
@@ -355,11 +372,11 @@ module.exports = {
     category: 'Utility'
   },
   appImage: {
-    artifactName: isLinuxArm64Release ? 'orca-linux-arm64.${ext}' : 'orca-linux.${ext}'
+    artifactName: isLinuxArm64Release ? 'buildex-linux-arm64.${ext}' : 'buildex-linux.${ext}'
   },
   deb: {
-    packageName: 'orca-ide',
-    artifactName: 'orca-ide_${version}_${arch}.${ext}',
+    packageName: 'buildex',
+    artifactName: 'buildex_${version}_${arch}.${ext}',
     // Why: xvfb lets the bundled `orca serve` CLI run browser panes on a headless
     // Linux host — Chromium needs a display server even for offscreen rendering,
     // and serve starts Xvfb itself when present (see ensure-virtual-display.ts).

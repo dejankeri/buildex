@@ -57,7 +57,7 @@ export function renderCompanyContext(scan: BrainScan): string {
   if (hubs.length > 0) {
     lines.push('## Most connected', '')
     for (const hub of hubs) {
-      lines.push(`- \`${hub.id}\` (${hub.degree} links)`)
+      lines.push(`- \`${hub.id}\` (${hub.degree} ${hub.degree === 1 ? 'link' : 'links'})`)
     }
     lines.push('')
   }

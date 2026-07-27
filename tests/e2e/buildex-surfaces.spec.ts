@@ -65,11 +65,12 @@ test('company brain filter narrows the document list', async ({ orcaPage }) => {
 })
 
 test('store installs a pack into the company repo', async ({ orcaPage, testRepoPath }) => {
-  // Seed a catalog pack in the repo the app has open. The Store reads packs from
-  // the repo, so this is the real path an operator's catalog takes.
+  // Seed a catalog pack in the repo the app has open, carrying a real skill
+  // file. Installing copies files out of a catalog, so a pack with no files to
+  // copy would prove nothing.
   const packDir = path.join(testRepoPath, 'catalog', 'acme')
   const skillManifest = path.join(testRepoPath, 'skills', 'acme-search', 'SKILL.md')
-  mkdirSync(packDir, { recursive: true })
+  mkdirSync(path.join(packDir, 'skills', 'acme-search'), { recursive: true })
   writeFileSync(
     path.join(packDir, 'pack.json'),
     JSON.stringify({
@@ -82,16 +83,23 @@ test('store installs a pack into the company repo', async ({ orcaPage, testRepoP
     }),
     'utf8'
   )
+  writeFileSync(
+    path.join(packDir, 'skills', 'acme-search', 'SKILL.md'),
+    '# acme-search\n\nSeeded by the e2e fixture.\n',
+    'utf8'
+  )
 
   try {
     await orcaPage.getByRole('button', { name: 'Store', exact: true }).click()
     await expect(orcaPage.getByText('Acme', { exact: true })).toBeVisible()
 
-    await orcaPage.getByRole('button', { name: 'Install', exact: true }).click()
-    await expect(orcaPage.getByText('Installed', { exact: true })).toBeVisible()
+    await orcaPage.getByRole('button', { name: 'Install Acme' }).click()
+    await expect(orcaPage.getByRole('button', { name: 'Installed Acme' })).toBeVisible()
 
-    // Git is the record: the install must exist as a real file in the repo.
+    // Git is the record: the install must exist as a real file in the repo, and
+    // it must be the catalog's content rather than a placeholder.
     expect(existsSync(skillManifest)).toBe(true)
+    expect(readFileSync(skillManifest, 'utf8')).toContain('Seeded by the e2e fixture.')
 
     // An installed pack with an app face now shows up under Apps.
     await orcaPage.getByRole('button', { name: 'Apps', exact: true }).click()
@@ -100,7 +108,20 @@ test('store installs a pack into the company repo', async ({ orcaPage, testRepoP
   } finally {
     rmSync(path.join(testRepoPath, 'catalog'), { recursive: true, force: true })
     rmSync(path.join(testRepoPath, 'skills'), { recursive: true, force: true })
+    rmSync(path.join(testRepoPath, '.buildex'), { recursive: true, force: true })
   }
+})
+
+test('the shipped catalog fills the store for a repo with no catalog', async ({ orcaPage }) => {
+  // Why: this is the first-run case. A brand-new operator's repo has no catalog
+  // of its own, so without the catalog that ships in the app bundle the Store
+  // would be permanently empty and the product would have nothing to offer.
+  await orcaPage.getByRole('button', { name: 'Store', exact: true }).click()
+
+  await expect(orcaPage.getByText('Slack', { exact: true })).toBeVisible()
+  await expect(orcaPage.getByText('Stripe', { exact: true })).toBeVisible()
+  await expect(orcaPage.getByRole('button', { name: 'Install Slack' })).toBeEnabled()
+  await orcaPage.screenshot({ path: proofPath('store-bundled.png') })
 })
 
 test('apps and store open from the sidebar', async ({ orcaPage }) => {
@@ -113,7 +134,7 @@ test('apps and store open from the sidebar', async ({ orcaPage }) => {
   const storeNav = orcaPage.getByRole('button', { name: 'Store', exact: true })
   await expect(storeNav).toBeVisible()
   await storeNav.click()
-  await expect(orcaPage.getByText('No packs available yet')).toBeVisible()
+  await expect(orcaPage.getByRole('heading', { name: 'Store' })).toBeVisible()
   await orcaPage.screenshot({ path: proofPath('store-page.png') })
 })
 

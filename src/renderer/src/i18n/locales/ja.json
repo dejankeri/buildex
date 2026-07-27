@@ -13886,7 +13886,8 @@
         "emptyHint": "Skill packs you install are written into your company repo.",
         "skills": "skills",
         "installed": "Installed",
-        "install": "Install"
+        "install": "Install",
+        "keptEdits": "Kept your edited files, so {{value0}} was not fully replaced: {{value1}}"
       }
     },
     "brain": {

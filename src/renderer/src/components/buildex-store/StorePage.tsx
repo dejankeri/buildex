@@ -15,6 +15,7 @@ export default function StorePage(): React.JSX.Element {
   const { catalog, repoPath, loading, refresh } = usePackCatalog()
   const [installingId, setInstallingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const install = async (pack: BuildExPack): Promise<void> => {
     if (!repoPath) {
@@ -22,10 +23,21 @@ export default function StorePage(): React.JSX.Element {
     }
     setInstallingId(pack.id)
     setError(null)
+    setNotice(null)
     try {
       const result = await window.api.buildexPacks.install({ repoPath, packId: pack.id })
       if (!result.ok) {
         setError(result.error ?? 'Install failed')
+      } else if (result.keptOperatorEdits.length > 0) {
+        // Why: silently skipping a file the operator wrote would look like the
+        // install worked and the pack simply behaves differently. Say it.
+        setNotice(
+          translate(
+            'buildex.store.page.keptEdits',
+            'Kept your edited files, so {{value0}} was not fully replaced: {{value1}}',
+            { value0: pack.name, value1: result.keptOperatorEdits.join(', ') }
+          )
+        )
       }
       await refresh()
     } finally {
@@ -49,6 +61,12 @@ export default function StorePage(): React.JSX.Element {
         </div>
       ) : null}
 
+      {notice ? (
+        <div className="shrink-0 border-b border-border px-4 py-2 text-[12px] text-muted-foreground">
+          {notice}
+        </div>
+      ) : null}
+
       {catalog.packs.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
           <Store size={22} className="text-muted-foreground/40" />
@@ -63,7 +81,7 @@ export default function StorePage(): React.JSX.Element {
           </p>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="scrollbar-sleek min-h-0 flex-1 overflow-y-auto p-4">
           <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
             {catalog.packs.map((pack) => (
               <div
@@ -84,6 +102,11 @@ export default function StorePage(): React.JSX.Element {
                 </p>
                 <button
                   type="button"
+                  aria-label={`${
+                    pack.installed
+                      ? translate('buildex.store.page.installed', 'Installed')
+                      : translate('buildex.store.page.install', 'Install')
+                  } ${pack.name}`}
                   disabled={pack.installed || installingId === pack.id || !repoPath}
                   onClick={() => void install(pack)}
                   className={cn(

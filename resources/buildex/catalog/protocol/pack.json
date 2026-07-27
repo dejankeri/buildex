@@ -1,0 +1,66 @@
+{
+  "id": "protocol",
+  "name": "Protocol",
+  "icon": "\ud83c\udfcb\ufe0f",
+  "summary": "Coaching CRM - clients, programs, check-ins, and scheduling, drivable by the agent.",
+  "systemOfRecord": "Every client and everything about them - programs, workouts, nutrition plans, weekly check-ins and their measurements, progress reports, forms, appointments and tasks - lives in Protocol; read and write it with the protocol tools, never from workspace files.",
+  "app": {
+    "url": "https://app.protocolcrm.com"
+  },
+  "mcp": {
+    "kind": "http",
+    "url": "https://api.protocolcrm.com/mcp",
+    "policy": {
+      "read": ["message"],
+      "gated": [
+        {
+          "tool": "schedule",
+          "when": {
+            "action": ["send_reminder", "reminder"]
+          }
+        },
+        {
+          "tool": "manage_automations",
+          "when": {
+            "action": ["run"]
+          }
+        },
+        {
+          "tool": "record_progress",
+          "when": {
+            "reportAction": ["approve"]
+          }
+        }
+      ]
+    }
+  },
+  "apiKey": {
+    "transport": "mcp-bearer",
+    "docsUrl": "https://help.protocolcrm.com/ai-agent/connecting",
+    "hint": "Agent key (pk_\u2026) from the AI Agent page"
+  },
+  "provision": {
+    "authorizeUrl": "https://app.protocolcrm.com/workspace-connect?redirect_uri={redirect_uri}&state={state}",
+    "exchangeUrl": "https://api.protocolcrm.com/v1/workspace/connect/exchange",
+    "codeParam": "code",
+    "codeField": "code",
+    "hostField": "host",
+    "keyPath": "data.protocolApiKey",
+    "apiBasePath": "data.apiBaseUrl",
+    "envKey": "PROTOCOL_API_KEY",
+    "envBase": "PROTOCOL_API_URL",
+    "grants": "Full coach-level access to your whole Protocol account over its REST API - broader than the MCP connection above. Only needed for the few things MCP deliberately cannot do: billing, permanent deletes, and messaging clients. Requires you to be the account owner, and replaces any previous key issued to this machine.",
+    "docsUrl": "https://help.protocolcrm.com/ai-agent/connecting"
+  },
+  "skills": [
+    "protocol-reference",
+    "protocol-client-review",
+    "protocol-onboard-client",
+    "protocol-build-program",
+    "protocol-nutrition",
+    "protocol-checkin-cycle",
+    "protocol-inbox-triage",
+    "protocol-scheduling",
+    "protocol-rest-escape"
+  ]
+}

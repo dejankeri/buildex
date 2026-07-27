@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAppStore } from '../store'
 import { UpdateCard } from './UpdateCard'
+import { BUILDEX_RELEASE_REPO_SLUG } from '../../../shared/buildex-release'
 
 const openUrl = vi.fn()
 const download = vi.fn()
@@ -69,7 +70,7 @@ describe('UpdateCard Windows signature failures', () => {
     expect(screen.queryByText(message)).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Check official releases' }))
-    expect(openUrl).toHaveBeenCalledWith('https://github.com/stablyai/orca/releases')
+    expect(openUrl).toHaveBeenCalledWith(`https://github.com/${BUILDEX_RELEASE_REPO_SLUG}/releases`)
     expect(openUrl).not.toHaveBeenCalledWith(expect.stringContaining('/tag/'))
   })
 

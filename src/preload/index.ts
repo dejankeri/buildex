@@ -97,7 +97,8 @@ import type {
   PackCatalog,
   PackCatalogRequest,
   PackInstallRequest,
-  PackInstallResult
+  PackInstallResult,
+  PackRefreshResult
 } from '../shared/buildex-packs-types'
 import type { SkillFreshnessInventory } from '../shared/skill-freshness'
 import type {
@@ -2286,7 +2287,9 @@ const api = {
     catalog: (request: PackCatalogRequest): Promise<PackCatalog> =>
       ipcRenderer.invoke('buildex-packs:catalog', request),
     install: (request: PackInstallRequest): Promise<PackInstallResult> =>
-      ipcRenderer.invoke('buildex-packs:install', request)
+      ipcRenderer.invoke('buildex-packs:install', request),
+    refresh: (request: PackCatalogRequest): Promise<PackRefreshResult> =>
+      ipcRenderer.invoke('buildex-packs:refresh', request)
   },
 
   pet: {

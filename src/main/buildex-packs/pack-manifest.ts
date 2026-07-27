@@ -64,11 +64,15 @@ function parseSkills(value: unknown): string[] {
   return [...skills].sort()
 }
 
+/**
+ * What a manifest can state about itself. Where it came from and whether it is
+ * installed are facts about the catalog and the repo, not the file, so they are
+ * filled in by the catalog reader.
+ */
+export type ParsedPackManifest = Omit<BuildExPack, 'installed' | 'sourceDir' | 'source'>
+
 /** Parse a pack.json body. Returns null when the manifest is unusable. */
-export function parsePackManifest(
-  json: string,
-  manifestPath: string
-): Omit<BuildExPack, 'installed'> | null {
+export function parsePackManifest(json: string, manifestPath: string): ParsedPackManifest | null {
   let raw: unknown
   try {
     raw = JSON.parse(json)

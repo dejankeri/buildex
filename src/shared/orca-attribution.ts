@@ -3,4 +3,7 @@
 // the terminal git/gh shim and the AI commit-message generator so the two
 // code paths agree on the exact string.
 
-export const ORCA_GIT_COMMIT_TRAILER = 'Co-authored-by: Orca <help@stably.ai>'
+// BuildEx: this string lands in the operator's real commit history, so it must
+// name the product they are running. Leaving it as upstream would credit Orca
+// for every commit made from a BuildEx terminal.
+export const ORCA_GIT_COMMIT_TRAILER = 'Co-authored-by: BuildEx <noreply@buildex.app>'

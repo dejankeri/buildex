@@ -1,6 +1,7 @@
 /* eslint-disable max-lines -- Why: keeps the updater state machine and its presentation variants in one file. */
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
+import { BUILDEX_RELEASE_REPO_SLUG } from '../../../shared/buildex-release'
 import { useAppStore } from '../store'
 import { Card } from './ui/card'
 import { Button } from './ui/button'
@@ -27,9 +28,10 @@ import { translate } from '@/i18n/i18n'
 
 function releaseUrlForVersion(version: string | null): string {
   // Why: fall back to the plain releases listing (not /releases/latest) — /latest also breaks when GitHub's API is degraded.
-  return version
-    ? `https://github.com/stablyai/orca/releases/tag/v${version}`
-    : 'https://github.com/stablyai/orca/releases'
+  // BuildEx: read the slug from the shared constant, so the release notes an
+  // operator opens describe the build they are actually running.
+  const base = `https://github.com/${BUILDEX_RELEASE_REPO_SLUG}/releases`
+  return version ? `${base}/tag/v${version}` : base
 }
 
 function isAnimatedGif(url: string | undefined): boolean {

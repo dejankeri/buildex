@@ -22,11 +22,18 @@ export type BuildExPack = {
   app?: PackAppFace
   mcp?: PackMcpFace
   skills: string[]
-  /** Repo-relative POSIX path of the pack.json this came from. */
+  /** POSIX path of the pack.json this came from, relative to its catalog root. */
   manifestPath: string
+  /** Absolute directory the pack's files are copied from on install. */
+  sourceDir: string
+  /** `bundle` ships with the app; `repo` is the company's own fork of a pack. */
+  source: PackSource
   /** True when every skill this pack declares exists in the repo. */
   installed: boolean
 }
+
+/** Where a pack was read from. A repo pack overrides a bundled one of the same id. */
+export type PackSource = 'repo' | 'bundle'
 
 export type PackCatalog = {
   repoPath: string
@@ -48,7 +55,20 @@ export type PackInstallResult = {
   ok: boolean
   /** Repo-relative POSIX paths written, sorted. Empty when nothing changed. */
   writtenPaths: string[]
+  /**
+   * Files the operator had edited, so a newer catalog version was NOT written
+   * over them. Reported rather than resolved — the operator decides.
+   */
+  keptOperatorEdits: string[]
   error?: string
+}
+
+/** Result of re-syncing already-installed packs against the shipped catalog. */
+export type PackRefreshResult = {
+  /** Pack ids that gained at least one updated file. */
+  updatedPackIds: string[]
+  writtenPaths: string[]
+  keptOperatorEdits: string[]
 }
 
 export const EMPTY_PACK_CATALOG: PackCatalog = {

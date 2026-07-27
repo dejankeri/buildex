@@ -201,7 +201,7 @@ describe('createSystemTray', () => {
 
     expect(trayInstances).toHaveLength(1)
     expect(trayInstances[0].image).toBe(resizedImage)
-    expect(trayInstances[0].setToolTip).toHaveBeenCalledWith('Orca')
+    expect(trayInstances[0].setToolTip).toHaveBeenCalledWith('BuildEx')
     expect(builtMenuItems().map((item) => item.label)).toEqual(['Open Orca', undefined, 'Quit'])
     const clickHandler = trayInstances[0].on.mock.calls.find((call) => call[0] === 'click')?.[1]
     expect(clickHandler).toBeTypeOf('function')
@@ -434,7 +434,7 @@ describe('setTrayAttention', () => {
     flushTraySceneMutation()
     expect(baseMacImage.setTemplateImage).toHaveBeenLastCalledWith(true)
     expect(created.setImage).toHaveBeenLastCalledWith(baseMacImage)
-    expect(created.setToolTip).toHaveBeenLastCalledWith('Orca')
+    expect(created.setToolTip).toHaveBeenLastCalledWith('BuildEx')
   })
 
   it('recomposes active macOS attention when the system appearance changes', async () => {
@@ -600,7 +600,7 @@ describe('macOS hardening', () => {
     setTrayAttention(true)
     expect(() => flushTraySceneMutation()).not.toThrow()
     expect(created.setImage).toHaveBeenLastCalledWith(baseMacImage)
-    expect(created.setToolTip).toHaveBeenLastCalledWith('Orca')
+    expect(created.setToolTip).toHaveBeenLastCalledWith('BuildEx')
     expect(warn).toHaveBeenCalledWith(
       '[system-tray] macOS attention icon failed; showing plain icon',
       expect.any(Error)

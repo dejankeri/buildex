@@ -134,7 +134,15 @@ const {
 
 vi.mock('electron', () => ({
   app: {
-    getPath: getPathMock
+    getPath: getPathMock,
+    // BuildEx: the pack handlers resolve the shipped catalog from the resource
+    // root, which depends on whether the build is packaged.
+    isPackaged: false
+  },
+  // BuildEx: registerCoreHandlers now also registers the Brain and Store
+  // handlers, which call ipcMain.handle at registration time.
+  ipcMain: {
+    handle: vi.fn()
   }
 }))
 

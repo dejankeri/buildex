@@ -355,7 +355,8 @@ import type {
   PackCatalog,
   PackCatalogRequest,
   PackInstallRequest,
-  PackInstallResult
+  PackInstallResult,
+  PackRefreshResult
 } from '../shared/buildex-packs-types'
 import type { SkillFreshnessInventory } from '../shared/skill-freshness'
 import type {
@@ -2343,6 +2344,7 @@ export type PreloadApi = {
   buildexPacks: {
     catalog: (request: PackCatalogRequest) => Promise<PackCatalog>
     install: (request: PackInstallRequest) => Promise<PackInstallResult>
+    refresh: (request: PackCatalogRequest) => Promise<PackRefreshResult>
   }
   pet: {
     import: () => Promise<CustomPet | null>

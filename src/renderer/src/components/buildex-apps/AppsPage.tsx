@@ -34,7 +34,7 @@ export default function AppsPage(): React.JSX.Element {
           </p>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="scrollbar-sleek min-h-0 flex-1 overflow-y-auto p-4">
           <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
             {apps.map((pack) => (
               <button
