@@ -6,6 +6,7 @@ import type {
   BrainSave,
   BrainSaveResult
 } from '../../shared/buildex-brain-types'
+import { pushBrain } from './brain-sync'
 
 // The brain's history, and the one action that adds to it.
 //
@@ -137,6 +138,23 @@ export async function commitBrain(
       savedPaths: [],
       error: error instanceof Error ? error.message : String(error)
     }
+  }
+}
+
+/** Commit, then share. A failed push never costs the operator the commit. */
+export async function saveBrain(
+  location: BrainLocation,
+  message: string
+): Promise<BrainSaveResult> {
+  const committed = await commitBrain(location, message)
+  if (!committed.ok || location.mode === 'embedded') {
+    return committed
+  }
+  const push = await pushBrain(location)
+  return {
+    ...committed,
+    pushed: push.pushed,
+    ...(push.pushed ? {} : { pushError: push.error ?? push.reason ?? 'not shared' })
   }
 }
 
