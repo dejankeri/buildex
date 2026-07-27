@@ -7,6 +7,7 @@ import { listBrainSkills } from '../buildex-brain/brain-skills'
 import { installPack } from './pack-install'
 import { hashContent } from './pack-files'
 import { readPackCatalog } from './pack-catalog'
+import { refreshInstalledPacks } from './pack-refresh'
 import { uninstallPack } from './pack-uninstall'
 import { readPackState } from './pack-state'
 
@@ -137,6 +138,50 @@ describe('uninstallPack', () => {
     ])
     expect(existsSync(path.join(repo, '.buildex/skills/slack-search'))).toBe(false)
     expect(readPackState(embeddedLocation(repo)).packs.slack).toBeUndefined()
+  })
+
+  it('migrates an old-shape receipt on refresh, so a later uninstall reports it cleanly', () => {
+    // Old-shape receipt, as if this pack was installed before receipts moved to
+    // the brain-relative shape — refresh must migrate it, not leave a stale row
+    // beside the new one, or uninstall later reads the stale row as an edit.
+    writeIn(repo, '.buildex/skills/slack-search/SKILL.md', '# search\n')
+    writeIn(repo, '.buildex/skills/slack-search/references/api.md', '# api\n')
+    writeIn(
+      repo,
+      '.buildex/packs.json',
+      JSON.stringify({
+        packs: {
+          slack: {
+            files: {
+              '.buildex/skills/slack-search/SKILL.md': hashContent('# search\n'),
+              '.buildex/skills/slack-search/references/api.md': hashContent('# api\n')
+            }
+          }
+        }
+      })
+    )
+
+    // The bundle now ships a newer version of the skill.
+    writeIn(bundle, 'slack/skills/slack-search/SKILL.md', '# search v2\n')
+
+    const refreshed = refreshInstalledPacks(repo, bundle)
+    expect(refreshed.updatedPackIds).toEqual(['slack'])
+    expect(refreshed.keptOperatorEdits).toEqual([])
+
+    // Exactly one key per file — the pre-migration row did not survive alongside it.
+    expect(Object.keys(readPackState(embeddedLocation(repo)).packs.slack.files).sort()).toEqual([
+      'skills/slack-search/SKILL.md',
+      'skills/slack-search/references/api.md'
+    ])
+
+    const result = uninstallPack(repo, 'slack', bundle)
+
+    expect(result.ok).toBe(true)
+    expect(result.keptOperatorEdits).toEqual([])
+    expect(result.removedPaths.sort()).toEqual([
+      'skills/slack-search/SKILL.md',
+      'skills/slack-search/references/api.md'
+    ])
   })
 
   it('reports a pack that was never installed', () => {

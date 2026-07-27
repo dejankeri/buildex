@@ -118,6 +118,25 @@ export function recordedHash(
 }
 
 /**
+ * Record a file at its (new-shape) key, and drop the legacy key for the same
+ * physical file if one is still sitting there. A migration that leaves the old
+ * row behind isn't finished — without this, the stale key survives forever at
+ * its pre-migration hash, and a later uninstall reads it as an operator edit
+ * even though the same file was just correctly removed under its new key.
+ */
+export function recordReceiptFile(
+  files: Record<string, string>,
+  relativePath: string,
+  hash: string
+): void {
+  files[relativePath] = hash
+  const legacy = legacyReceiptKey(relativePath)
+  if (legacy) {
+    delete files[legacy]
+  }
+}
+
+/**
  * Where a receipt-recorded path resolves on disk. The key's own shape says the
  * base: `.buildex/`- or `.claude/`-prefixed keys predate external brains and
  * are repo-relative (in embedded mode that is exactly today's file); anything

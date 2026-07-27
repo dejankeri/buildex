@@ -3,7 +3,7 @@ import type { BuildExPack, PackInstallResult } from '../../shared/buildex-packs-
 import { embeddedLocation, requireBrainLocation } from '../buildex-brain/brain-location'
 import { readPackCatalog } from './pack-catalog'
 import { planSkillFiles, writePlannedFile } from './pack-files'
-import { readPackState, recordedHash, writePackState } from './pack-state'
+import { readPackState, recordedHash, recordReceiptFile, writePackState } from './pack-state'
 import type { PackState } from './pack-state'
 import { syncPackMcpConfig } from './pack-mcp-config'
 import { ensureBuildExGitExclude } from './repo-git-exclude'
@@ -47,7 +47,9 @@ export function applyPack(
       keptOperatorEdits.push(file.relativePath)
       continue
     }
-    files[file.relativePath] = decision.hash
+    // Also drops the pre-migration `.buildex/`-prefixed key for this same file,
+    // so the receipt never carries two rows for one physical file.
+    recordReceiptFile(files, file.relativePath, decision.hash)
     if (decision.outcome === 'written') {
       writtenPaths.push(file.relativePath)
     }
@@ -90,7 +92,7 @@ function copyLinkFallback(
     if (decision.outcome === 'kept-operator-edit') {
       continue
     }
-    files[mirrored.relativePath] = decision.hash
+    recordReceiptFile(files, mirrored.relativePath, decision.hash)
     if (decision.outcome === 'written') {
       writtenPaths.push(mirrored.relativePath)
     }
