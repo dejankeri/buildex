@@ -1,7 +1,6 @@
 import { resolve } from 'node:path'
 import { app } from 'electron'
 import { buildexCatalogRootFrom } from './buildex-packs/bundled-catalog'
-import { scaffoldCompanyBrain } from './buildex-brain/brain-scaffold'
 import { readPackCatalog } from './buildex-packs/pack-catalog'
 import { syncPackMcpConfig } from './buildex-packs/pack-mcp-config'
 import { refreshInstalledPacks } from './buildex-packs/pack-refresh'
@@ -44,14 +43,11 @@ export function initializeCompanyRepo(repoPath: string): void {
   } catch {
     // A folder with no .git simply has no git to keep clean.
   }
-  // Why: a brand-new project opens on an empty Brain, which teaches the operator
-  // nothing about what to put there. Seeding the sections gives them somewhere to
-  // start; it only ever adds, so it is safe to run on every open.
-  try {
-    scaffoldCompanyBrain(repoPath)
-  } catch {
-    // A repo we cannot write to still deserves a readable Brain.
-  }
+  // Why: the brain's sections are NOT written here. Every other step below is
+  // machine state — an exclude rule, a pack refresh, the gate — and belongs to
+  // BuildEx. The sections are the company's own files, and writing a dozen of
+  // them into a repo somebody opened to browse the Store was never ours to do.
+  // Setup asks first; see brain-scaffold.ts.
   try {
     refreshInstalledPacks(repoPath, bundledCatalogRoot())
   } catch {

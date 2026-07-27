@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { GatePreset, GateSettingsResult } from '../../shared/buildex-gate-types'
 import { CLAUDE_SETTINGS_RELATIVE_PATH } from '../../shared/buildex-gate-types'
@@ -12,10 +12,18 @@ import { resolveGatePreset } from './gate-preset'
 // no daemon, no second decision path that could disagree with the first.
 //
 // The operator's own rules are not ours to delete. We record the rules we wrote
-// in .buildex/gate-applied.json; on the next sync we retire only those, and
+// in .claude/gate-applied.json; on the next sync we retire only those, and
 // anything else in the file stays exactly where the operator put it.
+//
+// That receipt sits beside the settings it describes, in `.claude/`, which
+// BuildEx excludes from the operator's git. It used to live in `.buildex/`,
+// where it was committed into the company's history — and where its mere
+// presence made every repo BuildEx had ever opened look like it already had a
+// company brain, so setup was never offered.
 
-const APPLIED_RELATIVE_PATH = '.buildex/gate-applied.json'
+const APPLIED_RELATIVE_PATH = '.claude/gate-applied.json'
+/** Where the receipt used to live, back when it was tracked. */
+const LEGACY_APPLIED_RELATIVE_PATH = '.buildex/gate-applied.json'
 
 type PermissionLists = {
   allow: string[]
@@ -50,7 +58,13 @@ function readJson(absolute: string): Record<string, unknown> {
 
 /** The rules a previous sync wrote, so this one can retire them cleanly. */
 function readApplied(repoPath: string): PermissionLists {
-  const raw = readJson(path.join(repoPath, ...APPLIED_RELATIVE_PATH.split('/')))
+  const absolute = path.join(repoPath, ...APPLIED_RELATIVE_PATH.split('/'))
+  // Why: falling back to the old location matters. Without it, the first sync
+  // after this move would see no receipt, conclude it had written nothing, and
+  // leave the previous release's rules in the settings file forever.
+  const raw = existsSync(absolute)
+    ? readJson(absolute)
+    : readJson(path.join(repoPath, ...LEGACY_APPLIED_RELATIVE_PATH.split('/')))
   return {
     allow: readStringList(raw.allow),
     ask: readStringList(raw.ask),
@@ -103,6 +117,29 @@ export function mergePermissions(
   return { merged, preserved: preserved.sort() }
 }
 
+/**
+ * Clear the receipt an older BuildEx left in the tracked brain folder.
+ *
+ * Only after the new one is written, and only when the file parses as a receipt
+ * of ours — a document of the operator's that happens to share the name is
+ * theirs (invariant 8).
+ */
+function removeLegacyApplied(repoPath: string): void {
+  const legacy = path.join(repoPath, ...LEGACY_APPLIED_RELATIVE_PATH.split('/'))
+  if (!existsSync(legacy)) {
+    return
+  }
+  const raw = readJson(legacy)
+  if (!Array.isArray(raw.ask) || !Array.isArray(raw.allow)) {
+    return
+  }
+  try {
+    rmSync(legacy, { force: true })
+  } catch {
+    // A receipt we cannot remove is stale, not dangerous — the new one wins.
+  }
+}
+
 /** Write the effective gate into the company repo. Idempotent. */
 export function syncGateSettings(repoPath: string): GateSettingsResult {
   const { preset, source } = resolveGatePreset(repoPath)
@@ -127,6 +164,7 @@ export function syncGateSettings(repoPath: string): GateSettingsResult {
       ask: preset.ask,
       deny: preset.deny
     })
+    removeLegacyApplied(repoPath)
     return { preset, source, settingsChanged, preservedRules: preserved }
   } catch (error) {
     return {

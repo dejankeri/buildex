@@ -1,11 +1,21 @@
 import React, { useMemo, useState } from 'react'
-import { Brain, Loader2, RefreshCw } from 'lucide-react'
+import { Brain, Eye, FolderOpen, Loader2, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
+import BrainAgentView from './BrainAgentView'
 import BrainDocument from './BrainDocument'
 import BrainHistory from './BrainHistory'
+import BrainRemove from './BrainRemove'
 import BrainSections from './BrainSections'
+import BrainSetup from './BrainSetup'
 import BrainSkills from './BrainSkills'
 import { useBrain } from './use-brain'
 
@@ -29,9 +39,13 @@ export default function BrainPage(): React.JSX.Element {
     openFile,
     openDocument,
     openPath,
-    closeFile
+    closeFile,
+    setUp
   } = useBrain()
   const [tab, setTab] = useState<Tab>('sections')
+  const [agentViewOpen, setAgentViewOpen] = useState(false)
+  const [removeOpen, setRemoveOpen] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const stats = useMemo(() => {
     const filled = new Set(scan.documents.map((document) => document.folder))
@@ -44,6 +58,11 @@ export default function BrainPage(): React.JSX.Element {
   }, [history.unsavedPaths.length, scan, sections])
 
   const lastSave = history.saves[0] ?? null
+
+  // Why: the scan carries the repo it describes, so this is true only once THIS
+  // repo has been looked at. Without it the setup screen flashes for a moment on
+  // every open — offering to create a brain that is already there.
+  const scanned = repoPath !== null && scan.repoPath === repoPath
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'sections', label: translate('buildex.brain.page.sections', 'Sections') },
@@ -61,29 +80,37 @@ export default function BrainPage(): React.JSX.Element {
         {loading ? <Loader2 size={13} className="animate-spin text-muted-foreground" /> : null}
 
         <div className="ml-auto flex items-center gap-1">
-          {tabs.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              onClick={() => {
-                setTab(entry.id)
-                // Leaving a document by tab still writes it — BrainDocument's
-                // unmount is what saves.
-                closeFile()
-              }}
-              aria-current={tab === entry.id ? 'page' : undefined}
-              className={cn(
-                'h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors',
-                tab === entry.id
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-accent/50'
-              )}
-            >
-              {entry.label}
-            </button>
-          ))}
+          {!scanned || !scan.initialized
+            ? null
+            : tabs.map((entry) => (
+                <button
+                  key={entry.id}
+                  type="button"
+                  onClick={() => {
+                    setTab(entry.id)
+                    // Leaving a document by tab still writes it — BrainDocument's
+                    // unmount is what saves.
+                    closeFile()
+                  }}
+                  aria-current={tab === entry.id ? 'page' : undefined}
+                  className={cn(
+                    'h-7 rounded-md px-2.5 text-[12px] font-medium transition-colors',
+                    tab === entry.id
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:bg-accent/50'
+                  )}
+                >
+                  {entry.label}
+                </button>
+              ))}
         </div>
       </header>
+
+      {notice ? (
+        <p className="shrink-0 border-b border-border bg-accent/40 px-5 py-2 text-[11px] text-muted-foreground">
+          {notice}
+        </p>
+      ) : null}
 
       {repoPath === null ? (
         <BrainEmpty
@@ -92,6 +119,18 @@ export default function BrainPage(): React.JSX.Element {
             'buildex.brain.page.noProjectHint',
             'Open a project and its company brain lives in .buildex, versioned with the repo.'
           )}
+        />
+      ) : !scanned ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <Loader2 size={16} className="animate-spin text-muted-foreground/50" />
+        </div>
+      ) : !scan.initialized ? (
+        <BrainSetup
+          sections={sections}
+          onSetUp={async (folders, summary) => {
+            setNotice(null)
+            await setUp(folders, summary)
+          }}
         />
       ) : openFile ? (
         <BrainDocument file={openFile} onClose={closeFile} onSaved={refresh} />
@@ -128,6 +167,34 @@ export default function BrainPage(): React.JSX.Element {
               >
                 <RefreshCw size={12} />
               </button>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  aria-label={translate('buildex.brain.page.more', 'More')}
+                  className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+                >
+                  <MoreHorizontal size={13} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem onSelect={() => setAgentViewOpen(true)}>
+                    <Eye size={13} />
+                    {translate('buildex.brain.page.viewAgent', 'What the agent sees')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      void window.api.shell.openInFileManager(`${repoPath}/.buildex`)
+                    }}
+                  >
+                    <FolderOpen size={13} />
+                    {translate('buildex.brain.page.reveal', 'Open the brain folder')}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onSelect={() => setRemoveOpen(true)}>
+                    <Trash2 size={13} />
+                    {translate('buildex.brain.page.remove', 'Remove the company brain')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -149,6 +216,39 @@ export default function BrainPage(): React.JSX.Element {
               onOpenDocument={openDocument}
             />
           )}
+        </>
+      )}
+
+      {repoPath === null ? null : (
+        <>
+          <BrainAgentView
+            repoPath={repoPath}
+            open={agentViewOpen}
+            onOpenChange={setAgentViewOpen}
+          />
+          <BrainRemove
+            repoPath={repoPath}
+            open={removeOpen}
+            onOpenChange={setRemoveOpen}
+            onRemoved={(backupPath) => {
+              // Why: the backup path is the only thing here the operator cannot
+              // work out for themselves, so it is the one thing worth saying.
+              setNotice(
+                backupPath
+                  ? translate(
+                      'buildex.brain.page.removedWithBackup',
+                      'Brain removed. A copy of what was not yet saved is in {{value0}}',
+                      { value0: backupPath }
+                    )
+                  : translate(
+                      'buildex.brain.page.removed',
+                      'Brain removed, and the removal was saved to history.'
+                    )
+              )
+              closeFile()
+              void refresh()
+            }}
+          />
         </>
       )}
     </div>

@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -83,6 +83,43 @@ describe('syncGateSettings', () => {
     syncGateSettings(repo)
 
     expect(readSettings().permissions.ask).toEqual(['Bash(kubectl delete:*)'])
+  })
+
+  it('keeps its receipt out of the company folder', () => {
+    // Why: the receipt is machine state. In `.buildex/` it was committed into
+    // the company's history, and its presence alone made a repo look like it
+    // already held a brain — so setup was never offered.
+    syncGateSettings(repo)
+
+    expect(existsSync(path.join(repo, '.claude', 'gate-applied.json'))).toBe(true)
+    expect(existsSync(path.join(repo, '.buildex', 'gate-applied.json'))).toBe(false)
+  })
+
+  it('retires rules recorded by an older BuildEx before clearing its receipt', () => {
+    // Why: without reading the old location first, the sync after this move sees
+    // no receipt, concludes it wrote nothing, and leaves the previous release's
+    // rules in the settings file forever.
+    write('.buildex/gate-preset.json', JSON.stringify({ ask: ['Bash(docker:*)'] }))
+    syncGateSettings(repo)
+    rmSync(path.join(repo, '.claude', 'gate-applied.json'), { force: true })
+    write(
+      '.buildex/gate-applied.json',
+      JSON.stringify({ allow: [], ask: ['Bash(docker:*)'], deny: [] })
+    )
+
+    write('.buildex/gate-preset.json', JSON.stringify({ ask: [] }))
+    syncGateSettings(repo)
+
+    expect(readSettings().permissions.ask).toEqual([])
+    expect(existsSync(path.join(repo, '.buildex', 'gate-applied.json'))).toBe(false)
+  })
+
+  it('never removes an operator file that happens to share the name', () => {
+    write('.buildex/gate-applied.json', JSON.stringify({ note: 'ours, not a receipt' }))
+
+    syncGateSettings(repo)
+
+    expect(existsSync(path.join(repo, '.buildex', 'gate-applied.json'))).toBe(true)
   })
 
   it('falls back to the shipped preset when the company file is broken', () => {

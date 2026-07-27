@@ -2,10 +2,14 @@ import path from 'node:path'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { test, expect } from './helpers/orca-app'
 
-// Proof that BuildEx's three surfaces register in a real Electron launch: the
-// Company Brain right-sidebar tab, and the Apps / Store top-level views. Also
-// asserts the Orca surfaces they sit beside still work, since this fork adds
-// to Orca rather than replacing it.
+// Proof that BuildEx's surfaces register in a real Electron launch: the Company
+// Brain and the Store, the files each one writes, and the gate that reaches the
+// agent. Also asserts the Orca surfaces they sit beside still work, since this
+// fork adds to Orca rather than replacing it.
+//
+// Removing the brain is covered by unit tests rather than here: it would wipe
+// the repo these tests share, and its two branches (commit vs back up) need a
+// git history this fixture does not have.
 
 // Why: the test repo is worker-scoped but these tests write into it and clean up
 // after themselves. Run in parallel and one test's teardown lands in the middle
@@ -19,6 +23,40 @@ function proofPath(name: string): string {
   mkdirSync(PROOF_DIR, { recursive: true })
   return path.join(PROOF_DIR, name)
 }
+
+// Declared first on purpose: it is the only test that needs a repo with no brain
+// in it, and the file runs serially against one shared repo.
+test('a repo with no brain is offered setup rather than given one', async ({
+  orcaPage,
+  testRepoPath
+}) => {
+  // Why: BuildEx used to write nine folders and three documents into a repo the
+  // moment any of its surfaces was touched — including the Store, which has
+  // nothing to do with the brain. Browsing must leave the repo alone.
+  await orcaPage.getByRole('button', { name: 'Store', exact: true }).click()
+  await expect(orcaPage.getByRole('heading', { name: 'Store' })).toBeVisible()
+  expect(existsSync(path.join(testRepoPath, '.buildex'))).toBe(false)
+
+  await orcaPage.getByRole('button', { name: 'Brain', exact: true }).click()
+  await expect(orcaPage.getByRole('heading', { name: 'Set up your company brain' })).toBeVisible()
+  // Opening the Brain offers; it still does not act.
+  expect(existsSync(path.join(testRepoPath, '.buildex'))).toBe(false)
+
+  await orcaPage
+    .getByRole('textbox', { name: 'What does this company do?' })
+    .fill('We help fitness coaches run their business.')
+  // Turn one section off, so "you can change this later" is literally true.
+  await orcaPage.getByRole('checkbox', { name: /Finance/ }).click()
+  await orcaPage.getByRole('button', { name: 'Create the brain' }).click()
+
+  await expect(orcaPage.getByText('documents', { exact: true })).toBeVisible()
+  expect(
+    readFileSync(path.join(testRepoPath, '.buildex', 'strategy', 'overview.md'), 'utf8')
+  ).toContain('We help fitness coaches run their business.')
+  expect(existsSync(path.join(testRepoPath, '.buildex', 'finance'))).toBe(false)
+
+  await orcaPage.screenshot({ path: proofPath('brain-setup.png') })
+})
 
 test('company brain maps the active repo', async ({ orcaPage, testRepoPath }) => {
   mkdirSync(path.join(testRepoPath, '.buildex'), { recursive: true })
@@ -105,6 +143,31 @@ test('a brain document is edited in place and written to disk', async ({
   await orcaPage.getByRole('button', { name: 'Back', exact: true }).click()
   await expect(orcaPage.getByRole('heading', { name: 'Company Brain' })).toBeVisible()
   await expect(orcaPage.getByRole('button', { name: 'handbook' })).toBeVisible()
+})
+
+test('the brain shows what the agent will actually see', async ({ orcaPage, testRepoPath }) => {
+  // Why: the company context is generated into `.claude/`, which is excluded
+  // from the operator's git — so this dialog is the only way to see what the
+  // agent was told. It also has to keep the two halves apart: project memory is
+  // loaded in full, a document is only named.
+  mkdirSync(path.join(testRepoPath, '.buildex'), { recursive: true })
+  writeFileSync(path.join(testRepoPath, '.buildex', 'handbook.md'), '# Handbook\n', 'utf8')
+
+  try {
+    await orcaPage.getByRole('button', { name: 'Brain', exact: true }).click()
+    await orcaPage.getByRole('button', { name: 'More' }).click()
+    await orcaPage.getByRole('menuitem', { name: 'What the agent sees' }).click()
+
+    const dialog = orcaPage.getByRole('dialog')
+    await expect(dialog.getByText('Loaded before you type')).toBeVisible()
+    await expect(dialog.getByText('.claude/company-context.md')).toBeVisible()
+    await expect(dialog.getByText('Named, and opened only if needed')).toBeVisible()
+    await expect(dialog.getByText('handbook.md', { exact: true })).toBeVisible()
+
+    await orcaPage.screenshot({ path: proofPath('brain-agent-view.png') })
+  } finally {
+    rmSync(path.join(testRepoPath, '.claude'), { recursive: true, force: true })
+  }
 })
 
 test('store installs a pack into the company repo', async ({ orcaPage, testRepoPath }) => {

@@ -5,6 +5,7 @@ import { resolveDocumentLinks } from './company-brain-links'
 import {
   countHeadings,
   countWords,
+  isBrainInitialized,
   listBrainDocumentPaths,
   readDocumentText
 } from './company-brain-scan'
@@ -86,5 +87,13 @@ export async function scanCompanyBrain(repoPath: string, now: number): Promise<B
 
   const totalLinks = documents.reduce((sum, doc) => sum + doc.linksTo.length, 0)
 
-  return { repoPath, documents, folders, orphanIds, totalLinks, scannedAt: now }
+  return {
+    repoPath,
+    initialized: isBrainInitialized(repoPath),
+    documents,
+    folders,
+    orphanIds,
+    totalLinks,
+    scannedAt: now
+  }
 }

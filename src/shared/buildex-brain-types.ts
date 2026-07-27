@@ -26,6 +26,12 @@ export type BrainFolder = {
 
 export type BrainScan = {
   repoPath: string
+  /**
+   * False until the operator sets a brain up here. BuildEx no longer scaffolds
+   * on sight, so this is what tells the Brain screen to offer setup instead of
+   * showing nine empty sections nobody asked for.
+   */
+  initialized: boolean
   documents: BrainDocument[]
   folders: BrainFolder[]
   /** Documents nothing links to and which link nowhere — the brain's dead ends. */
@@ -40,11 +46,27 @@ export type BrainScanRequest = {
 
 export const EMPTY_BRAIN_SCAN: BrainScan = {
   repoPath: '',
+  initialized: false,
   documents: [],
   folders: [],
   orphanIds: [],
   totalLinks: 0,
   scannedAt: 0
+}
+
+export type BrainSetupRequest = {
+  repoPath: string
+  /** Section folders to create. Anything left out is simply never created. */
+  folders: string[]
+  /** The operator's answer to "what does this company do?", if they gave one. */
+  summary?: string
+}
+
+export type BrainSetupResult = {
+  ok: boolean
+  /** Brain-relative paths written, sorted. */
+  created: string[]
+  error?: string
 }
 
 /** Sections the Brain panel groups documents into, seeded on first open. */
@@ -142,5 +164,73 @@ export type BrainSkillCreateResult = {
   ok: boolean
   name?: string
   absolutePath?: string
+  error?: string
+}
+
+/** One file the agent reads in full at the start of every session. */
+export type AgentContextFile = {
+  /** Repo-relative POSIX path. */
+  path: string
+  /** Why it is in front of the agent, in one line. */
+  reason: string
+  body: string
+  /** True when this file is here because another one `@`-imported it. */
+  imported: boolean
+}
+
+/**
+ * Something the agent has been told about but has not read. The distinction from
+ * {@link AgentContextFile} is the whole point of the view: operators assume a
+ * skill's instructions are loaded when only its description is.
+ */
+export type AgentReachableItem = {
+  kind: 'skill' | 'mcp' | 'document'
+  name: string
+  /** What the agent knows about it without opening it. */
+  detail: string
+  /** Repo-relative POSIX path, when it is a file. */
+  path?: string
+}
+
+export type AgentViewRequest = {
+  repoPath: string
+}
+
+export type AgentView = {
+  repoPath: string
+  alwaysLoaded: AgentContextFile[]
+  reachable: AgentReachableItem[]
+  /** Characters loaded before the operator types anything. */
+  loadedCharacters: number
+}
+
+export const EMPTY_AGENT_VIEW: AgentView = {
+  repoPath: '',
+  alwaysLoaded: [],
+  reachable: [],
+  loadedCharacters: 0
+}
+
+/** What removing the brain would do, worked out before anything is removed. */
+export type BrainRemovalPlan = {
+  documentCount: number
+  /** Brain-relative paths git does not already hold. */
+  unsavedPaths: string[]
+  /** True when the removal can be recorded as a save. */
+  canCommit: boolean
+  /** True when a copy will be taken first, because git cannot get it back. */
+  willBackUp: boolean
+}
+
+export type BrainRemovalRequest = {
+  repoPath: string
+}
+
+export type BrainRemovalResult = {
+  ok: boolean
+  /** Where the copy was put, when one was taken. */
+  backupPath?: string
+  /** True when the removal itself was committed. */
+  committed: boolean
   error?: string
 }

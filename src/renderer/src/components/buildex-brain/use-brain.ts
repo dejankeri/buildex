@@ -34,6 +34,8 @@ export type BrainState = {
   openDocument: (documentId: string) => void
   openPath: (absolutePath: string, relativePath: string) => void
   closeFile: () => void
+  /** Write the chosen sections into a repo that has no brain yet. */
+  setUp: (folders: string[], summary: string) => Promise<void>
 }
 
 /** "decisions/pricing.md" reads as "decisions / pricing" — the folder is the section. */
@@ -135,6 +137,19 @@ export function useBrain(): BrainState {
 
   const closeFile = useCallback((): void => setOpenFile(null), [])
 
+  const setUp = useCallback(
+    async (folders: string[], summary: string): Promise<void> => {
+      if (!repoPath) {
+        return
+      }
+      await window.api.buildexBrain.setUp({ repoPath, folders, summary })
+      // Rescanned rather than assumed: the scan is what decides whether the
+      // setup screen is still showing, so it has to be the thing that changes.
+      await refresh()
+    },
+    [refresh, repoPath]
+  )
+
   // Why: an open document belongs to the repo it came from. Keeping it across a
   // worktree switch would show one company's writing under another's name.
   useEffect(() => {
@@ -151,6 +166,7 @@ export function useBrain(): BrainState {
     openFile,
     openDocument,
     openPath,
-    closeFile
+    closeFile,
+    setUp
   }
 }

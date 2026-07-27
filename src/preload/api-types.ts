@@ -345,7 +345,17 @@ import type {
 } from '../shared/shell-open-types'
 import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
 // BuildEx: see BUILDEX-PATCHES.md
-import type { BrainScan, BrainScanRequest } from '../shared/buildex-brain-types'
+import type {
+  AgentView,
+  AgentViewRequest,
+  BrainRemovalPlan,
+  BrainRemovalRequest,
+  BrainRemovalResult,
+  BrainScan,
+  BrainScanRequest,
+  BrainSetupRequest,
+  BrainSetupResult
+} from '../shared/buildex-brain-types'
 import type {
   BrainCreateDocumentRequest,
   BrainCreateDocumentResult,
@@ -2353,6 +2363,10 @@ export type PreloadApi = {
   // BuildEx: see BUILDEX-PATCHES.md
   buildexBrain: {
     scan: (request: BrainScanRequest) => Promise<BrainScan>
+    setUp: (request: BrainSetupRequest) => Promise<BrainSetupResult>
+    agentView: (request: AgentViewRequest) => Promise<AgentView>
+    removalPlan: (request: BrainRemovalRequest) => Promise<BrainRemovalPlan>
+    remove: (request: BrainRemovalRequest) => Promise<BrainRemovalResult>
   }
   buildexBrainSections: {
     list: () => Promise<BrainSectionsResult>

@@ -11,6 +11,10 @@ import { BRAIN_ROOT } from './company-brain-scan'
 //
 // Every seeded file is a real, editable prompt rather than a placeholder. An
 // empty file teaches nothing; a file that asks the right question gets answered.
+//
+// Written only when the operator asks for it. An earlier version ran this on the
+// first touch of any BuildEx surface, which meant opening the Store wrote nine
+// folders into a repo somebody had only wanted to browse apps from.
 
 export type BrainSection = {
   /** Folder under `.buildex/`, or '' for the brain root. */
@@ -19,7 +23,16 @@ export type BrainSection = {
   /** One line the UI shows under the section heading. */
   purpose: string
   /** Seed document, written only when the section is empty. */
-  seed?: { name: string; body: string }
+  seed?: {
+    name: string
+    body: string
+    /**
+     * The exact placeholder the operator's own one-line answer replaces, when
+     * they give one at setup. Turns the first screen from a form into the first
+     * sentence of the brain.
+     */
+    summarySlot?: string
+  }
 }
 
 export const BRAIN_SECTIONS: BrainSection[] = [
@@ -29,6 +42,7 @@ export const BRAIN_SECTIONS: BrainSection[] = [
     purpose: 'What this company is for, who it serves, and what it is betting on.',
     seed: {
       name: 'overview.md',
+      summarySlot: '<!-- One paragraph a stranger would understand. -->',
       body: `# Strategy
 
 ## What we do
@@ -127,18 +141,43 @@ export type ScaffoldResult = {
   created: string[]
 }
 
+export type ScaffoldOptions = {
+  /** Section folders to create. Omitted means every one of them. */
+  folders?: string[]
+  /** The operator's one-line answer to "what does this company do?". */
+  summary?: string
+}
+
+function seedBody(section: BrainSection, summary: string): string {
+  const seed = section.seed
+  if (!seed) {
+    return ''
+  }
+  // Why: substituted rather than appended, so the document opens already
+  // answered instead of carrying both the question and the answer.
+  return summary && seed.summarySlot ? seed.body.replace(seed.summarySlot, summary) : seed.body
+}
+
 /**
  * Create the brain's sections in a repo that has none.
  *
  * Only ever adds. A section that exists is left exactly as it is, and a seed is
- * written only into a section that is empty — so this can run on every open
- * without ever touching what the company has written.
+ * written only into a section that is empty — so re-running this can never touch
+ * what the company has already written.
  */
-export function scaffoldCompanyBrain(repoPath: string): ScaffoldResult {
+export function scaffoldCompanyBrain(
+  repoPath: string,
+  options: ScaffoldOptions = {}
+): ScaffoldResult {
   const brainRoot = path.join(repoPath, BRAIN_ROOT)
+  const chosen = options.folders ? new Set(options.folders) : null
+  const summary = options.summary?.trim() ?? ''
   const created: string[] = []
 
   for (const section of BRAIN_SECTIONS) {
+    if (chosen && !chosen.has(section.folder)) {
+      continue
+    }
     const absolute = path.join(brainRoot, section.folder)
     try {
       if (!existsSync(absolute)) {
@@ -150,13 +189,13 @@ export function scaffoldCompanyBrain(repoPath: string): ScaffoldResult {
       }
       const seedPath = path.join(absolute, section.seed.name)
       if (!existsSync(seedPath)) {
-        writeFileSync(seedPath, section.seed.body, 'utf8')
+        writeFileSync(seedPath, seedBody(section, summary), 'utf8')
         created.push(`${section.folder}/${section.seed.name}`)
       }
     } catch {
-      // A section we cannot create is not worth failing the whole open for.
+      // A section we cannot create is not worth failing the rest for.
     }
   }
 
-  return { created }
+  return { created: created.sort() }
 }

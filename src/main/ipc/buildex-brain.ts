@@ -1,5 +1,12 @@
 import { ipcMain } from 'electron'
 import type {
+  AgentView,
+  AgentViewRequest,
+  BrainRemovalPlan,
+  BrainRemovalRequest,
+  BrainRemovalResult,
+  BrainSetupRequest,
+  BrainSetupResult,
   BrainSkillsRequest,
   BrainSkillsResult,
   BrainSkillCreateRequest,
@@ -14,9 +21,11 @@ import type {
   BrainScan,
   BrainScanRequest
 } from '../../shared/buildex-brain-types'
-import { EMPTY_BRAIN_SCAN } from '../../shared/buildex-brain-types'
+import { EMPTY_AGENT_VIEW, EMPTY_BRAIN_SCAN } from '../../shared/buildex-brain-types'
 import { scanCompanyBrain } from '../buildex-brain/company-brain-service'
-import { BRAIN_SECTIONS } from '../buildex-brain/brain-scaffold'
+import { BRAIN_SECTIONS, scaffoldCompanyBrain } from '../buildex-brain/brain-scaffold'
+import { buildAgentView } from '../buildex-brain/agent-view'
+import { planBrainRemoval, removeBrain } from '../buildex-brain/brain-remove'
 import { createBrainDocument } from '../buildex-brain/brain-document-create'
 import { readBrainHistory, saveBrain } from '../buildex-brain/brain-history'
 import { createBrainSkill, listBrainSkills } from '../buildex-brain/brain-skills'
@@ -110,6 +119,72 @@ export function registerBuildExBrainHandlers(): void {
       // the agent itself. Not awaited: the screen should not wait for it.
       void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
       return scan
+    }
+  )
+
+  // Why: the one place the brain's sections get written, and it runs only when
+  // the operator has chosen them. See buildex-repo-init.ts for what BuildEx
+  // still does on its own — machine state, never company files.
+  ipcMain.handle('buildex-brain:setup', (_event, request?: BrainSetupRequest): BrainSetupResult => {
+    const repoPath = request?.repoPath?.trim()
+    const folders = request?.folders ?? []
+    if (!repoPath) {
+      return { ok: false, created: [], error: 'Missing repoPath' }
+    }
+    if (folders.length === 0) {
+      return { ok: false, created: [], error: 'Choose at least one section' }
+    }
+    try {
+      const result = scaffoldCompanyBrain(repoPath, { folders, summary: request?.summary })
+      void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
+      return { ok: true, created: result.created }
+    } catch (error) {
+      return {
+        ok: false,
+        created: [],
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
+
+  ipcMain.handle(
+    'buildex-brain:agentView',
+    async (_event, request?: AgentViewRequest): Promise<AgentView> => {
+      const repoPath = request?.repoPath?.trim()
+      if (!repoPath) {
+        return EMPTY_AGENT_VIEW
+      }
+      // Why: the context file is rewritten first, so the dialog shows what the
+      // next session will actually get rather than what the last one got.
+      await refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
+      return buildAgentView(repoPath, await scanCompanyBrain(repoPath, Date.now()))
+    }
+  )
+
+  ipcMain.handle(
+    'buildex-brain:removalPlan',
+    async (_event, request?: BrainRemovalRequest): Promise<BrainRemovalPlan> => {
+      const repoPath = request?.repoPath?.trim()
+      if (!repoPath) {
+        return { documentCount: 0, unsavedPaths: [], canCommit: false, willBackUp: false }
+      }
+      return planBrainRemoval(repoPath)
+    }
+  )
+
+  ipcMain.handle(
+    'buildex-brain:remove',
+    async (_event, request?: BrainRemovalRequest): Promise<BrainRemovalResult> => {
+      const repoPath = request?.repoPath?.trim()
+      if (!repoPath) {
+        return { ok: false, committed: false, error: 'Missing repoPath' }
+      }
+      const result = await removeBrain(repoPath, Date.now())
+      if (result.ok) {
+        // The agent's context still names every document that was just removed.
+        void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
+      }
+      return result
     }
   )
 }

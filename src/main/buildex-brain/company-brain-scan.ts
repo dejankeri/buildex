@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 // Filesystem walk for the company brain. Sorted at every level so two scans of
@@ -40,6 +40,35 @@ export function isSkillManifest(relativeId: string): boolean {
 
 export function isGeneratedBrainFile(relativeId: string): boolean {
   return GENERATED_BRAIN_FILES.has(relativeId.toLowerCase())
+}
+
+// Things BuildEx puts in the brain folder on the operator's behalf rather than
+// things the company wrote. Installing an app from the Store lands skills here,
+// and that must not count as "this company has a brain" — otherwise an operator
+// who installs Slack before writing anything never gets offered setup, and ends
+// up with a brain that is nothing but somebody else's skills.
+const MACHINE_BRAIN_ENTRIES = new Set(['skills', 'packs.json'])
+
+/**
+ * True once this repo holds a company brain.
+ *
+ * Deliberately not `existsSync('.buildex')`: the folder alone proves only that
+ * BuildEx has run here. What counts is whether anything in it is the company's.
+ */
+export function isBrainInitialized(repoPath: string): boolean {
+  const brainRoot = path.join(repoPath, BRAIN_ROOT)
+  if (!existsSync(brainRoot)) {
+    return false
+  }
+  try {
+    return readdirSync(brainRoot).some(
+      (entry) => !entry.startsWith('.') && !MACHINE_BRAIN_ENTRIES.has(entry)
+    )
+  } catch {
+    // Unreadable is not the same as absent, and offering to set up a brain we
+    // cannot see would overwrite one that is already there.
+    return true
+  }
 }
 
 function toPosix(value: string): string {

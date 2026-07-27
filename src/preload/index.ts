@@ -87,7 +87,17 @@ import type {
 } from '../shared/shell-open-types'
 import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
 // BuildEx: see BUILDEX-PATCHES.md
-import type { BrainScan, BrainScanRequest } from '../shared/buildex-brain-types'
+import type {
+  AgentView,
+  AgentViewRequest,
+  BrainRemovalPlan,
+  BrainRemovalRequest,
+  BrainRemovalResult,
+  BrainScan,
+  BrainScanRequest,
+  BrainSetupRequest,
+  BrainSetupResult
+} from '../shared/buildex-brain-types'
 import type {
   BrainCreateDocumentRequest,
   BrainCreateDocumentResult,
@@ -2292,7 +2302,15 @@ const api = {
   // BuildEx: see BUILDEX-PATCHES.md
   buildexBrain: {
     scan: (request: BrainScanRequest): Promise<BrainScan> =>
-      ipcRenderer.invoke('buildex-brain:scan', request)
+      ipcRenderer.invoke('buildex-brain:scan', request),
+    setUp: (request: BrainSetupRequest): Promise<BrainSetupResult> =>
+      ipcRenderer.invoke('buildex-brain:setup', request),
+    agentView: (request: AgentViewRequest): Promise<AgentView> =>
+      ipcRenderer.invoke('buildex-brain:agentView', request),
+    removalPlan: (request: BrainRemovalRequest): Promise<BrainRemovalPlan> =>
+      ipcRenderer.invoke('buildex-brain:removalPlan', request),
+    remove: (request: BrainRemovalRequest): Promise<BrainRemovalResult> =>
+      ipcRenderer.invoke('buildex-brain:remove', request)
   },
 
   buildexBrainSections: {

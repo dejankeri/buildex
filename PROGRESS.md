@@ -34,6 +34,24 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
   own rich markdown editor; YAML front matter is held back from the editor and
   put back byte for byte, so a skill's `name:` and `description:` survive editing.
   Deterministic: same repo in, byte-identical output.
+- **Setting one up is a choice** — a repo with no brain is offered setup rather
+  than given one. Nothing is written until the operator picks their sections and
+  presses the button; the one line they type about the company becomes the first
+  line of `strategy/overview.md` rather than a form field that goes nowhere. A
+  repo that only holds an installed pack's skills still counts as having no
+  brain, so the offer is not swallowed by a trip to the Store.
+- **What the agent sees** — a read-only view of the context chain, from the ⋯ menu.
+  Splits what is loaded in full at the start of every session (project memory and
+  the `@` imports it pulls in, resolved and shown) from what is only named and
+  opened on demand (skills, connected apps, documents). Operators conflate the
+  two constantly. Rendered from disk with no model; an MCP server shows the
+  variable its key comes from and never a value, and anything that is not plainly
+  a variable reference is masked.
+- **Removing a brain cannot lose one** — the removal is committed when git holds
+  the brain, and a copy goes to `~/.buildex-backups/<repo>-<stamp>/` when anything
+  is uncommitted or there is no git; when both apply, both happen. Nothing outside
+  `.buildex/` is staged or touched, and `.claude/skills/` links left pointing at
+  nothing are pruned.
 - **Store** — reads capability packs from the repo's catalog, installs by writing
   skill scaffolds into the repo. Never overwrites an existing skill.
 - **Apps** — installed packs with an app face, opening externally.
@@ -56,7 +74,10 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
   autonomy: reading, editing, searching, shell and web run without interruption;
   `rm -rf`, force-push and `reset --hard` wait for a person. A company can
   override the preset in `.buildex/gate-preset.json`; a broken override falls
-  back to the shipped one rather than to no gates.
+  back to the shipped one rather than to no gates. The receipt of what BuildEx
+  wrote lives in `.claude/gate-applied.json` beside the settings it describes —
+  in `.buildex/` it was committed into the company's history, and its presence
+  alone made every repo look like it already had a brain.
 - **Everything Orca does** — untouched. Worktrees, terminals, diffs, agents, SSH.
 
 ## Verification
@@ -66,8 +87,8 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
 | `pnpm typecheck` (3 projects) | exit 0 |
 | `pnpm lint` | only the pre-existing upstream Ghostty failure |
 | Full unit suite | 37 014 tests; only the recorded upstream baseline fails |
-| BuildEx unit tests | 114 passed (brain, packs, gate, store) |
-| `tests/e2e/buildex-surfaces.spec.ts` | 8/8 in real headless Electron |
+| BuildEx unit tests | 142 passed (brain, packs, gate, store) |
+| `tests/e2e/buildex-surfaces.spec.ts` | 10/10 in real headless Electron |
 | Rebase drills vs live upstream | 3× clean, zero conflicts |
 
 Screenshots in `.buildex-proofs/`. Baseline in `.buildex-proofs/UPSTREAM-BASELINE.md`.
