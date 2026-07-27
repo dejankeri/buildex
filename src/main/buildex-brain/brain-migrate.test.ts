@@ -78,12 +78,45 @@ describe('migrateBrainToExternal', () => {
     rmSync(result.backupPath ?? '', { recursive: true, force: true })
   })
 
-  it('writes no pointer when the operator declined one', async () => {
+  it('writes no pointer when the operator declined one, but still removes the brain from HEAD', async () => {
     await migrateBrainToExternal(
       { repoPath: repo, brainPath: brain, writePointer: false, bindingsFile },
       1_700_000_000_000
     )
 
     expect(readBrainPointer(repo)).toBeNull()
+
+    // Not merely staged: gone from the tip commit itself.
+    const tracked = execFileSync('git', ['ls-tree', '-r', 'HEAD', '--name-only'], {
+      cwd: repo,
+      encoding: 'utf8'
+    })
+    expect(tracked).not.toContain('.buildex/')
+
+    // While still reachable from the past.
+    const log = execFileSync('git', ['log', '--all', '--name-only', '--format='], {
+      cwd: repo,
+      encoding: 'utf8'
+    })
+    expect(log).toContain('.buildex/decisions/pricing.md')
+  })
+
+  it('leaves the source brain untouched when the target repo fails to record the commit', async () => {
+    // The target already has this exact content committed, so commitBrain sees
+    // nothing to save and returns ok:false without throwing.
+    mkdirSync(path.join(brain, 'decisions'), { recursive: true })
+    writeFileSync(path.join(brain, 'decisions', 'pricing.md'), '# Pricing\n', 'utf8')
+    git(brain, 'add', '.')
+    git(brain, 'commit', '--quiet', '-m', 'already have this')
+
+    const result = await migrateBrainToExternal(
+      { repoPath: repo, brainPath: brain, writePointer: false, bindingsFile },
+      1_700_000_000_000
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.backupPath).toBeTruthy()
+    expect(existsSync(path.join(repo, '.buildex', 'decisions', 'pricing.md'))).toBe(true)
+    rmSync(result.backupPath ?? '', { recursive: true, force: true })
   })
 })

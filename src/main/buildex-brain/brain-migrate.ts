@@ -71,7 +71,12 @@ export async function migrateBrainToExternal(
       recursive: true,
       filter: (from) => path.basename(from) !== 'brain.json'
     })
-    await commitBrain(target, MIGRATION_MESSAGE)
+    // commitBrain signals failure by return value, not by throwing — an unset
+    // git identity or an empty diff must stop this before the source is touched.
+    const committed = await commitBrain(target, MIGRATION_MESSAGE)
+    if (!committed.ok) {
+      return { ok: false, backupPath, movedPaths: [], error: committed.error }
+    }
   } catch (error) {
     return { ok: false, backupPath, movedPaths: [], error: message(error) }
   }
