@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import type { BrainLocation } from '../../shared/buildex-brain-types'
 
 // What this repo has installed, and the exact contents we wrote. Committed with
 // the repo so the record travels with the company (git is the database), and so
@@ -9,8 +10,15 @@ import path from 'node:path'
 // filesystem says whether it is there. If this file is lost, install still works
 // — the only thing that degrades is our ability to distinguish an operator's
 // edit from a stale copy, and in that case we keep the operator's version.
+//
+// Lives at the brain root, not the repo root: the receipt travels with the
+// skills it describes, wherever the brain is.
 
-export const PACK_STATE_RELATIVE_PATH = '.buildex/packs.json'
+export const PACK_STATE_FILE_NAME = 'packs.json'
+
+export function packStatePath(location: BrainLocation): string {
+  return path.join(location.root, PACK_STATE_FILE_NAME)
+}
 
 export type InstalledPackRecord = {
   /** Repo-relative POSIX path -> sha256 of the contents we wrote there. */
@@ -28,8 +36,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Read the receipt. A missing or unusable file reads as "nothing installed". */
-export function readPackState(repoPath: string): PackState {
-  const absolute = path.join(repoPath, ...PACK_STATE_RELATIVE_PATH.split('/'))
+export function readPackState(location: BrainLocation): PackState {
+  const absolute = packStatePath(location)
   let raw: unknown
   try {
     raw = JSON.parse(readFileSync(absolute, 'utf8'))
@@ -59,8 +67,8 @@ export function readPackState(repoPath: string): PackState {
  * Write the receipt back. Keys are sorted so the file has one stable form and
  * an install that changes nothing produces no git diff.
  */
-export function writePackState(repoPath: string, state: PackState): void {
-  const absolute = path.join(repoPath, ...PACK_STATE_RELATIVE_PATH.split('/'))
+export function writePackState(location: BrainLocation, state: PackState): void {
+  const absolute = packStatePath(location)
   mkdirSync(path.dirname(absolute), { recursive: true })
   const packs: Record<string, InstalledPackRecord> = {}
   for (const packId of Object.keys(state.packs).sort()) {

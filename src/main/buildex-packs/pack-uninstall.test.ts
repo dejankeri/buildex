@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { embeddedLocation } from '../buildex-brain/brain-location'
 import { installPack } from './pack-install'
 import { readPackCatalog } from './pack-catalog'
 import { uninstallPack } from './pack-uninstall'
@@ -94,7 +95,7 @@ describe('uninstallPack', () => {
 
     uninstallPack(repo, 'slack', bundle)
 
-    expect(readPackState(repo).packs.slack).toBeUndefined()
+    expect(readPackState(embeddedLocation(repo)).packs.slack).toBeUndefined()
   })
 
   it('reports a pack that was never installed', () => {
@@ -112,6 +113,6 @@ describe('uninstallPack', () => {
     uninstallPack(repo, 'slack', bundle)
 
     expect(existsSync(path.join(repo, '.buildex/skills/stripe-search/SKILL.md'))).toBe(true)
-    expect(readPackState(repo).packs.stripe).toBeDefined()
+    expect(readPackState(embeddedLocation(repo)).packs.stripe).toBeDefined()
   })
 })

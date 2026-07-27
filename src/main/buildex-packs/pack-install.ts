@@ -1,4 +1,6 @@
+import type { BrainLocation } from '../../shared/buildex-brain-types'
 import type { BuildExPack, PackInstallResult } from '../../shared/buildex-packs-types'
+import { embeddedLocation } from '../buildex-brain/brain-location'
 import { readPackCatalog } from './pack-catalog'
 import { planSkillFiles, writePlannedFile } from './pack-files'
 import { readPackState, recordedHash, writePackState } from './pack-state'
@@ -23,7 +25,12 @@ export type ApplyPackResult = {
  * an operator asking for a pack, refresh is a newer app carrying newer skills.
  * Both must leave an edited file alone, so both go through the same rule.
  */
-export function applyPack(repoPath: string, pack: BuildExPack, state: PackState): ApplyPackResult {
+export function applyPack(
+  repoPath: string,
+  location: BrainLocation,
+  pack: BuildExPack,
+  state: PackState
+): ApplyPackResult {
   const planned = planSkillFiles(pack.sourceDir, pack.skills)
   const files: Record<string, string> = { ...state.packs[pack.id]?.files }
   const writtenPaths: string[] = []
@@ -51,7 +58,7 @@ export function applyPack(repoPath: string, pack: BuildExPack, state: PackState)
   // discovers skills under .claude/skills. Without this link an install looks
   // like it worked and the pack does nothing.
   for (const skill of pack.skills) {
-    if (linkSkillIntoAgentDir(repoPath, skill) === 'needs-copy') {
+    if (linkSkillIntoAgentDir(repoPath, location, skill) === 'needs-copy') {
       copyLinkFallback(repoPath, pack, skill, files, writtenPaths)
     }
   }
@@ -114,10 +121,12 @@ export function installPack(
   // anything lands, so it never shows up in the operator's `git status`.
   ensureBuildExGitExclude(repoPath)
 
-  const state = readPackState(repoPath)
+  // Embedded until packs learn the external case; see brain-remove.ts for the same shim.
+  const location = embeddedLocation(repoPath)
+  const state = readPackState(location)
   let applied: ApplyPackResult
   try {
-    applied = applyPack(repoPath, pack, state)
+    applied = applyPack(repoPath, location, pack, state)
   } catch (error) {
     return {
       ok: false,
@@ -137,7 +146,7 @@ export function installPack(
   }
 
   try {
-    writePackState(repoPath, state)
+    writePackState(location, state)
   } catch {
     // Why: the files are the install. A receipt we could not write costs us the
     // ability to detect operator edits later, which fails safe (we keep theirs),

@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { embeddedLocation } from '../buildex-brain/brain-location'
 import { readPackCatalog } from './pack-catalog'
 import { installPack } from './pack-install'
 import { parsePackManifest } from './pack-manifest'
@@ -154,7 +155,9 @@ describe('installPack', () => {
 
     expect(existsSync(path.join(repo, '.buildex/packs.json'))).toBe(true)
     expect(
-      readPackState(repo).packs.linear.files['.buildex/skills/linear-search/SKILL.md']
+      readPackState(embeddedLocation(repo)).packs.linear.files[
+        '.buildex/skills/linear-search/SKILL.md'
+      ]
     ).toMatch(/^[a-f0-9]{64}$/)
   })
 

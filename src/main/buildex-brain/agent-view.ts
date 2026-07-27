@@ -123,10 +123,13 @@ function collectMemory(repoPath: string): AgentContextFile[] {
 
 function collectReachable(repoPath: string, scan: BrainScan): AgentReachableItem[] {
   const items: AgentReachableItem[] = []
+  const location = scan.resolution?.status === 'ready' ? scan.resolution.location : null
 
   // Only the linked ones: a skill the agent cannot see is not something it can
-  // reach, however plainly it sits in `.buildex/skills/`.
-  for (const skill of listBrainSkills(repoPath).filter((entry) => entry.linked)) {
+  // reach, however plainly it sits in the brain's `skills/`.
+  for (const skill of location
+    ? listBrainSkills(repoPath, location).filter((entry) => entry.linked)
+    : []) {
     items.push({
       kind: 'skill',
       name: skill.name,

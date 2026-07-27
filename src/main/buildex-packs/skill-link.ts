@@ -1,7 +1,9 @@
 import { existsSync, lstatSync, mkdirSync, readlinkSync, rmSync, symlinkSync } from 'node:fs'
 import path from 'node:path'
+import type { BrainLocation } from '../../shared/buildex-brain-types'
 
-// Installed skills live in .buildex/skills/ and are linked into .claude/skills/.
+// Skills live in the brain's `skills/` folder — wherever the brain is — and are
+// linked into .claude/skills/, which is always per-repo.
 //
 // Two reasons for the indirection. The agent runtime only discovers skills under
 // .claude/skills (or .agents/skills) — anywhere else and an installed pack is
@@ -13,10 +15,13 @@ import path from 'node:path'
 // (Windows without developer mode), the caller falls back to copying, which
 // costs a duplicate but never costs the operator a working skill.
 
-export const BUILDEX_SKILLS_DIR = path.join('.buildex', 'skills')
 export const AGENT_SKILLS_DIR = path.join('.claude', 'skills')
 
 export type LinkOutcome = 'linked' | 'already-linked' | 'needs-copy'
+
+export function skillsRoot(location: BrainLocation): string {
+  return path.join(location.root, 'skills')
+}
 
 function isOurLink(linkPath: string, targetPath: string): boolean {
   try {
@@ -36,8 +41,12 @@ function isOurLink(linkPath: string, targetPath: string): boolean {
  * Never replaces a real directory: if something other than our link is sitting
  * there, it is the operator's and the caller is told to leave it alone.
  */
-export function linkSkillIntoAgentDir(repoPath: string, skillName: string): LinkOutcome {
-  const target = path.join(repoPath, BUILDEX_SKILLS_DIR, skillName)
+export function linkSkillIntoAgentDir(
+  repoPath: string,
+  location: BrainLocation,
+  skillName: string
+): LinkOutcome {
+  const target = path.join(skillsRoot(location), skillName)
   const linkPath = path.join(repoPath, AGENT_SKILLS_DIR, skillName)
 
   if (isOurLink(linkPath, target)) {
@@ -51,7 +60,10 @@ export function linkSkillIntoAgentDir(repoPath: string, skillName: string): Link
 
   try {
     mkdirSync(path.dirname(linkPath), { recursive: true })
-    symlinkSync(path.relative(path.dirname(linkPath), target), linkPath, 'dir')
+    // Relative inside the repo so a clone or a move keeps working; absolute when
+    // the brain is elsewhere, because nothing relative can reach it reliably.
+    const relative = path.relative(path.dirname(linkPath), target)
+    symlinkSync(location.mode === 'embedded' ? relative : target, linkPath, 'dir')
     return 'linked'
   } catch {
     return 'needs-copy'

@@ -46,7 +46,8 @@ export function registerBuildExBrainHandlers(): void {
     'buildex-brain:skills',
     (_event, request?: BrainSkillsRequest): BrainSkillsResult => {
       const repoPath = request?.repoPath?.trim()
-      return { skills: repoPath ? listBrainSkills(repoPath) : [] }
+      const location = repoPath ? requireBrainLocation(repoPath) : null
+      return { skills: repoPath && location ? listBrainSkills(repoPath, location) : [] }
     }
   )
 
@@ -58,7 +59,11 @@ export function registerBuildExBrainHandlers(): void {
       if (!repoPath || !title) {
         return { ok: false, error: 'Missing repoPath or title' }
       }
-      return createBrainSkill(repoPath, title)
+      const location = requireBrainLocation(repoPath)
+      if (!location) {
+        return { ok: false, error: 'Missing repoPath or title' }
+      }
+      return createBrainSkill(repoPath, location, title)
     }
   )
 

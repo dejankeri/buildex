@@ -1,21 +1,23 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import type { BrainSkill, BrainSkillCreateResult } from '../../shared/buildex-brain-types'
+import type {
+  BrainLocation,
+  BrainSkill,
+  BrainSkillCreateResult
+} from '../../shared/buildex-brain-types'
 import { readPackState } from '../buildex-packs/pack-state'
-import { linkSkillIntoAgentDir } from '../buildex-packs/skill-link'
+import { linkSkillIntoAgentDir, skillsRoot } from '../buildex-packs/skill-link'
 import { toDocumentFileName } from './brain-document-create'
 
 // The company's skills — what its agent knows how to do here.
 //
-// Two kinds live side by side in `.buildex/skills/`: skills a pack installed,
+// Two kinds live side by side in the brain's `skills/`: skills a pack installed,
 // and skills the company wrote. Telling them apart matters, because one is
 // replaced by an app update and the other is somebody's work.
 //
-// Sharing is git. `.buildex/` is tracked, so a teammate who pulls gets the
+// Sharing is git. The brain is tracked, so a teammate who pulls gets the
 // skills, and the link into `.claude/skills/` is rebuilt for them on open —
 // which is why the link itself is never committed.
-
-const SKILLS_DIR = path.join('.buildex', 'skills')
 
 const SKILL_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -47,8 +49,8 @@ function frontmatterDescription(body: string): string | null {
   return null
 }
 
-export function listBrainSkills(repoPath: string): BrainSkill[] {
-  const root = path.join(repoPath, SKILLS_DIR)
+export function listBrainSkills(repoPath: string, location: BrainLocation): BrainSkill[] {
+  const root = skillsRoot(location)
   let entries: string[]
   try {
     entries = readdirSync(root).sort()
@@ -58,9 +60,10 @@ export function listBrainSkills(repoPath: string): BrainSkill[] {
 
   // Every skill the receipt attributes to a pack; everything else the company wrote.
   const fromPacks = new Set<string>()
-  for (const record of Object.values(readPackState(repoPath).packs)) {
+  for (const record of Object.values(readPackState(location).packs)) {
     for (const relativePath of Object.keys(record.files)) {
-      const match = relativePath.match(/^\.buildex\/skills\/([^/]+)\//)
+      // Older receipts recorded paths from the repo root; newer ones from the brain root.
+      const match = relativePath.match(/^(?:\.buildex\/)?skills\/([^/]+)\//)
       if (match) {
         fromPacks.add(match[1])
       }
@@ -99,14 +102,18 @@ export function listBrainSkills(repoPath: string): BrainSkill[] {
 }
 
 /** A skill the company writes itself. Scaffolded so it is usable immediately. */
-export function createBrainSkill(repoPath: string, title: string): BrainSkillCreateResult {
+export function createBrainSkill(
+  repoPath: string,
+  location: BrainLocation,
+  title: string
+): BrainSkillCreateResult {
   const fileName = toDocumentFileName(title)
   const name = fileName?.replace(/\.md$/, '') ?? ''
   // Why: this becomes a directory name and the agent's handle for the skill.
   if (!name || !SKILL_ID_RE.test(name)) {
     return { ok: false, error: 'Use letters, numbers and hyphens' }
   }
-  const directory = path.join(repoPath, SKILLS_DIR, name)
+  const directory = path.join(skillsRoot(location), name)
   const manifestPath = path.join(directory, 'SKILL.md')
   if (existsSync(manifestPath)) {
     return { ok: false, error: `Already exists: ${name}` }
@@ -141,6 +148,6 @@ that two people would carry it out the same way.
   }
 
   // Without the link the skill exists but the agent never sees it.
-  linkSkillIntoAgentDir(repoPath, name)
+  linkSkillIntoAgentDir(repoPath, location, name)
   return { ok: true, name, absolutePath: manifestPath }
 }
