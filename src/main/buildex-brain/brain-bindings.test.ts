@@ -75,4 +75,10 @@ describe('brain bindings', () => {
       brainByRepo: { '/code/api': '/brains/acme' }
     })
   })
+
+  it('reads as empty rather than throwing with no argument outside Electron', () => {
+    // brainBindingsFile() needs app.getPath('userData'), unavailable in this test
+    // process — a machine with no reachable bindings file has no bindings.
+    expect(readBrainBindings()).toEqual({ clonesByRemote: {}, brainByRepo: {} })
+  })
 })

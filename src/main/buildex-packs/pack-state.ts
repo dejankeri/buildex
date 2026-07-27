@@ -85,10 +85,51 @@ export function writePackState(location: BrainLocation, state: PackState): void 
   writeFileSync(absolute, next, 'utf8')
 }
 
+/**
+ * The legacy key a brain-relative `skills/…` path would have had before packs
+ * moved to the brain root — receipts from before this migration recorded it
+ * repo-relative, under `.buildex/`. `.claude/…` fallback-copy keys never had a
+ * `.buildex/` prefix in either scheme, so they have no legacy form.
+ */
+function legacyReceiptKey(relativePath: string): string | null {
+  return relativePath.startsWith('skills/') ? `.buildex/${relativePath}` : null
+}
+
+/**
+ * The hash we recorded for a file last time, checking the legacy key too — an
+ * old receipt naming this file `.buildex/skills/…` must still count as "we
+ * wrote this", or a refresh mistakes its own earlier install for an operator
+ * edit and stops updating it.
+ */
 export function recordedHash(
   state: PackState,
   packId: string,
   relativePath: string
 ): string | null {
-  return state.packs[packId]?.files[relativePath] ?? null
+  const files = state.packs[packId]?.files
+  if (!files) {
+    return null
+  }
+  if (relativePath in files) {
+    return files[relativePath]
+  }
+  const legacy = legacyReceiptKey(relativePath)
+  return legacy && legacy in files ? files[legacy] : null
+}
+
+/**
+ * Where a receipt-recorded path resolves on disk. The key's own shape says the
+ * base: `.buildex/`- or `.claude/`-prefixed keys predate external brains and
+ * are repo-relative (in embedded mode that is exactly today's file); anything
+ * else is brain-root-relative, the shape every new receipt uses.
+ */
+export function resolveReceiptPath(
+  repoPath: string,
+  location: BrainLocation,
+  relativePath: string
+): string {
+  if (relativePath.startsWith('.buildex/') || relativePath.startsWith('.claude/')) {
+    return path.join(repoPath, ...relativePath.split('/'))
+  }
+  return path.join(location.root, ...relativePath.split('/'))
 }

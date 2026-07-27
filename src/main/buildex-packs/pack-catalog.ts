@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { BuildExPack, PackCatalog, PackSource } from '../../shared/buildex-packs-types'
-import { embeddedLocation } from '../buildex-brain/brain-location'
+import { embeddedLocation, requireBrainLocation } from '../buildex-brain/brain-location'
 import { parsePackManifest } from './pack-manifest'
 import { skillsRoot } from './skill-link'
 
@@ -80,8 +80,8 @@ export function isPackInstalled(repoPath: string, skills: string[]): boolean {
   if (!repoPath || skills.length === 0) {
     return false
   }
-  // Embedded until packs learn the external case; see brain-remove.ts for the same shim.
-  const root = skillsRoot(embeddedLocation(repoPath))
+  const location = requireBrainLocation(repoPath) ?? embeddedLocation(repoPath)
+  const root = skillsRoot(location)
   return skills.every((skill) => existsSync(path.join(root, skill, 'SKILL.md')))
 }
 

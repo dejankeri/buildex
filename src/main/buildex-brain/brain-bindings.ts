@@ -34,9 +34,17 @@ function isRecordOfStrings(value: unknown): value is Record<string, string> {
   )
 }
 
-export function readBrainBindings(file = brainBindingsFile()): BrainBindings {
+/**
+ * A machine with no reachable bindings file has no bindings — that is a correct
+ * answer, not an error. Resolving the default path lives inside the try/catch
+ * (rather than as a default parameter) because `brainBindingsFile()` itself can
+ * throw outside Electron, and a caller running under plain Node deserves the
+ * empty store back, not a crash.
+ */
+export function readBrainBindings(file?: string): BrainBindings {
   try {
-    const raw: unknown = JSON.parse(readFileSync(file, 'utf8'))
+    const resolved = file ?? brainBindingsFile()
+    const raw: unknown = JSON.parse(readFileSync(resolved, 'utf8'))
     if (!raw || typeof raw !== 'object') {
       return empty()
     }

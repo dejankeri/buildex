@@ -1,5 +1,5 @@
 import type { PackRefreshResult } from '../../shared/buildex-packs-types'
-import { embeddedLocation } from '../buildex-brain/brain-location'
+import { embeddedLocation, requireBrainLocation } from '../buildex-brain/brain-location'
 import { readPackCatalog } from './pack-catalog'
 import { applyPack } from './pack-install'
 import { readPackState, writePackState } from './pack-state'
@@ -16,8 +16,7 @@ export function refreshInstalledPacks(
   repoPath: string,
   bundledRoot: string | null = null
 ): PackRefreshResult {
-  // Embedded until packs learn the external case; see brain-remove.ts for the same shim.
-  const location = embeddedLocation(repoPath)
+  const location = requireBrainLocation(repoPath) ?? embeddedLocation(repoPath)
   const state = readPackState(location)
   const installedIds = Object.keys(state.packs)
   if (installedIds.length === 0) {

@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { embeddedLocation } from '../buildex-brain/brain-location'
+import { listBrainSkills } from '../buildex-brain/brain-skills'
 import { installPack } from './pack-install'
+import { hashContent } from './pack-files'
 import { readPackCatalog } from './pack-catalog'
 import { uninstallPack } from './pack-uninstall'
 import { readPackState } from './pack-state'
@@ -51,8 +53,8 @@ describe('uninstallPack', () => {
 
     expect(result.ok).toBe(true)
     expect(result.removedPaths).toEqual([
-      '.buildex/skills/slack-search/SKILL.md',
-      '.buildex/skills/slack-search/references/api.md'
+      'skills/slack-search/SKILL.md',
+      'skills/slack-search/references/api.md'
     ])
     expect(existsSync(path.join(repo, '.buildex/skills/slack-search'))).toBe(false)
     expect(readPackCatalog(repo, bundle).packs[0].installed).toBe(false)
@@ -82,7 +84,7 @@ describe('uninstallPack', () => {
 
     const result = uninstallPack(repo, 'slack', bundle)
 
-    expect(result.keptOperatorEdits).toEqual(['.buildex/skills/slack-search/SKILL.md'])
+    expect(result.keptOperatorEdits).toEqual(['skills/slack-search/SKILL.md'])
     expect(readFileSync(path.join(repo, '.buildex/skills/slack-search/SKILL.md'), 'utf8')).toBe(
       '# tuned for us\n'
     )
@@ -95,6 +97,45 @@ describe('uninstallPack', () => {
 
     uninstallPack(repo, 'slack', bundle)
 
+    expect(readPackState(embeddedLocation(repo)).packs.slack).toBeUndefined()
+  })
+
+  it('still resolves, attributes, and uninstalls cleanly when a receipt predates brain-relative paths', () => {
+    // Simulate a pack installed before packs moved to brain-root-relative receipts
+    // — both the files on disk and the receipt itself used the old, repo-relative
+    // `.buildex/skills/…` shape.
+    writeIn(repo, '.buildex/skills/slack-search/SKILL.md', '# search\n')
+    writeIn(repo, '.buildex/skills/slack-search/references/api.md', '# api\n')
+    writeIn(
+      repo,
+      '.buildex/packs.json',
+      JSON.stringify({
+        packs: {
+          slack: {
+            files: {
+              '.buildex/skills/slack-search/SKILL.md': hashContent('# search\n'),
+              '.buildex/skills/slack-search/references/api.md': hashContent('# api\n')
+            }
+          }
+        }
+      })
+    )
+
+    // Still attributes to its pack, from the old-shape receipt.
+    expect(
+      listBrainSkills(repo, embeddedLocation(repo)).find((skill) => skill.name === 'slack-search')
+        ?.source
+    ).toBe('pack')
+
+    const result = uninstallPack(repo, 'slack', bundle)
+
+    // Still resolves and still uninstalls cleanly.
+    expect(result.ok).toBe(true)
+    expect(result.removedPaths).toEqual([
+      '.buildex/skills/slack-search/SKILL.md',
+      '.buildex/skills/slack-search/references/api.md'
+    ])
+    expect(existsSync(path.join(repo, '.buildex/skills/slack-search'))).toBe(false)
     expect(readPackState(embeddedLocation(repo)).packs.slack).toBeUndefined()
   })
 
