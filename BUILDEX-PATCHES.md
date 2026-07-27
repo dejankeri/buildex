@@ -21,7 +21,6 @@ src/renderer/src/components/sidebar/BuildExNavEntries.tsx
 src/renderer/src/components/buildex-apps/AppsPage.tsx
 src/renderer/src/components/buildex-store/StorePage.tsx
 tests/e2e/buildex-surfaces.spec.ts
-.buildex-proofs/**
 BUILDEX-PATCHES.md
 ```
 
@@ -150,7 +149,7 @@ git rebase upstream/main
 pnpm install                  # lockfile may have moved
 pnpm run typecheck            # must exit 0
 pnpm run sync:localization-catalog
-pnpm run lint                 # expect ONLY the Ghostty failure (see .buildex-proofs/UPSTREAM-BASELINE.md)
+pnpm run lint                 # expect ONLY the pre-existing upstream Ghostty localization failure
 SKIP_BUILD=1 pnpm exec playwright test tests/e2e/buildex-surfaces.spec.ts \
   --config tests/playwright.config.ts --project=electron-headless --workers=1
 ```

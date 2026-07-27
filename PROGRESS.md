@@ -91,7 +91,8 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
 | `tests/e2e/buildex-surfaces.spec.ts` | 10/10 in real headless Electron |
 | Rebase drills vs live upstream | 3× clean, zero conflicts |
 
-Screenshots in `.buildex-proofs/`. Baseline in `.buildex-proofs/UPSTREAM-BASELINE.md`.
+The e2e run writes its screenshots to `.buildex-proofs/`; that directory is
+gitignored working output, not a checked-in record.
 
 ## The gate: what is done and what is not
 
@@ -121,8 +122,10 @@ surface this fork has deliberately kept thin.
 ## Read before touching anything
 
 - **`BUILDEX-PATCHES.md`** — every upstream line this fork owns, the traps, the rebase procedure.
-- **`.buildex-proofs/UPSTREAM-BASELINE.md`** — upstream main is not green. Gate on
-  "no new failures", never "all green". Run tests scoped; this box cannot do full fanout.
+- **Upstream main is not green.** Gate on "no new failures", never "all green" —
+  `verify:localization-coverage` fails on pristine upstream over `Ghostty`, taking
+  `pnpm lint` to exit 1, and `src/relay/agent-exec-handler.test.ts` fails 2 tests.
+  Run tests scoped to what you changed; this box cannot do full fanout.
 
 ## Run it
 
