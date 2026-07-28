@@ -195,7 +195,7 @@ export type AgentReachableItem = {
   name: string
   /** What the agent knows about it without opening it. */
   detail: string
-  /** Repo-relative POSIX path, when it is a file. */
+  /** Where to open it: repo-relative POSIX when it's in the repo, absolute when it's an external brain document. */
   path?: string
 }
 

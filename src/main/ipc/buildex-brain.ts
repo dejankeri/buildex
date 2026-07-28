@@ -28,7 +28,7 @@ import { BRAIN_SECTIONS, scaffoldCompanyBrain } from '../buildex-brain/brain-sca
 import { buildAgentView } from '../buildex-brain/agent-view'
 import { disconnectBrain, planBrainRemoval, removeBrain } from '../buildex-brain/brain-remove'
 import { createBrainDocument } from '../buildex-brain/brain-document-create'
-import { requireBrainLocation } from '../buildex-brain/brain-location'
+import { embeddedLocation, requireBrainLocation } from '../buildex-brain/brain-location'
 import { commitBrain, readBrainHistory } from '../buildex-brain/brain-history'
 import { createBrainSkill, listBrainSkills } from '../buildex-brain/brain-skills'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
@@ -110,7 +110,7 @@ export function registerBuildExBrainHandlers(): void {
         // Why: a new document the agent does not know about is the most common
         // way the context goes stale. Not awaited — the operator is waiting to
         // start writing, not for bookkeeping.
-        void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
+        void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       }
       return result
     }
@@ -135,7 +135,7 @@ export function registerBuildExBrainHandlers(): void {
       // Why: opening the Brain is the moment to catch up on anything that changed
       // outside the app — a document pulled from a teammate, a file written by
       // the agent itself. Not awaited: the screen should not wait for it.
-      void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
+      void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       return scan
     }
   )
@@ -158,7 +158,7 @@ export function registerBuildExBrainHandlers(): void {
     }
     try {
       const result = scaffoldCompanyBrain(location, { folders, summary: request?.summary })
-      void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
+      void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       return { ok: true, created: result.created }
     } catch (error) {
       return {
@@ -182,7 +182,7 @@ export function registerBuildExBrainHandlers(): void {
       }
       // Why: the context file is rewritten first, so the dialog shows what the
       // next session will actually get rather than what the last one got.
-      await refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
+      await refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       const resolution: BrainResolution = { status: 'ready', location }
       const scan = await scanCompanyBrain(repoPath, location, resolution, Date.now())
       return buildAgentView(repoPath, scan)
@@ -218,7 +218,13 @@ export function registerBuildExBrainHandlers(): void {
           : await removeBrain(repoPath, location, Date.now())
       if (result.ok) {
         // The agent's context still names every document that was just removed.
-        void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
+        // Disconnecting an external brain changes what this repo's brain even
+        // is, so resolve again rather than reuse the location removal just
+        // invalidated.
+        const refreshedLocation = requireBrainLocation(repoPath) ?? embeddedLocation(repoPath)
+        void refreshCompanyContext(repoPath, refreshedLocation, {
+          bundledCatalogRoot: bundledCatalogRoot()
+        })
       }
       return result
     }

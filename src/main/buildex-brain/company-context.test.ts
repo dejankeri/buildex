@@ -47,8 +47,8 @@ describe('renderCompanyContext', () => {
     write('a.md', '[[b]]')
     write('b.md', '# B')
 
-    const first = renderCompanyContext(await scan())
-    const second = renderCompanyContext(await scan())
+    const first = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+    const second = renderCompanyContext(await scan(), [], embeddedLocation(repo))
 
     expect(second).toBe(first)
   })
@@ -59,7 +59,7 @@ describe('renderCompanyContext', () => {
     write('b.md', '# B')
     write('notes/side.md', '# Side')
 
-    const rendered = renderCompanyContext(await scan())
+    const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
 
     expect(rendered).toContain('**root** — a, b, hub')
     expect(rendered).toContain('**notes** — side')
@@ -71,7 +71,7 @@ describe('syncCompanyContext', () => {
   it('writes the context file and adds the CLAUDE.md import', async () => {
     write('a.md', '# A')
 
-    const result = syncCompanyContext(repo, await scan())
+    const result = syncCompanyContext(repo, await scan(), [], embeddedLocation(repo))
 
     expect(result.contextChanged).toBe(true)
     expect(result.claudeMdChanged).toBe(true)
@@ -82,9 +82,9 @@ describe('syncCompanyContext', () => {
   it('writes nothing when re-run against the same scan', async () => {
     write('a.md', '# A')
     const snapshot = await scan()
-    syncCompanyContext(repo, snapshot)
+    syncCompanyContext(repo, snapshot, [], embeddedLocation(repo))
 
-    const second = syncCompanyContext(repo, snapshot)
+    const second = syncCompanyContext(repo, snapshot, [], embeddedLocation(repo))
 
     expect(second.contextChanged).toBe(false)
     expect(second.claudeMdChanged).toBe(false)
@@ -95,8 +95,8 @@ describe('syncCompanyContext', () => {
 
     // Why: both outputs live under `.claude/`, which the scanner skips and git
     // ignores — so re-syncing writes nothing and shows up in no history.
-    syncCompanyContext(repo, await scan())
-    const second = syncCompanyContext(repo, await scan())
+    syncCompanyContext(repo, await scan(), [], embeddedLocation(repo))
+    const second = syncCompanyContext(repo, await scan(), [], embeddedLocation(repo))
 
     expect(second.contextChanged).toBe(false)
     expect(second.claudeMdChanged).toBe(false)
@@ -106,7 +106,7 @@ describe('syncCompanyContext', () => {
     writeRaw('.claude/CLAUDE.md', '# House rules\n\nAlways ask before deploying.\n')
     write('a.md', '# A')
 
-    syncCompanyContext(repo, await scan())
+    syncCompanyContext(repo, await scan(), [], embeddedLocation(repo))
 
     const claudeMd = read('.claude/CLAUDE.md')
     expect(claudeMd).toContain('Always ask before deploying.')
@@ -118,7 +118,7 @@ describe('syncCompanyContext', () => {
     // the tracked brain folder it produced a diff every time anything changed.
     write('a.md', '# A')
 
-    syncCompanyContext(repo, await scan())
+    syncCompanyContext(repo, await scan(), [], embeddedLocation(repo))
 
     expect(existsSync(path.join(repo, '.buildex', 'company-context.md'))).toBe(false)
     expect(existsSync(path.join(repo, '.claude', 'company-context.md'))).toBe(true)
@@ -128,7 +128,7 @@ describe('syncCompanyContext', () => {
     write('a.md', '# A')
     write('company-context.md', '# Company context\n\nStale, from the version that tracked it.\n')
 
-    const result = syncCompanyContext(repo, await scan())
+    const result = syncCompanyContext(repo, await scan(), [], embeddedLocation(repo))
 
     expect(result.legacyRemoved).toBe(true)
     expect(existsSync(path.join(repo, '.buildex', 'company-context.md'))).toBe(false)
@@ -140,7 +140,7 @@ describe('syncCompanyContext', () => {
     write('a.md', '# A')
     write('company-context.md', '# Our own notes on context\n')
 
-    const result = syncCompanyContext(repo, await scan())
+    const result = syncCompanyContext(repo, await scan(), [], embeddedLocation(repo))
 
     expect(result.legacyRemoved).toBe(false)
     expect(read('.buildex/company-context.md')).toContain('Our own notes')
@@ -155,7 +155,7 @@ describe('syncCompanyContext', () => {
     )
     write('a.md', '# A')
 
-    syncCompanyContext(repo, await scan())
+    syncCompanyContext(repo, await scan(), [], embeddedLocation(repo))
 
     const claudeMd = read('.claude/CLAUDE.md')
     expect(claudeMd).toContain('@./company-context.md')
@@ -166,9 +166,9 @@ describe('syncCompanyContext', () => {
     writeRaw('.claude/CLAUDE.md', '# Rules\n')
     write('a.md', '# A')
 
-    syncCompanyContext(repo, await scan())
+    syncCompanyContext(repo, await scan(), [], embeddedLocation(repo))
     write('b.md', '# B')
-    syncCompanyContext(repo, await scan())
+    syncCompanyContext(repo, await scan(), [], embeddedLocation(repo))
 
     const occurrences = read('.claude/CLAUDE.md').split('@./company-context.md').length - 1
     expect(occurrences).toBe(1)
@@ -177,23 +177,28 @@ describe('syncCompanyContext', () => {
 
 describe('renderCompanyContext apps section', () => {
   const scan: BrainScan = { ...EMPTY_BRAIN_SCAN, repoPath: '/repo', scannedAt: 1 }
+  const location = embeddedLocation('/repo')
 
   it('says nothing when no app is installed', () => {
-    expect(renderCompanyContext(scan)).not.toContain('## Apps')
+    expect(renderCompanyContext(scan, [], location)).not.toContain('## Apps')
   })
 
   it('names the skills and tells the agent to read them first', () => {
-    const rendered = renderCompanyContext(scan, [
-      {
-        id: 'slack',
-        name: 'Slack',
-        summary: 'Team chat.',
-        skills: ['slack-search', 'slack-post'],
-        hasMcp: true,
-        envKey: 'BUILDEX_SLACK_API_KEY',
-        connected: true
-      }
-    ])
+    const rendered = renderCompanyContext(
+      scan,
+      [
+        {
+          id: 'slack',
+          name: 'Slack',
+          summary: 'Team chat.',
+          skills: ['slack-search', 'slack-post'],
+          hasMcp: true,
+          envKey: 'BUILDEX_SLACK_API_KEY',
+          connected: true
+        }
+      ],
+      location
+    )
 
     expect(rendered).toContain('## Apps (1)')
     expect(rendered).toContain('`slack-search`, `slack-post`')
@@ -202,27 +207,78 @@ describe('renderCompanyContext apps section', () => {
   })
 
   it('flags an app whose key is missing rather than implying it works', () => {
-    const rendered = renderCompanyContext(scan, [
-      {
-        id: 'stripe',
-        name: 'Stripe',
-        summary: '',
-        skills: ['stripe-lookup'],
-        hasMcp: true,
-        envKey: 'BUILDEX_STRIPE_API_KEY',
-        connected: false
-      }
-    ])
+    const rendered = renderCompanyContext(
+      scan,
+      [
+        {
+          id: 'stripe',
+          name: 'Stripe',
+          summary: '',
+          skills: ['stripe-lookup'],
+          hasMcp: true,
+          envKey: 'BUILDEX_STRIPE_API_KEY',
+          connected: false
+        }
+      ],
+      location
+    )
 
     expect(rendered).toContain('no key is stored on this machine yet')
   })
 
   it('tells the agent where the key comes from and never to write it down', () => {
-    const rendered = renderCompanyContext(scan, [
-      { id: 'a', name: 'A', summary: '', skills: ['a-skill'], hasMcp: false, envKey: 'A_API_KEY' }
-    ])
+    const rendered = renderCompanyContext(
+      scan,
+      [
+        { id: 'a', name: 'A', summary: '', skills: ['a-skill'], hasMcp: false, envKey: 'A_API_KEY' }
+      ],
+      location
+    )
 
     expect(rendered).toContain('`A_API_KEY` environment variable')
     expect(rendered).toContain('never write it into the repo')
+  })
+})
+
+describe('renderCompanyContext brain location', () => {
+  it('tells the agent where an external brain is, since ids alone resolve to nothing', () => {
+    const scan = {
+      ...EMPTY_BRAIN_SCAN,
+      documents: [
+        {
+          id: 'decisions/pricing.md',
+          name: 'pricing',
+          folder: 'decisions',
+          linksTo: [],
+          linkedFrom: [],
+          changed: false,
+          headingCount: 1,
+          wordCount: 3
+        }
+      ]
+    }
+
+    const rendered = renderCompanyContext(scan, [], {
+      root: '/brains/acme',
+      gitRoot: '/brains/acme',
+      pathspec: '.',
+      mode: 'external'
+    })
+
+    // Without this line the agent is told about `decisions/pricing.md` and, with
+    // its cwd in the code repo, finds nothing there.
+    expect(rendered).toContain('/brains/acme')
+  })
+
+  it('says nothing about paths when the brain is in the repo', () => {
+    const rendered = renderCompanyContext(EMPTY_BRAIN_SCAN, [], {
+      root: '/code/api/.buildex',
+      gitRoot: '/code/api',
+      pathspec: '.buildex',
+      mode: 'embedded'
+    })
+
+    expect(rendered).toContain('`.buildex/`')
+    expect(rendered).not.toContain('/code/api/.buildex')
   })
 })
