@@ -13,9 +13,12 @@ import type { BrainSkill } from '../../../../shared/buildex-brain-types'
 
 export default function BrainSkills({
   repoPath,
+  brainRoot,
   onOpenPath
 }: {
   repoPath: string | null
+  /** The resolved brain's root — `.buildex/` in a repo, or an external repo's own root. */
+  brainRoot: string | null
   onOpenPath: (absolutePath: string, relativePath: string) => void
 }): React.JSX.Element {
   const [skills, setSkills] = useState<BrainSkill[]>([])
@@ -53,7 +56,7 @@ export default function BrainSkills({
     setError(null)
     await refresh()
     if (result.absolutePath && result.name) {
-      onOpenPath(result.absolutePath, `.buildex/skills/${result.name}/SKILL.md`)
+      onOpenPath(result.absolutePath, `skills/${result.name}/SKILL.md`)
     }
   }
 
@@ -66,7 +69,7 @@ export default function BrainSkills({
         <p className="text-[12px] text-muted-foreground">
           {translate(
             'buildex.brain.skills.intro',
-            'Skills live in .buildex/skills and travel with the repo — push, and your team has them.'
+            'Skills live in the brain and travel with it — push, and your team has them.'
           )}
         </p>
         {creating ? null : (
@@ -116,7 +119,7 @@ export default function BrainSkills({
           'Yours. Edit freely — nothing overwrites these.'
         )}
         skills={company}
-        repoPath={repoPath}
+        brainRoot={brainRoot}
         onOpenPath={onOpenPath}
       />
       <SkillGroup
@@ -126,7 +129,7 @@ export default function BrainSkills({
           'Updated when the app updates — unless you have edited them, which is kept.'
         )}
         skills={fromPacks}
-        repoPath={repoPath}
+        brainRoot={brainRoot}
         onOpenPath={onOpenPath}
       />
 
@@ -146,13 +149,13 @@ function SkillGroup({
   title,
   hint,
   skills,
-  repoPath,
+  brainRoot,
   onOpenPath
 }: {
   title: string
   hint: string
   skills: BrainSkill[]
-  repoPath: string | null
+  brainRoot: string | null
   onOpenPath: (absolutePath: string, relativePath: string) => void
 }): React.JSX.Element | null {
   if (skills.length === 0) {
@@ -170,10 +173,10 @@ function SkillGroup({
             key={skill.name}
             type="button"
             onClick={() =>
-              repoPath
+              brainRoot
                 ? onOpenPath(
-                    `${repoPath}/.buildex/skills/${skill.name}/SKILL.md`,
-                    `.buildex/skills/${skill.name}/SKILL.md`
+                    `${brainRoot.replace(/[/\\]$/, '')}/skills/${skill.name}/SKILL.md`,
+                    `skills/${skill.name}/SKILL.md`
                   )
                 : undefined
             }

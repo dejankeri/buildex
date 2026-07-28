@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { useActiveWorktree } from '@/store/selectors'
 import type {
   BrainHistoryResult,
+  BrainResolution,
   BrainScan,
   BrainSectionInfo
 } from '../../../../shared/buildex-brain-types'
 import { EMPTY_BRAIN_SCAN } from '../../../../shared/buildex-brain-types'
+import type { BrainPlacementChoice } from './BrainSetup'
 
 // Everything the Brain screen reads, in one place.
 //
@@ -26,6 +28,7 @@ export type BrainOpenFile = {
 export type BrainState = {
   repoPath: string | null
   scan: BrainScan
+  resolution: BrainResolution | null
   sections: BrainSectionInfo[]
   history: BrainHistoryResult
   loading: boolean
@@ -35,7 +38,11 @@ export type BrainState = {
   openPath: (absolutePath: string, relativePath: string) => void
   closeFile: () => void
   /** Write the chosen sections into a repo that has no brain yet. */
-  setUp: (folders: string[], summary: string) => Promise<void>
+  setUp: (folders: string[], summary: string, placement: BrainPlacementChoice) => Promise<void>
+  /** Clone the brain a `needs-clone` resolution points at. */
+  cloneBrain: (targetPath: string) => Promise<void>
+  /** Detach this repo from an external brain, leaving the brain itself untouched. */
+  disconnect: () => Promise<void>
 }
 
 /** "decisions/pricing.md" reads as "decisions / pricing" — the folder is the section. */
@@ -123,24 +130,33 @@ export function useBrain(): BrainState {
     setOpenFile({ absolutePath, relativePath, title: titleForBrainPath(relativePath) })
   }, [])
 
-  // Brain ids are relative to `.buildex/`; the file on disk is not.
+  // Brain ids are relative to the brain root, which is not always inside the repo.
+  // Joined by hand rather than with `node:path`, which the renderer does not have.
   const openDocument = useCallback(
     (documentId: string): void => {
-      if (!repoPath) {
+      const root = scan.resolution?.status === 'ready' ? scan.resolution.location.root : null
+      if (!root) {
         return
       }
-      const relativePath = `.buildex/${documentId}`
-      openPath(`${repoPath}/${relativePath}`, relativePath)
+      openPath(`${root.replace(/[/\\]$/, '')}/${documentId}`, documentId)
     },
-    [openPath, repoPath]
+    [openPath, scan.resolution]
   )
 
   const closeFile = useCallback((): void => setOpenFile(null), [])
 
   const setUp = useCallback(
-    async (folders: string[], summary: string): Promise<void> => {
+    async (folders: string[], summary: string, placement: BrainPlacementChoice): Promise<void> => {
       if (!repoPath) {
         return
+      }
+      if (placement.mode === 'external') {
+        await window.api.buildexBrain.migrate({
+          repoPath,
+          brainPath: placement.brainPath,
+          ...(placement.remote ? { remote: placement.remote } : {}),
+          writePointer: placement.writePointer
+        })
       }
       await window.api.buildexBrain.setUp({ repoPath, folders, summary })
       // Rescanned rather than assumed: the scan is what decides whether the
@@ -149,6 +165,29 @@ export function useBrain(): BrainState {
     },
     [refresh, repoPath]
   )
+
+  const cloneBrain = useCallback(
+    async (targetPath: string): Promise<void> => {
+      if (!repoPath || scan.resolution?.status !== 'needs-clone') {
+        return
+      }
+      await window.api.buildexBrain.clone({
+        repoPath,
+        remote: scan.resolution.remote,
+        targetPath
+      })
+      await refresh()
+    },
+    [refresh, repoPath, scan.resolution]
+  )
+
+  const disconnect = useCallback(async (): Promise<void> => {
+    if (!repoPath) {
+      return
+    }
+    await window.api.buildexBrain.disconnect({ repoPath })
+    await refresh()
+  }, [refresh, repoPath])
 
   // Why: an open document belongs to the repo it came from. Keeping it across a
   // worktree switch would show one company's writing under another's name.
@@ -159,6 +198,7 @@ export function useBrain(): BrainState {
   return {
     repoPath,
     scan,
+    resolution: scan.resolution,
     sections,
     history,
     loading,
@@ -167,6 +207,8 @@ export function useBrain(): BrainState {
     openDocument,
     openPath,
     closeFile,
-    setUp
+    setUp,
+    cloneBrain,
+    disconnect
   }
 }

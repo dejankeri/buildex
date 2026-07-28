@@ -13,6 +13,7 @@ import { translate } from '@/i18n/i18n'
 import BrainAgentView from './BrainAgentView'
 import BrainDocument from './BrainDocument'
 import BrainHistory from './BrainHistory'
+import BrainPlacement from './BrainPlacement'
 import BrainRemove from './BrainRemove'
 import BrainSections from './BrainSections'
 import BrainSetup from './BrainSetup'
@@ -40,7 +41,9 @@ export default function BrainPage(): React.JSX.Element {
     openDocument,
     openPath,
     closeFile,
-    setUp
+    setUp,
+    cloneBrain,
+    disconnect
   } = useBrain()
   const [tab, setTab] = useState<Tab>('sections')
   const [agentViewOpen, setAgentViewOpen] = useState(false)
@@ -64,6 +67,12 @@ export default function BrainPage(): React.JSX.Element {
   // every open — offering to create a brain that is already there.
   const scanned = repoPath !== null && scan.repoPath === repoPath
 
+  // A brain that cannot be resolved has nothing true to show: no sections, no
+  // history, no setup screen. BrainPlacement is the only thing that renders.
+  const blocked = scanned && scan.resolution !== null && scan.resolution.status !== 'ready'
+  const brainRoot = scan.resolution?.status === 'ready' ? scan.resolution.location.root : null
+  const brainLocation = scan.resolution?.status === 'ready' ? scan.resolution.location : null
+
   const tabs: { id: Tab; label: string }[] = [
     { id: 'sections', label: translate('buildex.brain.page.sections', 'Sections') },
     { id: 'skills', label: translate('buildex.brain.page.skills', 'Skills') },
@@ -80,7 +89,7 @@ export default function BrainPage(): React.JSX.Element {
         {loading ? <Loader2 size={13} className="animate-spin text-muted-foreground" /> : null}
 
         <div className="ml-auto flex items-center gap-1">
-          {!scanned || !scan.initialized
+          {!scanned || blocked || !scan.initialized
             ? null
             : tabs.map((entry) => (
                 <button
@@ -124,12 +133,24 @@ export default function BrainPage(): React.JSX.Element {
         <div className="flex min-h-0 flex-1 items-center justify-center">
           <Loader2 size={16} className="animate-spin text-muted-foreground/50" />
         </div>
+      ) : blocked ? (
+        <BrainPlacement
+          resolution={scan.resolution}
+          onClone={async (targetPath) => {
+            setNotice(null)
+            await cloneBrain(targetPath)
+          }}
+          onDisconnect={async () => {
+            setNotice(null)
+            await disconnect()
+          }}
+        />
       ) : !scan.initialized ? (
         <BrainSetup
           sections={sections}
-          onSetUp={async (folders, summary) => {
+          onSetUp={async (folders, summary, placement) => {
             setNotice(null)
-            await setUp(folders, summary)
+            await setUp(folders, summary, placement)
           }}
         />
       ) : openFile ? (
@@ -182,7 +203,7 @@ export default function BrainPage(): React.JSX.Element {
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={() => {
-                      void window.api.shell.openInFileManager(`${repoPath}/.buildex`)
+                      void window.api.shell.openInFileManager(brainRoot ?? repoPath)
                     }}
                   >
                     <FolderOpen size={13} />
@@ -199,7 +220,7 @@ export default function BrainPage(): React.JSX.Element {
           </div>
 
           {tab === 'skills' ? (
-            <BrainSkills repoPath={repoPath} onOpenPath={openPath} />
+            <BrainSkills repoPath={repoPath} brainRoot={brainRoot} onOpenPath={openPath} />
           ) : tab === 'sections' ? (
             <BrainSections
               scan={scan}
@@ -228,6 +249,7 @@ export default function BrainPage(): React.JSX.Element {
           />
           <BrainRemove
             repoPath={repoPath}
+            location={brainLocation}
             open={removeOpen}
             onOpenChange={setRemoveOpen}
             onRemoved={(backupPath) => {
