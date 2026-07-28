@@ -36,6 +36,10 @@ export default function BrainHistory({
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Why: a commit that never reached the remote. The writing is safe here, and
+  // saying "saved" alone would let an operator believe their team has it.
+  const [notShared, setNotShared] = useState<string | null>(null)
+  const [sharing, setSharing] = useState(false)
   const now = Date.now()
 
   const save = async (): Promise<void> => {
@@ -51,9 +55,24 @@ export default function BrainHistory({
         return
       }
       setMessage('')
+      // Undefined in embedded mode, where BuildEx never pushes at all.
+      setNotShared(result.pushed === false ? (result.pushError ?? '') : null)
       await onSaved()
     } finally {
       setSaving(false)
+    }
+  }
+
+  const share = async (): Promise<void> => {
+    if (!repoPath) {
+      return
+    }
+    setSharing(true)
+    try {
+      const result = await window.api.buildexBrain.push({ repoPath })
+      setNotShared(result.pushed ? null : (result.error ?? ''))
+    } finally {
+      setSharing(false)
     }
   }
 
@@ -162,6 +181,30 @@ export default function BrainHistory({
                 'Saves the .buildex folder only. Nothing else in this project is touched.'
               )}
             </p>
+          </div>
+        )}
+        {notShared === null ? null : (
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="text-[12px] text-amber-500">
+              {translate(
+                'buildex.brain.history.notShared',
+                'Saved here, not shared yet — the brain repo did not accept the push.'
+              )}
+            </p>
+            <button
+              type="button"
+              disabled={sharing}
+              onClick={() => void share()}
+              className="inline-flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[11px] font-medium hover:bg-accent disabled:opacity-50"
+            >
+              {sharing ? <Loader2 size={11} className="animate-spin" /> : null}
+              {translate('buildex.brain.history.retryShare', 'Try again')}
+            </button>
+            {notShared ? (
+              <p className="w-full truncate font-mono text-[11px] text-muted-foreground/60">
+                {notShared}
+              </p>
+            ) : null}
           </div>
         )}
         {error ? <p className="mt-2 text-[12px] text-destructive">{error}</p> : null}

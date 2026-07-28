@@ -8,6 +8,8 @@ import type {
   BrainMigrationResult,
   BrainPullRequest,
   BrainPullResult,
+  BrainPushRequest,
+  BrainPushResult,
   BrainRemovalPlan,
   BrainRemovalRequest,
   BrainRemovalResult,
@@ -24,7 +26,7 @@ import {
   requireBrainLocation,
   resolveBrainLocation
 } from '../buildex-brain/brain-location'
-import { pullBrain } from '../buildex-brain/brain-sync'
+import { pullBrain, pushBrain } from '../buildex-brain/brain-sync'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { bundledCatalogRoot } from '../buildex-repo-init'
 
@@ -177,6 +179,24 @@ export function registerBuildExBrainPlacementHandlers(): void {
         return { pulled: false, diverged: false }
       }
       return pullBrain(location)
+    }
+  )
+
+  // Why: the retry behind "saved here, not shared yet". The commit already
+  // landed, so this shares it without touching the working tree again.
+  ipcMain.handle(
+    'buildex-brain:push',
+    async (_event, request?: BrainPushRequest): Promise<BrainPushResult> => {
+      const repoPath = request?.repoPath?.trim()
+      const location = repoPath ? requireBrainLocation(repoPath) : null
+      if (!location) {
+        return { pushed: false, error: BRAIN_UNRESOLVED }
+      }
+      const result = await pushBrain(location)
+      return {
+        pushed: result.pushed,
+        ...(result.pushed ? {} : { error: result.error ?? result.reason ?? 'not shared' })
+      }
     }
   )
 }

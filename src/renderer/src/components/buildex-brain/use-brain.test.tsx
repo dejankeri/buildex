@@ -23,6 +23,7 @@ const migrate = vi.fn()
 const bind = vi.fn()
 const historyList = vi.fn()
 const sectionsList = vi.fn()
+const pull = vi.fn()
 
 let latestState: BrainState | null = null
 let root: Root | null = null
@@ -61,11 +62,12 @@ beforeEach(() => {
   migrate.mockReset()
   bind.mockReset()
   historyList.mockReset().mockResolvedValue({ saves: [], unavailable: true, unsavedPaths: [] })
+  pull.mockReset().mockResolvedValue({ pulled: false, diverged: false })
   sectionsList.mockReset().mockResolvedValue({ sections: [] })
   latestState = null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window.api shim
   ;(window as any).api = {
-    buildexBrain: { scan, setUp, migrate, bind },
+    buildexBrain: { scan, setUp, migrate, bind, pull },
     buildexBrainSections: { list: sectionsList, history: historyList }
   }
 })
@@ -77,6 +79,59 @@ afterEach(() => {
   }
   host?.remove()
   host = null
+})
+
+const EXTERNAL_SCAN = {
+  ...EMPTY_BRAIN_SCAN,
+  repoPath: '/repo',
+  initialized: true,
+  resolution: {
+    status: 'ready' as const,
+    location: {
+      root: '/brains/acme',
+      gitRoot: '/brains/acme',
+      pathspec: '.',
+      mode: 'external' as const
+    }
+  }
+}
+
+describe('useBrain opening a shared brain', () => {
+  it('reports a brain that has diverged rather than merging it', async () => {
+    scan.mockResolvedValue(EXTERNAL_SCAN)
+    pull.mockResolvedValue({ pulled: false, diverged: true })
+    await renderProbe()
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(pull).toHaveBeenCalledWith({ repoPath: '/repo' })
+    expect(state().diverged).toBe(true)
+  })
+
+  it('never fetches for an embedded brain, whose git root is the code repo', async () => {
+    scan.mockResolvedValue({
+      ...EMPTY_BRAIN_SCAN,
+      repoPath: '/repo',
+      initialized: true,
+      resolution: {
+        status: 'ready' as const,
+        location: {
+          root: '/repo/.buildex',
+          gitRoot: '/repo',
+          pathspec: '.buildex',
+          mode: 'embedded' as const
+        }
+      }
+    })
+    await renderProbe()
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(pull).not.toHaveBeenCalled()
+    expect(state().diverged).toBe(false)
+  })
 })
 
 describe('useBrain setUp — migrate vs bind', () => {

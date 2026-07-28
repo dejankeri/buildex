@@ -98,6 +98,8 @@ import type {
   BrainMigrationResult,
   BrainPullRequest,
   BrainPullResult,
+  BrainPushRequest,
+  BrainPushResult,
   BrainRemovalPlan,
   BrainRemovalRequest,
   BrainRemovalResult,
@@ -2332,7 +2334,9 @@ const api = {
     disconnect: (request: BrainRemovalRequest): Promise<BrainRemovalResult> =>
       ipcRenderer.invoke('buildex-brain:disconnect', request),
     pull: (request: BrainPullRequest): Promise<BrainPullResult> =>
-      ipcRenderer.invoke('buildex-brain:pull', request)
+      ipcRenderer.invoke('buildex-brain:pull', request),
+    push: (request: BrainPushRequest): Promise<BrainPushResult> =>
+      ipcRenderer.invoke('buildex-brain:push', request)
   },
 
   buildexBrainSections: {

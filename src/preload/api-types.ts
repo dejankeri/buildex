@@ -356,6 +356,8 @@ import type {
   BrainMigrationResult,
   BrainPullRequest,
   BrainPullResult,
+  BrainPushRequest,
+  BrainPushResult,
   BrainRemovalPlan,
   BrainRemovalRequest,
   BrainRemovalResult,
@@ -2383,6 +2385,7 @@ export type PreloadApi = {
     bind: (request: BrainBindRequest) => Promise<BrainBindResult>
     disconnect: (request: BrainRemovalRequest) => Promise<BrainRemovalResult>
     pull: (request: BrainPullRequest) => Promise<BrainPullResult>
+    push: (request: BrainPushRequest) => Promise<BrainPushResult>
   }
   buildexBrainSections: {
     list: () => Promise<BrainSectionsResult>

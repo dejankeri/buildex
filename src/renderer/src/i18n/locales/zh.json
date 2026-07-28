@@ -13917,7 +13917,9 @@
         "pending": "{{value0}} changed since the last save: {{value1}}",
         "namePlaceholder": "What changed? e.g. \"Q3 pricing and the Northwind call\"",
         "save": "Save",
-        "scope": "Saves the .buildex folder only. Nothing else in this project is touched."
+        "scope": "Saves the .buildex folder only. Nothing else in this project is touched.",
+        "notShared": "Saved here, not shared yet — the brain repo did not accept the push.",
+        "retryShare": "Try again"
       },
       "page": {
         "sections": "Sections",
@@ -13936,7 +13938,8 @@
         "reveal": "Open the brain folder",
         "remove": "Remove the company brain",
         "removedWithBackup": "Brain removed. A copy of what was not yet saved is in {{value0}}",
-        "removed": "Brain removed, and the removal was saved to history."
+        "removed": "Brain removed, and the removal was saved to history.",
+        "diverged": "This brain and the shared one have both changed. BuildEx will not merge a company’s decisions — open the brain repo and reconcile them there."
       },
       "sections": {
         "empty": "Nothing here yet",

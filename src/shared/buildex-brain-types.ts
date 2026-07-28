@@ -309,6 +309,14 @@ export type BrainBindResult = {
   error?: string
 }
 
+export type BrainPushRequest = { repoPath: string }
+
+/** Sharing a save that was already committed here. External mode only. */
+export type BrainPushResult = {
+  pushed: boolean
+  error?: string
+}
+
 export type BrainPullRequest = { repoPath: string }
 
 export type BrainPullResult = {

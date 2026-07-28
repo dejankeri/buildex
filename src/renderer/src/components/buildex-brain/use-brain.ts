@@ -32,6 +32,8 @@ export type BrainState = {
   sections: BrainSectionInfo[]
   history: BrainHistoryResult
   loading: boolean
+  /** The brain here and the brain on the remote have both moved. External only. */
+  diverged: boolean
   refresh: () => Promise<void>
   openFile: BrainOpenFile | null
   openDocument: (documentId: string) => void
@@ -66,6 +68,7 @@ export function useBrain(): BrainState {
   const [sections, setSections] = useState<BrainSectionInfo[]>([])
   const [history, setHistory] = useState<BrainHistoryResult>(EMPTY_HISTORY)
   const [loading, setLoading] = useState(false)
+  const [diverged, setDiverged] = useState(false)
 
   useEffect(() => {
     void window.api.buildexBrainSections.list().then((result) => setSections(result.sections))
@@ -101,11 +104,13 @@ export function useBrain(): BrainState {
         return
       }
       setLoading(true)
+      let scanned: BrainScan = EMPTY_BRAIN_SCAN
       try {
         const [nextScan, nextHistory] = await Promise.all([
           window.api.buildexBrain.scan({ repoPath }),
           window.api.buildexBrainSections.history({ repoPath })
         ])
+        scanned = nextScan
         // Why: switching worktrees mid-fetch must not drop the previous repo's
         // brain on top of the new one.
         if (!cancelled) {
@@ -117,11 +122,27 @@ export function useBrain(): BrainState {
           setLoading(false)
         }
       }
+      // Why: opening the Brain is when a shared brain catches up with the team.
+      // After the render above, never before it: the screen shows local state
+      // straight away and a fetch over the network must not hold that up.
+      const resolution = scanned.resolution
+      if (cancelled || resolution?.status !== 'ready' || resolution.location.mode !== 'external') {
+        return
+      }
+      const pulled = await window.api.buildexBrain.pull({ repoPath })
+      if (cancelled) {
+        return
+      }
+      // Reported, never merged: only a person can say what the company decided.
+      setDiverged(pulled.diverged)
+      if (pulled.pulled) {
+        await refresh()
+      }
     })()
     return () => {
       cancelled = true
     }
-  }, [repoPath])
+  }, [refresh, repoPath])
 
   // Why: editing happens inside the Brain rather than in the workspace editor.
   // Handing the file to the editor meant leaving this screen and navigating back
@@ -213,6 +234,7 @@ export function useBrain(): BrainState {
     sections,
     history,
     loading,
+    diverged,
     refresh,
     openFile,
     openDocument,

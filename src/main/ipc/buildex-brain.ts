@@ -31,7 +31,6 @@ import {
   resolveBrainLocation
 } from '../buildex-brain/brain-location'
 import { readBrainHistory, saveBrain } from '../buildex-brain/brain-history'
-import { pullBrain } from '../buildex-brain/brain-sync'
 import { createBrainSkill, listBrainSkills } from '../buildex-brain/brain-skills'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { bundledCatalogRoot, initializeCompanyRepo } from '../buildex-repo-init'
@@ -153,11 +152,11 @@ export function registerBuildExBrainHandlers(): void {
       }
       const { location } = resolution
       const scan = await scanCompanyBrain(repoPath, location, resolution, Date.now())
-      // Why: opening the Brain is the moment to catch up on anything that changed
-      // outside the app — a document pulled from a teammate, a file written by
-      // the agent itself. Neither is awaited: the screen renders from local
-      // state now and picks both up on the next refresh.
-      void pullBrain(location)
+      // Why: opening the Brain is the moment to catch up on anything the agent
+      // itself wrote. Not awaited — the screen renders from local state now.
+      // The brain's own fetch is `buildex-brain:pull`, which the Brain page
+      // calls on open: its answer includes whether the brain has diverged, and
+      // there is nowhere to report that from here.
       void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       return scan
     }

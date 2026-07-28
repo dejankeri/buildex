@@ -36,6 +36,7 @@ export default function BrainPage(): React.JSX.Element {
     sections,
     history,
     loading,
+    diverged,
     refresh,
     openFile,
     openDocument,
@@ -114,6 +115,15 @@ export default function BrainPage(): React.JSX.Element {
               ))}
         </div>
       </header>
+
+      {diverged ? (
+        <p className="shrink-0 border-b border-border bg-amber-500/10 px-5 py-2 text-[11px] text-amber-600 dark:text-amber-500">
+          {translate(
+            'buildex.brain.page.diverged',
+            'This brain and the shared one have both changed. BuildEx will not merge a company\u2019s decisions \u2014 open the brain repo and reconcile them there.'
+          )}
+        </p>
+      ) : null}
 
       {notice ? (
         <p className="shrink-0 border-b border-border bg-accent/40 px-5 py-2 text-[11px] text-muted-foreground">
