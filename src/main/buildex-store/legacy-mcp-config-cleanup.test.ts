@@ -72,6 +72,26 @@ describe('removeLegacyPackMcpServers', () => {
     expect(config(repoPath).somethingElse).toEqual({ theirs: true })
   })
 
+  it('removes an empty config the old code left after its last uninstall', () => {
+    // Why: found on a real upgraded repo. There is nothing of ours to take out
+    // of `{"mcpServers":{}}`, but it is still ours, and BuildEx no longer hides
+    // this file — so leaving it hands the operator a file to wonder about.
+    const repoPath = repo({ mcpServers: {} })
+
+    expect(removeLegacyPackMcpServers(repoPath)).toEqual({
+      removedServerIds: [],
+      fileRemoved: true
+    })
+    expect(existsSync(path.join(repoPath, MCP_CONFIG_RELATIVE_PATH))).toBe(false)
+  })
+
+  it('keeps an empty server map when the operator put something else in the file', () => {
+    const repoPath = repo({ mcpServers: {}, theirSetting: true })
+
+    expect(removeLegacyPackMcpServers(repoPath).fileRemoved).toBe(false)
+    expect(existsSync(path.join(repoPath, MCP_CONFIG_RELATIVE_PATH))).toBe(true)
+  })
+
   it('leaves a file that was never ours completely alone', () => {
     const repoPath = repo({ mcpServers: { 'acme-internal': { type: 'stdio', command: 'x' } } })
     const before = readFileSync(path.join(repoPath, MCP_CONFIG_RELATIVE_PATH), 'utf8')

@@ -80,11 +80,17 @@ export function removeLegacyPackMcpServers(repoPath: string): LegacyMcpCleanupRe
       removedServerIds.push(id)
     }
   }
-  if (removedServerIds.length === 0) {
+  const otherKeys = Object.keys(parsed).filter((key) => key !== 'mcpServers')
+  // Why: a repo that uninstalled its last pack under the old code kept an empty
+  // `{"mcpServers":{}}`. There is nothing of ours to remove from it, but it is
+  // still ours — and now that BuildEx no longer hides this file, leaving it is
+  // leaving the operator a file to wonder about.
+  const emptyAndOurs =
+    removedServerIds.length === 0 && Object.keys(servers).length === 0 && otherKeys.length === 0
+  if (removedServerIds.length === 0 && !emptyAndOurs) {
     return empty
   }
 
-  const otherKeys = Object.keys(parsed).filter((key) => key !== 'mcpServers')
   if (Object.keys(servers).length === 0 && otherKeys.length === 0) {
     // Everything in it was ours; leaving an empty `{"mcpServers":{}}` behind
     // would be a file the operator has to wonder about.
