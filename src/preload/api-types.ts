@@ -383,17 +383,17 @@ import type {
 } from '../shared/buildex-brain-types'
 import type { GateSettingsRequest, GateSettingsResult } from '../shared/buildex-gate-types'
 import type {
-  PackCatalog,
-  PackCatalogRequest,
-  PackInstallRequest,
-  PackCredentialClearRequest,
-  PackCredentialResult,
-  PackCredentialSaveRequest,
-  PackInstallResult,
-  PackRefreshResult,
-  PackUninstallRequest,
-  PackUninstallResult
-} from '../shared/buildex-packs-types'
+  StoreCatalog,
+  StoreCatalogRequest,
+  StoreCredentialClearRequest,
+  StoreCredentialResult,
+  StoreCredentialSaveRequest,
+  StoreInstallRequest,
+  StoreInstallResult,
+  StoreRefreshResult,
+  StoreRosterResult,
+  StoreRosterSetRequest
+} from '../shared/buildex-store-types'
 import type { SkillFreshnessInventory } from '../shared/skill-freshness'
 import type {
   CrashReportBreadcrumbData,
@@ -2395,13 +2395,14 @@ export type PreloadApi = {
     skills: (request: BrainSkillsRequest) => Promise<BrainSkillsResult>
     createSkill: (request: BrainSkillCreateRequest) => Promise<BrainSkillCreateResult>
   }
-  buildexPacks: {
-    catalog: (request: PackCatalogRequest) => Promise<PackCatalog>
-    install: (request: PackInstallRequest) => Promise<PackInstallResult>
-    uninstall: (request: PackUninstallRequest) => Promise<PackUninstallResult>
-    refresh: (request: PackCatalogRequest) => Promise<PackRefreshResult>
-    saveCredential: (request: PackCredentialSaveRequest) => Promise<PackCredentialResult>
-    clearCredential: (request: PackCredentialClearRequest) => Promise<PackCredentialResult>
+  buildexStore: {
+    catalog: (request: StoreCatalogRequest) => Promise<StoreCatalog>
+    install: (request: StoreInstallRequest) => Promise<StoreInstallResult>
+    refresh: (request: StoreCatalogRequest) => Promise<StoreRefreshResult>
+    uninstall: (request: StoreInstallRequest) => Promise<StoreInstallResult>
+    saveCredential: (request: StoreCredentialSaveRequest) => Promise<StoreCredentialResult>
+    clearCredential: (request: StoreCredentialClearRequest) => Promise<StoreCredentialResult>
+    setRosterEntry: (request: StoreRosterSetRequest) => Promise<StoreRosterResult>
   }
   buildexGate: {
     sync: (request: GateSettingsRequest) => Promise<GateSettingsResult>

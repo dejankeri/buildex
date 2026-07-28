@@ -92,9 +92,8 @@ import {
   applyTerminalAttributionEnv,
   resolveAttributionShellFamily
 } from '../attribution/terminal-attribution'
-import { readPackCatalog } from '../buildex-packs/pack-catalog'
-import { collectPackEnv } from '../buildex-packs/pack-env'
-import { bundledCatalogRoot } from '../buildex-repo-init'
+import { collectPluginEnv } from '../buildex-store/plugin-env'
+import { readAppStoreCatalog } from '../buildex-store/store-catalog-source'
 import { ensureLinuxTerminalOrcaCliShimDir } from '../cli/linux-terminal-orca-cli-shim'
 import { registerPty, unregisterPty } from '../memory/pty-registry'
 import { advertisedUrlWatcher } from '../ports/advertised-url-watcher'
@@ -662,7 +661,7 @@ function finishPtyShutdown(
 }
 
 // BuildEx: see BUILDEX-PATCHES.md
-function applyBuildExPackEnv(
+function applyBuildExPluginEnv(
   baseEnv: Record<string, string>,
   opts: Pick<BuildPtyHostEnvOptions, 'buildexRepoPath' | 'userDataPath'>
 ): void {
@@ -670,9 +669,9 @@ function applyBuildExPackEnv(
     return
   }
   try {
-    const catalog = readPackCatalog(opts.buildexRepoPath, bundledCatalogRoot())
+    const catalog = readAppStoreCatalog({ userDataPath: opts.userDataPath })
     for (const [key, value] of Object.entries(
-      collectPackEnv({ userDataPath: opts.userDataPath }, catalog.packs)
+      collectPluginEnv({ userDataPath: opts.userDataPath }, catalog.entries)
     )) {
       // Why: never override a variable the operator already exported — their
       // shell environment outranks a stored key.
@@ -1207,9 +1206,9 @@ export function buildPtyHostEnv(
     })
   })
 
-  // BuildEx: installed packs' keys, read from encrypted storage and handed to the
-  // agent here. This is the only point at which they are in the clear.
-  applyBuildExPackEnv(baseEnv, opts)
+  // BuildEx: installed plugins' keys, read from encrypted storage and handed to
+  // the agent here. This is the only point at which they are in the clear.
+  applyBuildExPluginEnv(baseEnv, opts)
 
   return baseEnv
 }

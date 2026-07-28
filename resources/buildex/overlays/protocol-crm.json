@@ -1,0 +1,39 @@
+{
+  "pluginName": "protocol-crm",
+  "marketplaceId": "protocol",
+  "segment": "business",
+  "displayName": "Protocol",
+  "icon": "🏋️",
+  "summary": "Coaching CRM - clients, programs, check-ins, and scheduling, drivable by the agent.",
+  "systemOfRecord": "Every client and everything about them - programs, workouts, nutrition plans, weekly check-ins and their measurements, progress reports, forms, appointments and tasks - lives in Protocol; read and write it with the protocol tools, never from workspace files.",
+  "mcp": true,
+  "apiKey": {
+    "transport": "mcp-bearer",
+    "docsUrl": "https://help.protocolcrm.com/ai-agent/connecting",
+    "hint": "Agent key (pk_…) from the AI Agent page",
+    "envKey": "PROTOCOL_MCP_API_KEY"
+  },
+  "provision": {
+    "authorizeUrl": "https://app.protocolcrm.com/workspace-connect?redirect_uri={redirect_uri}&state={state}",
+    "exchangeUrl": "https://api.protocolcrm.com/v1/workspace/connect/exchange",
+    "codeParam": "code",
+    "codeField": "code",
+    "hostField": "host",
+    "keyPath": "data.protocolApiKey",
+    "apiBasePath": "data.apiBaseUrl",
+    "envKey": "PROTOCOL_API_KEY",
+    "envBase": "PROTOCOL_API_URL",
+    "grants": "Full coach-level access to your whole Protocol account over its REST API - broader than the MCP connection above. Only needed for the few things MCP deliberately cannot do: billing, permanent deletes, and messaging clients. Requires you to be the account owner, and replaces any previous key issued to this machine.",
+    "docsUrl": "https://help.protocolcrm.com/ai-agent/connecting"
+  },
+  "gate": {
+    "ask": [
+      "mcp__protocol__schedule",
+      "mcp__plugin_protocol-crm_protocol__schedule",
+      "mcp__protocol__manage_automations",
+      "mcp__plugin_protocol-crm_protocol__manage_automations",
+      "mcp__protocol__record_progress",
+      "mcp__plugin_protocol-crm_protocol__record_progress"
+    ]
+  }
+}

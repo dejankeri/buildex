@@ -125,17 +125,17 @@ import type {
 } from '../shared/buildex-brain-types'
 import type { GateSettingsRequest, GateSettingsResult } from '../shared/buildex-gate-types'
 import type {
-  PackCatalog,
-  PackCatalogRequest,
-  PackInstallRequest,
-  PackCredentialClearRequest,
-  PackCredentialResult,
-  PackCredentialSaveRequest,
-  PackInstallResult,
-  PackRefreshResult,
-  PackUninstallRequest,
-  PackUninstallResult
-} from '../shared/buildex-packs-types'
+  StoreCatalog,
+  StoreCatalogRequest,
+  StoreCredentialClearRequest,
+  StoreCredentialResult,
+  StoreCredentialSaveRequest,
+  StoreInstallRequest,
+  StoreInstallResult,
+  StoreRefreshResult,
+  StoreRosterResult,
+  StoreRosterSetRequest
+} from '../shared/buildex-store-types'
 import type { SkillFreshnessInventory } from '../shared/skill-freshness'
 import type {
   RuntimeBrowserDriverState,
@@ -2353,19 +2353,21 @@ const api = {
       ipcRenderer.invoke('buildex-brain:createSkill', request)
   },
 
-  buildexPacks: {
-    catalog: (request: PackCatalogRequest): Promise<PackCatalog> =>
-      ipcRenderer.invoke('buildex-packs:catalog', request),
-    install: (request: PackInstallRequest): Promise<PackInstallResult> =>
-      ipcRenderer.invoke('buildex-packs:install', request),
-    uninstall: (request: PackUninstallRequest): Promise<PackUninstallResult> =>
-      ipcRenderer.invoke('buildex-packs:uninstall', request),
-    refresh: (request: PackCatalogRequest): Promise<PackRefreshResult> =>
-      ipcRenderer.invoke('buildex-packs:refresh', request),
-    saveCredential: (request: PackCredentialSaveRequest): Promise<PackCredentialResult> =>
-      ipcRenderer.invoke('buildex-packs:saveCredential', request),
-    clearCredential: (request: PackCredentialClearRequest): Promise<PackCredentialResult> =>
-      ipcRenderer.invoke('buildex-packs:clearCredential', request)
+  buildexStore: {
+    catalog: (request: StoreCatalogRequest): Promise<StoreCatalog> =>
+      ipcRenderer.invoke('buildex-store:catalog', request),
+    install: (request: StoreInstallRequest): Promise<StoreInstallResult> =>
+      ipcRenderer.invoke('buildex-store:install', request),
+    refresh: (request: StoreCatalogRequest): Promise<StoreRefreshResult> =>
+      ipcRenderer.invoke('buildex-store:refresh', request),
+    uninstall: (request: StoreInstallRequest): Promise<StoreInstallResult> =>
+      ipcRenderer.invoke('buildex-store:uninstall', request),
+    saveCredential: (request: StoreCredentialSaveRequest): Promise<StoreCredentialResult> =>
+      ipcRenderer.invoke('buildex-store:saveCredential', request),
+    clearCredential: (request: StoreCredentialClearRequest): Promise<StoreCredentialResult> =>
+      ipcRenderer.invoke('buildex-store:clearCredential', request),
+    setRosterEntry: (request: StoreRosterSetRequest): Promise<StoreRosterResult> =>
+      ipcRenderer.invoke('buildex-store:setRosterEntry', request)
   },
 
   buildexGate: {

@@ -7,7 +7,7 @@ import type {
   BrainLocation,
   BrainResolution
 } from '../../shared/buildex-brain-types'
-import { relinkBrainSkills } from '../buildex-packs/skill-link'
+import { relinkBrainSkills } from './skill-link'
 import { bindRepoToBrain, readBrainBindings, rememberClone } from './brain-bindings'
 import { BRAIN_ROOT } from './company-brain-scan'
 

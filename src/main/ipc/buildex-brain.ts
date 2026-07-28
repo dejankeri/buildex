@@ -30,7 +30,8 @@ import { requireBrainLocation, resolveBrainLocation } from './authorized-brain-l
 import { readBrainHistory, saveBrain } from '../buildex-brain/brain-history'
 import { createBrainSkill, listBrainSkills } from '../buildex-brain/brain-skills'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
-import { bundledCatalogRoot, initializeCompanyRepo } from '../buildex-repo-init'
+import { initializeCompanyRepo } from '../buildex-repo-init'
+import { readInstalledAppSummaries } from '../buildex-store/store-catalog-source'
 import { registerBuildExBrainPlacementHandlers } from './buildex-brain-placement'
 
 // Reading and rendering the brain — what's in it, not where it is. Where a
@@ -119,7 +120,7 @@ export function registerBuildExBrainHandlers(): void {
         // Why: a new document the agent does not know about is the most common
         // way the context goes stale. Not awaited — the operator is waiting to
         // start writing, not for bookkeeping.
-        void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
+        void refreshCompanyContext(repoPath, location, readInstalledAppSummaries())
       }
       return result
     }
@@ -154,7 +155,7 @@ export function registerBuildExBrainHandlers(): void {
       // The brain's own fetch is `buildex-brain:pull`, which the Brain page
       // calls on open: its answer includes whether the brain has diverged, and
       // there is nowhere to report that from here.
-      void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
+      void refreshCompanyContext(repoPath, location, readInstalledAppSummaries())
       return scan
     }
   )
@@ -177,7 +178,7 @@ export function registerBuildExBrainHandlers(): void {
     }
     try {
       const result = scaffoldCompanyBrain(location, { folders, summary: request?.summary })
-      void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
+      void refreshCompanyContext(repoPath, location, readInstalledAppSummaries())
       return { ok: true, created: result.created }
     } catch (error) {
       return {
@@ -201,7 +202,7 @@ export function registerBuildExBrainHandlers(): void {
       }
       // Why: the context file is rewritten first, so the dialog shows what the
       // next session will actually get rather than what the last one got.
-      await refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
+      await refreshCompanyContext(repoPath, location, readInstalledAppSummaries())
       const resolution: BrainResolution = { status: 'ready', location }
       const scan = await scanCompanyBrain(repoPath, location, resolution, Date.now())
       return buildAgentView(repoPath, scan)

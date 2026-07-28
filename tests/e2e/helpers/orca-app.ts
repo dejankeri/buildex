@@ -28,6 +28,7 @@ import { TEST_REPO_PATH_FILE } from '../global-setup'
 import { cleanupE2EDaemons, closeElectronAppForE2E } from './electron-process-shutdown'
 import { getOrcaElectronLaunchArgs } from './electron-launch-args'
 import { getE2ECompletedOnboardingProfile } from './e2e-completed-onboarding-profile'
+import { seedMarketplaceIndexCache } from './marketplace-index-fixture'
 import {
   assertElectronResolvedIsolatedHome,
   createElectronHomeIsolation
@@ -62,6 +63,10 @@ type OrcaTestFixtures = {
   // PATH/token environment. Keep this fixture-owned so tests never mutate the
   // developer's shell or already-running Orca instance.
   launchEnv: NodeJS.ProcessEnv
+  // Why: the Store fetches marketplace indexes at runtime and caches them under
+  // userData. Specs that assert on the shelf seed that cache so the suite stays
+  // deterministic and offline.
+  seedMarketplaceIndexes: boolean
 }
 
 type OrcaWorkerFixtures = {
@@ -179,6 +184,7 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
       orcaAppExtraEnv,
       orcaAppExtraArgs,
       codexRealHomeEnabled,
+      seedMarketplaceIndexes,
       registerPostElectronShutdownCleanup
     },
     provideFixture,
@@ -200,6 +206,9 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
         path.join(userDataDir, 'orca-data.json'),
         `${JSON.stringify(getE2ECompletedOnboardingProfile(), null, 2)}\n`
       )
+    }
+    if (seedMarketplaceIndexes) {
+      seedMarketplaceIndexCache(userDataDir)
     }
     const headful = shouldLaunchHeadful(testInfo)
     // Why: strip ELECTRON_RUN_AS_NODE before spawning. Some host shells (e.g.
@@ -279,6 +288,7 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
   dismissOnboarding: [true, { option: true }],
   seedTestRepo: [true, { option: true }],
   launchEnv: [{}, { option: true }],
+  seedMarketplaceIndexes: [false, { option: true }],
   orcaAppExtraEnv: [{}, { option: true }],
   orcaAppExtraArgs: [[], { option: true }],
   codexRealHomeEnabled: [false, { option: true }],

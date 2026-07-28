@@ -13893,7 +13893,15 @@
         "noRepo": "Open a project to install packs — they are written into its repo.",
         "keptOnUninstall": "Removed {{value0}}, but kept files you had edited: {{value1}}",
         "uninstall": "Uninstall",
-        "uninstallHint": "Removes the files BuildEx installed. Anything you edited stays."
+        "uninstallHint": "Removes the files BuildEx installed. Anything you edited stays.",
+        "noWorkspace": "Open a project to install apps — your agent installs them for that workspace.",
+        "unsupportedAgent": "This workspace runs {{value0}}. You can browse here, but BuildEx cannot drive its plugin system, so installing is off.",
+        "sharedBrainReach": "This company shares one brain, so the context and keys an app contributes reach every repo that uses it.",
+        "search": "Search apps",
+        "searchLabel": "Search apps",
+        "clearSearch": "Clear search",
+        "refreshIndexes": "Refresh apps",
+        "refreshIndexesHint": "Fetch the latest apps from the marketplaces."
       },
       "connect": {
         "connected": "Connected",
@@ -13907,7 +13915,57 @@
         "mcpHint": "Opens a session and runs /mcp, where the provider signs you in.",
         "signIn": "Sign in"
       },
-      "sharedBrain": "This company shares one brain, so installing an app here gives every repo that uses it the same skills."
+      "sharedBrain": "This company shares one brain, so installing an app here gives every repo that uses it the same skills.",
+      "card": {
+        "byline": "{{value0}} · by {{value1}}",
+        "gated": "Ask-first",
+        "unverified": "Unverified",
+        "uninstallHint": "Removes the plugin through the agent that installed it.",
+        "ungatedHint": "Installs ungated — nothing waits for you.",
+        "required": "Required",
+        "suggested": "Suggested"
+      },
+      "segment": {
+        "business": "Run your business",
+        "software": "Build software"
+      },
+      "shelf": {
+        "catalogEmptyTitle": "No marketplaces could be read",
+        "catalogEmptyHint": "The indexes that ship with BuildEx could not be read and no refresh has landed. Reinstall the app, or add a marketplace your company hosts.",
+        "noMatches": "Nothing on this shelf matches “{{value0}}”",
+        "empty": "Nothing on this shelf yet",
+        "otherShelfHint": "The other shelf holds the same marketplaces read for a different job — check its count.",
+        "fetchingTitle": "Fetching apps…",
+        "fetchingHint": "Reading the marketplaces for the first time on this machine."
+      },
+      "ungated": {
+        "title": "Install {{value0}} ungated?",
+        "body": "BuildEx has not reviewed this plugin, so none of its actions wait for you. It runs with whatever your agent already allows.",
+        "from": "From",
+        "author": "Author",
+        "authorUnknown": "Not stated",
+        "source": "Source",
+        "review": "Read the source first",
+        "cancel": "Cancel",
+        "confirm": "Install ungated"
+      },
+      "roster": {
+        "committed": "Updated {{value0}} — commit it to share this list with your team.",
+        "menuLabel": "Company app list options for {{value0}}",
+        "menuTitle": "Company app list",
+        "setRequired": "Required",
+        "setSuggested": "Suggested",
+        "setNone": "Not expected",
+        "title": "What your company runs on",
+        "installAll": "Install all {{value0}}",
+        "counts": "{{value0}} required · {{value1}} suggested",
+        "missing": "{{value0}} not installed here",
+        "allInstalled": "all installed here",
+        "progress": "Installing {{value0}} — {{value1}} of {{value2}}",
+        "failures": "Could not install: {{value0}}",
+        "unavailable": "{{value0}} on the list is not in any marketplace this workspace reads.",
+        "sharedVia": "This list lives in {{value0}} and travels with a clone. The apps themselves stay per-machine."
+      }
     },
     "brain": {
       "history": {

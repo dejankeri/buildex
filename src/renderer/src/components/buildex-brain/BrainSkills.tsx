@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Package, Plus, Sparkles } from 'lucide-react'
+import { AlertTriangle, Plus, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
@@ -60,8 +60,9 @@ export default function BrainSkills({
     }
   }
 
+  // Every skill in the brain is the company's now. An installed app's skills
+  // live in the agent's plugin cache, not here.
   const company = skills.filter((skill) => skill.source === 'company')
-  const fromPacks = skills.filter((skill) => skill.source === 'pack')
 
   return (
     <div className="scrollbar-sleek min-h-0 flex-1 overflow-y-auto p-4">
@@ -122,16 +123,6 @@ export default function BrainSkills({
         brainRoot={brainRoot}
         onOpenPath={onOpenPath}
       />
-      <SkillGroup
-        title={translate('buildex.brain.skills.packs', 'From installed apps')}
-        hint={translate(
-          'buildex.brain.skills.packsHint',
-          'Updated when the app updates — unless you have edited them, which is kept.'
-        )}
-        skills={fromPacks}
-        brainRoot={brainRoot}
-        onOpenPath={onOpenPath}
-      />
 
       {skills.length === 0 ? (
         <p className="text-[12px] text-muted-foreground/70">
@@ -183,11 +174,7 @@ function SkillGroup({
             className="flex flex-col gap-1 rounded-xl border border-border bg-card p-3 text-left shadow-xs transition-colors hover:bg-accent"
           >
             <span className="flex items-center gap-1.5">
-              {skill.source === 'pack' ? (
-                <Package size={12} className="shrink-0 text-muted-foreground/50" />
-              ) : (
-                <Sparkles size={12} className="shrink-0 text-muted-foreground/50" />
-              )}
+              <Sparkles size={12} className="shrink-0 text-muted-foreground/50" />
               <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{skill.title}</span>
               {/* Why: an unlinked skill is invisible to the agent, which looks
                   identical to a skill that simply is not working. Say it. */}

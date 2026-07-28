@@ -1,0 +1,9 @@
+{
+  "pluginName": "linear",
+  "marketplaceId": "buildex-packs",
+  "segment": "business",
+  "displayName": "Linear",
+  "icon": "🔷",
+  "summary": "Issues & roadmap - search work, read project status, and draft issues from the agent.",
+  "mcp": true
+}

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import path from 'node:path'
 import type { GatePreset, GateSettingsResult } from '../../shared/buildex-gate-types'
 import { CLAUDE_SETTINGS_RELATIVE_PATH } from '../../shared/buildex-gate-types'
-import { resolveGatePreset } from './gate-preset'
+import { resolveGatePreset, withPluginRules, type PluginGateRules } from './gate-preset'
 
 // Write the gate into the file the agent runtime actually enforces.
 //
@@ -140,9 +140,20 @@ function removeLegacyApplied(repoPath: string): void {
   }
 }
 
-/** Write the effective gate into the company repo. Idempotent. */
-export function syncGateSettings(repoPath: string): GateSettingsResult {
-  const { preset, source } = resolveGatePreset(repoPath)
+/**
+ * Write the effective gate into the company repo. Idempotent.
+ *
+ * `pluginRules` carries the ask/deny lists of the installed plugins BuildEx
+ * curates. They are merged into the preset rather than stored, so the gate
+ * always describes what is installed now.
+ */
+export function syncGateSettings(
+  repoPath: string,
+  pluginRules: PluginGateRules = {}
+): GateSettingsResult {
+  const resolved = resolveGatePreset(repoPath)
+  const source = resolved.source
+  const preset = withPluginRules(resolved.preset, pluginRules)
   const settingsAbsolute = path.join(repoPath, ...CLAUDE_SETTINGS_RELATIVE_PATH.split('/'))
   const settings = readJson(settingsAbsolute)
   const permissions = isRecord(settings.permissions) ? settings.permissions : {}

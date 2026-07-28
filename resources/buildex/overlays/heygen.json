@@ -1,0 +1,9 @@
+{
+  "pluginName": "heygen",
+  "marketplaceId": "buildex-packs",
+  "segment": "business",
+  "displayName": "HeyGen",
+  "icon": "🎬",
+  "summary": "AI avatar video - browse avatars and templates, and generate videos, from the agent.",
+  "mcp": true
+}

@@ -8,7 +8,7 @@ import type {
   BrainRemovalResult
 } from '../../shared/buildex-brain-types'
 import { gitExecFileAsync } from '../git/runner'
-import { pruneDanglingSkillLinks, unlinkBrainSkills } from '../buildex-packs/skill-link'
+import { pruneDanglingSkillLinks, unlinkBrainSkills } from './skill-link'
 import { isBrainInitialized } from './company-brain-scan'
 import { removeBrainPointer, requireBrainLocation } from './brain-location'
 import { unbindRepo } from './brain-bindings'

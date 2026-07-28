@@ -3,8 +3,7 @@ import type { Dirent } from 'node:fs'
 import path from 'node:path'
 import type { BrainLocation, BrainMigrationResult } from '../../shared/buildex-brain-types'
 import { gitExecFileAsync } from '../git/runner'
-import { PACK_STATE_FILE_NAME } from '../buildex-packs/pack-state'
-import { relinkBrainSkills } from '../buildex-packs/skill-link'
+import { relinkBrainSkills } from './skill-link'
 import { BACKUP_ROOT, backupStamp } from './brain-remove'
 import { bindRepoToBrain, rememberClone } from './brain-bindings'
 import { commitBrain } from './brain-history'
@@ -141,17 +140,20 @@ export async function migrateBrainToExternal(
   return { ok: true, backupPath, movedPaths }
 }
 
+/** Legacy capability-pack receipt. Nothing writes it now; we only ever move or delete it. */
+const LEGACY_PACK_STATE_FILE_NAME = 'packs.json'
+
 /**
  * What the brain owns, brain-relative: its documents, `skills/` and `packs.json`.
  *
  * Deliberately not "everything in `.buildex/`". The folder is also where the
- * company's gate preset and its own pack catalog live, and those are read from
- * the code repo in both modes — moving them would silently swap the agent's
- * permission policy for the shipped default.
+ * company's gate preset lives, and that is read from the code repo in both
+ * modes — moving it would silently swap the agent's permission policy for the
+ * shipped default.
  */
 function brainOwnedEntries(source: BrainLocation): string[] {
   const owned = listBrainDocumentPaths(source)
-  for (const entry of ['skills', PACK_STATE_FILE_NAME]) {
+  for (const entry of ['skills', LEGACY_PACK_STATE_FILE_NAME]) {
     if (existsSync(path.join(source.root, entry))) {
       owned.push(entry)
     }

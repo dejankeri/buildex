@@ -1,0 +1,9 @@
+{
+  "pluginName": "asana",
+  "marketplaceId": "buildex-packs",
+  "segment": "business",
+  "displayName": "Asana",
+  "icon": "✅",
+  "summary": "Project management - search tasks and projects, and draft tasks, drivable by the agent.",
+  "mcp": true
+}
