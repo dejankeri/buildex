@@ -12,6 +12,7 @@ const {
   verifyPackagedMainRuntimeDeps
 } = require('./packaged-runtime-node-modules.cjs')
 const { verifyLinuxGlibcFloor } = require('./scripts/verify-linux-glibc-floor.cjs')
+const { verifyPackagedAsarContents } = require('./scripts/verify-packaged-asar-contents.cjs')
 
 const isMacRelease = process.env.ORCA_MAC_RELEASE === '1'
 const isLinuxArm64Release = process.env.ORCA_LINUX_ARM64_RELEASE === '1'
@@ -90,6 +91,17 @@ module.exports = {
     // package time never bloats app.asar.
     '!pr-evidence{,/**/*}',
     '!Casks{,/**/*}',
+    // Why: this repo's own agent config and company brain are development inputs
+    // with no runtime consumer — the app resolves .claude/ and .buildex/ inside
+    // the user's opened workspace, never from its own bundle. v0.1.7 shipped this
+    // repo's .claude/ (settings + generated company-context.md naming a local
+    // path) inside the public DMG. `files` is a blacklist, so anything left at
+    // the repo root ships unless it is named here.
+    '!.claude{,/**/*}',
+    '!.buildex{,/**/*}',
+    '!.mcp.json',
+    // Why: local test output. Gitignored, which does NOT keep it out of app.asar.
+    '!test-results{,/**/*}',
     '!{AGENTS.md,CLAUDE.md,DEVELOPING.md,bundle-size-progress.md}',
     '!out/**/*.test.js',
     '!electron.vite.config.{js,ts,mjs,cjs}',
@@ -177,6 +189,7 @@ module.exports = {
     }
     prunePackagedRuntimeNodeModules(resourcesDir, context.electronPlatformName, context.arch)
     verifyPackagedMainRuntimeDeps(resourcesDir)
+    verifyPackagedAsarContents(resourcesDir)
     // Why: boot the packaged daemon-entry under plain Node, but only for the
     // slice matching the packaging host's arch — daemon-entry.js is JS, yet it
     // require()s the native (N-API) node-pty for the TARGET arch, which the host

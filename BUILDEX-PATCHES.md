@@ -22,6 +22,7 @@ src/renderer/src/components/buildex-apps/AppsPage.tsx
 src/renderer/src/components/buildex-store/StorePage.tsx
 tests/e2e/buildex-surfaces.spec.ts
 config/scripts/verify-buildex-macos-release-env.mjs
+config/scripts/verify-packaged-asar-contents.cjs
 BUILDEX-PATCHES.md
 ```
 
@@ -74,6 +75,17 @@ BUILDEX-PATCHES.md
 | `package.json` | `build:mac:release` calls `verify-buildex-macos-release-env.mjs`, not upstream's |
 | `config/electron-builder.config.cjs` | `dmg.artifactName` → `buildex-macos-${arch}.${ext}`; `mac.extendInfo` permission strings say BuildEx |
 | `config/scripts/verify-packaged-daemon-entry.cjs` | boot-check `spawnSync` timeout 10s → 120s. Only the arm64 slice runs this check, and it is packaged while the multi-GB x64 DMG is still being written — 10s lost that race and failed a healthy build. The gate itself is unchanged |
+| `config/electron-builder.config.cjs` | `files` excludes `.claude`, `.buildex`, `.mcp.json`, `test-results`; `afterPack` gains one `verifyPackagedAsarContents(resourcesDir)` line |
+
+**`files` is a blacklist.** Anything left at the repo root ships inside
+`app.asar` unless it is named there, and `.gitignore` has no bearing on it. Two
+incidents on 2026-07-28 proved this the hard way: a 4.4 GB folder of previous
+release artifacts parked at the root was packed into a 3.9 GB DMG and signed and
+notarized before anyone noticed, and **v0.1.7 shipped this repo's own `.claude/`**
+— agent settings plus a generated `company-context.md` naming a local filesystem
+path — to everyone who downloaded it. No credentials were exposed and `.buildex/`
+was not present, but the DMG is public. `verify-packaged-asar-contents.cjs` now
+fails packaging on either shape.
 
 Upstream's `config/scripts/verify-macos-release-env.mjs` is left untouched and
 unused. It demands Apple ID + app-specific password + a base64 `.p12` in
