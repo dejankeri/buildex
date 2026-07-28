@@ -281,4 +281,17 @@ describe('renderCompanyContext brain location', () => {
     expect(rendered).toContain('`.buildex/`')
     expect(rendered).not.toContain('/code/api/.buildex')
   })
+
+  it('names the external skills directory, not `.buildex/skills/`', () => {
+    // Why: an agent told the wrong skills directory reads its own instructions
+    // from a path that does not exist.
+    const rendered = renderCompanyContext(
+      EMPTY_BRAIN_SCAN,
+      [{ id: 'slack', name: 'Slack', summary: '', skills: ['slack-search'], hasMcp: false }],
+      { root: '/brains/acme', gitRoot: '/brains/acme', pathspec: '.', mode: 'external' }
+    )
+
+    expect(rendered).toContain('Skills live in `/brains/acme/skills/`')
+    expect(rendered).not.toContain('.buildex/skills/')
+  })
 })

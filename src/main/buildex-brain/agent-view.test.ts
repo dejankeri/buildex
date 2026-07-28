@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -7,7 +8,7 @@ import { EMPTY_BRAIN_SCAN } from '../../shared/buildex-brain-types'
 import { buildAgentView, findImports } from './agent-view'
 import { describeSecret } from './agent-view-mcp'
 import { scanCompanyBrain } from './company-brain-service'
-import { embeddedLocation } from './brain-location'
+import { embeddedLocation, externalLocation } from './brain-location'
 
 let repo = ''
 
@@ -118,6 +119,62 @@ describe('buildAgentView', () => {
       (item) => item.kind === 'mcp'
     )
     expect(server?.detail).toBe('https://slack.example/mcp · key from $BUILDEX_SLACK_API_KEY')
+  })
+})
+
+describe('buildAgentView with an external brain', () => {
+  let brain = ''
+
+  function git(...args: string[]): void {
+    execFileSync('git', args, { cwd: brain })
+  }
+
+  beforeEach(() => {
+    brain = mkdtempSync(path.join(tmpdir(), 'buildex-agent-view-brain-'))
+    git('init', '--quiet')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+  })
+
+  afterEach(() => {
+    rmSync(brain, { recursive: true, force: true })
+  })
+
+  it('shows paths into the brain root, not into <repo>/.buildex/', async () => {
+    mkdirSync(path.join(brain, 'decisions'), { recursive: true })
+    writeFileSync(path.join(brain, 'decisions', 'pricing.md'), '# Pricing\n', 'utf8')
+    mkdirSync(path.join(brain, 'skills', 'my-skill'), { recursive: true })
+    writeFileSync(
+      path.join(brain, 'skills', 'my-skill', 'SKILL.md'),
+      '---\nname: my-skill\ndescription: Use when testing.\n---\n\n# My skill\n',
+      'utf8'
+    )
+    // The agent only sees a skill through this link — same as a pack-installed one.
+    mkdirSync(path.join(repo, '.claude', 'skills', 'my-skill'), { recursive: true })
+
+    const location = externalLocation(brain)
+    const resolution: BrainResolution = { status: 'ready', location }
+    const scan = await scanCompanyBrain(repo, location, resolution, 1)
+
+    const view = buildAgentView(repo, scan)
+
+    expect(view.reachable).toContainEqual({
+      kind: 'document',
+      name: 'decisions/pricing.md',
+      detail: 'decisions',
+      path: path.join(brain, 'decisions', 'pricing.md')
+    })
+    expect(view.reachable).toContainEqual({
+      kind: 'skill',
+      name: 'my-skill',
+      detail: 'Use when testing.',
+      path: path.join(brain, 'skills', 'my-skill', 'SKILL.md')
+    })
+    for (const item of view.reachable) {
+      if (item.path) {
+        expect(item.path).not.toContain(path.join(repo, '.buildex'))
+      }
+    }
   })
 })
 
