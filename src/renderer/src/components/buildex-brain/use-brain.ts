@@ -151,19 +151,30 @@ export function useBrain(): BrainState {
         return
       }
       if (placement.mode === 'external') {
-        await window.api.buildexBrain.migrate({
+        const request = {
           repoPath,
           brainPath: placement.brainPath,
           ...(placement.remote ? { remote: placement.remote } : {}),
           writePointer: placement.writePointer
-        })
+        }
+        // migrate moves an embedded brain's files; a repo with nothing embedded
+        // has nothing to move, and needs bind instead — the operation that only
+        // points this repo at a brain that already exists. Choosing by what is
+        // actually on disk, not by what the renderer cannot check, is what keeps
+        // "in a separate brain repo" from silently landing embedded.
+        const result = scan.embeddedBrainPresent
+          ? await window.api.buildexBrain.migrate(request)
+          : await window.api.buildexBrain.bind(request)
+        if (!result.ok) {
+          throw new Error(result.error ?? 'Could not connect this repo to the brain')
+        }
       }
       await window.api.buildexBrain.setUp({ repoPath, folders, summary })
       // Rescanned rather than assumed: the scan is what decides whether the
       // setup screen is still showing, so it has to be the thing that changes.
       await refresh()
     },
-    [refresh, repoPath]
+    [refresh, repoPath, scan.embeddedBrainPresent]
   )
 
   const cloneBrain = useCallback(

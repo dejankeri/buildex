@@ -1,8 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
-import type { BrainLocation, BrainResolution } from '../../shared/buildex-brain-types'
-import { readBrainBindings } from './brain-bindings'
+import type {
+  BrainBindRequest,
+  BrainBindResult,
+  BrainLocation,
+  BrainResolution
+} from '../../shared/buildex-brain-types'
+import { bindRepoToBrain, readBrainBindings, rememberClone } from './brain-bindings'
 import { BRAIN_ROOT } from './company-brain-scan'
 
 // Where this repo's brain is. The only module that answers that question.
@@ -124,4 +129,33 @@ export function requireBrainLocation(
 ): BrainLocation | null {
   const resolution = resolveBrainLocation(repoPath, options)
   return resolution.status === 'ready' ? resolution.location : null
+}
+
+/**
+ * Point a repo at a brain that already exists — no copying, no committing, no
+ * scaffolding. `migrateBrainToExternal` moves an embedded brain out; this is
+ * what a repo with nothing embedded to move needs instead, most often a brand
+ * new company whose first choice is a brain repo of its own.
+ *
+ * Same `writePointer` choice migrate honours: a tracked pointer plus a
+ * remembered clone when the operator asked for one and gave a remote, a
+ * machine-local binding otherwise.
+ */
+export function bindExistingBrain(
+  request: BrainBindRequest & { bindingsFile?: string }
+): BrainBindResult {
+  const { repoPath, brainPath, remote, writePointer, bindingsFile } = request
+  if (!existsSync(brainPath)) {
+    return { ok: false, error: `${brainPath} does not exist` }
+  }
+  if (!existsSync(path.join(brainPath, '.git'))) {
+    return { ok: false, error: `${brainPath} is not a git repo` }
+  }
+  if (writePointer && remote) {
+    writeBrainPointer(repoPath, remote)
+    rememberClone(remote, brainPath, bindingsFile)
+  } else {
+    bindRepoToBrain(repoPath, brainPath, bindingsFile)
+  }
+  return { ok: true }
 }

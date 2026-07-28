@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type {
   BrainDocument,
@@ -7,6 +8,7 @@ import type {
   BrainScan
 } from '../../shared/buildex-brain-types'
 import { listChangedDocumentIds } from './company-brain-changed-docs'
+import { embeddedLocation } from './brain-location'
 import { resolveDocumentLinks } from './company-brain-links'
 import {
   countHeadings,
@@ -102,6 +104,10 @@ export async function scanCompanyBrain(
     repoPath,
     initialized: isBrainInitialized(location),
     resolution,
+    // Why: independent of which location this resolved to — the renderer
+    // cannot stat the filesystem itself, and needs this to choose migrate
+    // (something embedded to move) over bind (nothing to move) at setup time.
+    embeddedBrainPresent: existsSync(embeddedLocation(repoPath).root),
     documents,
     folders,
     orphanIds,

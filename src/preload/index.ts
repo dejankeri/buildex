@@ -90,6 +90,8 @@ import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skill
 import type {
   AgentView,
   AgentViewRequest,
+  BrainBindRequest,
+  BrainBindResult,
   BrainCloneRequest,
   BrainCloneResult,
   BrainMigrateRequest,
@@ -2325,6 +2327,8 @@ const api = {
       ipcRenderer.invoke('buildex-brain:clone', request),
     migrate: (request: BrainMigrateRequest): Promise<BrainMigrationResult> =>
       ipcRenderer.invoke('buildex-brain:migrate', request),
+    bind: (request: BrainBindRequest): Promise<BrainBindResult> =>
+      ipcRenderer.invoke('buildex-brain:bind', request),
     disconnect: (request: BrainRemovalRequest): Promise<BrainRemovalResult> =>
       ipcRenderer.invoke('buildex-brain:disconnect', request),
     pull: (request: BrainPullRequest): Promise<BrainPullResult> =>

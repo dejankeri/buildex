@@ -34,6 +34,13 @@ export type BrainScan = {
   initialized: boolean
   /** How this repo's brain was resolved. Null only when there is no repo. */
   resolution: BrainResolution | null
+  /**
+   * True when `<repo>/.buildex` exists on disk, regardless of which location this
+   * resolved to. The renderer cannot stat the filesystem itself, so this is how
+   * it tells an embedded brain worth moving apart from a repo with nothing to
+   * move — the difference between choosing `migrate` and choosing `bind`.
+   */
+  embeddedBrainPresent: boolean
   documents: BrainDocument[]
   folders: BrainFolder[]
   /** Documents nothing links to and which link nowhere — the brain's dead ends. */
@@ -50,6 +57,7 @@ export const EMPTY_BRAIN_SCAN: BrainScan = {
   repoPath: '',
   initialized: false,
   resolution: null,
+  embeddedBrainPresent: false,
   documents: [],
   folders: [],
   orphanIds: [],
@@ -281,6 +289,23 @@ export type BrainMigrationResult = {
   backupPath?: string
   /** Brain-relative paths now in the brain repo, sorted. */
   movedPaths: string[]
+  error?: string
+}
+
+/**
+ * Point a repo at a brain that already exists, with nothing to move — the
+ * pristine-repo path `migrate` cannot serve, since `migrate` requires an
+ * embedded brain on disk to copy from.
+ */
+export type BrainBindRequest = {
+  repoPath: string
+  brainPath: string
+  remote?: string
+  writePointer: boolean
+}
+
+export type BrainBindResult = {
+  ok: boolean
   error?: string
 }
 

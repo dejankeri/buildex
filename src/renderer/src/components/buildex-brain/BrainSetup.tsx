@@ -33,6 +33,7 @@ export default function BrainSetup({
   const [brainPath, setBrainPath] = useState('')
   const [remote, setRemote] = useState('')
   const [writePointer, setWritePointer] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const chosen = sections.map((section) => section.folder).filter((folder) => !excluded.has(folder))
 
@@ -54,6 +55,7 @@ export default function BrainSetup({
       return
     }
     setBusy(true)
+    setError(null)
     try {
       const placement: BrainPlacementChoice = external
         ? {
@@ -64,6 +66,10 @@ export default function BrainSetup({
           }
         : { mode: 'embedded' }
       await onSetUp(chosen, summary.trim(), placement)
+    } catch (caught) {
+      // Why: the one outcome that must never happen quietly — picking external
+      // and ending up embedded with no explanation.
+      setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
       setBusy(false)
     }
@@ -277,6 +283,8 @@ export default function BrainSetup({
             )}
           </span>
         </div>
+
+        {error ? <p className="mt-3 text-[12px] text-destructive">{error}</p> : null}
       </div>
     </div>
   )

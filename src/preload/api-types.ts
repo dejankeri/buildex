@@ -348,6 +348,8 @@ import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skill
 import type {
   AgentView,
   AgentViewRequest,
+  BrainBindRequest,
+  BrainBindResult,
   BrainCloneRequest,
   BrainCloneResult,
   BrainMigrateRequest,
@@ -2378,6 +2380,7 @@ export type PreloadApi = {
     resolve: (request: BrainResolveRequest) => Promise<BrainResolution | null>
     clone: (request: BrainCloneRequest) => Promise<BrainCloneResult>
     migrate: (request: BrainMigrateRequest) => Promise<BrainMigrationResult>
+    bind: (request: BrainBindRequest) => Promise<BrainBindResult>
     disconnect: (request: BrainRemovalRequest) => Promise<BrainRemovalResult>
     pull: (request: BrainPullRequest) => Promise<BrainPullResult>
   }
