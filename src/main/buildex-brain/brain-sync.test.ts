@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { embeddedLocation, externalLocation } from './brain-location'
-import { pullBrain, pushBrain } from './brain-sync'
+import { pullBrain, pushBrain, reportPush } from './brain-sync'
 import { saveBrain } from './brain-history'
 
 let dir = ''
@@ -72,6 +72,26 @@ describe('pushBrain', () => {
   })
 })
 
+describe('reportPush', () => {
+  // The one place that decides what a push that did not happen means, so no
+  // caller downstream has to match on a reason string.
+  it('separates having nowhere to push from having failed to push', () => {
+    expect(reportPush({ pushed: true })).toEqual({ pushed: true })
+    expect(reportPush({ pushed: false, reason: 'no-upstream' })).toEqual({
+      pushed: false,
+      localOnly: true
+    })
+    expect(reportPush({ pushed: false, reason: 'embedded' })).toEqual({
+      pushed: false,
+      localOnly: true
+    })
+    expect(reportPush({ pushed: false, reason: 'failed', error: 'host unreachable' })).toEqual({
+      pushed: false,
+      error: 'host unreachable'
+    })
+  })
+})
+
 describe('saveBrain', () => {
   it('keeps the commit when the push cannot land', async () => {
     // An unreachable remote must never cost the operator their writing.
@@ -87,6 +107,25 @@ describe('saveBrain', () => {
 
     const log = execFileSync('git', ['log', '--oneline'], { cwd: brain, encoding: 'utf8' })
     expect(log).toContain('A decision')
+  })
+
+  it('calls a brain with no remote local-only, not a failed push', async () => {
+    // A brain repo with no remote is a supported setup, not a broken one: the
+    // save must not read as a warning the operator can act on, because there is
+    // nothing there to retry.
+    const lone = path.join(dir, 'lone-save')
+    execFileSync('git', ['init', '--quiet', lone])
+    git(lone, 'config', 'user.email', 'test@example.com')
+    git(lone, 'config', 'user.name', 'Test')
+    commitFile(lone, 'note.md', '# Note\n')
+    writeFileSync(path.join(lone, 'strategy.md'), '# Strategy\n', 'utf8')
+
+    const result = await saveBrain(externalLocation(lone), 'A decision')
+
+    expect(result.ok).toBe(true)
+    expect(result.pushed).toBe(false)
+    expect(result.localOnly).toBe(true)
+    expect(result.pushError).toBeUndefined()
   })
 })
 

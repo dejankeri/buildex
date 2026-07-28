@@ -145,7 +145,13 @@ export type BrainSaveResult = {
   savedPaths: string[]
   /** True when the save also reached the brain's remote. External mode only. */
   pushed?: boolean
-  /** Why the push did not happen, when the commit succeeded but the push did not. */
+  /**
+   * There was nowhere to push: the brain repo has no remote yet, which is a
+   * supported way to keep a brain and never a failure. Distinct from
+   * {@link pushError} so the renderer never has to read one to tell them apart.
+   */
+  localOnly?: boolean
+  /** The push was attempted against a remote and failed. */
   pushError?: string
   error?: string
 }
@@ -314,6 +320,9 @@ export type BrainPushRequest = { repoPath: string }
 /** Sharing a save that was already committed here. External mode only. */
 export type BrainPushResult = {
   pushed: boolean
+  /** No remote to push to — nothing failed, and a retry cannot help. */
+  localOnly?: boolean
+  /** The push was attempted and failed. */
   error?: string
 }
 

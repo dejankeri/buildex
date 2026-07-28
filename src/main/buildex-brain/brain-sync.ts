@@ -1,4 +1,8 @@
-import type { BrainLocation, BrainPullResult } from '../../shared/buildex-brain-types'
+import type {
+  BrainLocation,
+  BrainPullResult,
+  BrainPushResult as BrainPushReport
+} from '../../shared/buildex-brain-types'
 import { gitExecFileAsync } from '../git/runner'
 
 // Sharing a brain that lives in its own repo.
@@ -48,6 +52,24 @@ export async function pushBrain(location: BrainLocation): Promise<BrainPushResul
       error: error instanceof Error ? error.message : String(error)
     }
   }
+}
+
+/**
+ * What a push that did not happen should read as.
+ *
+ * A brain repo with no remote is a supported setup — `bindExistingBrain` asks
+ * only for a `.git` — so "there is nowhere to push" is a state, not a failure,
+ * and no retry can change it. Decided here rather than at each caller, so
+ * nobody downstream has to match on a reason string.
+ */
+export function reportPush(push: BrainPushResult): BrainPushReport {
+  if (push.pushed) {
+    return { pushed: true }
+  }
+  if (push.reason === 'no-upstream' || push.reason === 'embedded') {
+    return { pushed: false, localOnly: true }
+  }
+  return { pushed: false, error: push.error ?? 'not shared' }
 }
 
 export async function pullBrain(location: BrainLocation): Promise<BrainPullResult> {

@@ -8,6 +8,20 @@ import type { BrainHistoryResult } from '../../../../shared/buildex-brain-types'
 // No parallel record, no LLM — the repo is the source, so what this shows and
 // what a teammate sees after a pull cannot drift apart.
 
+/** Nothing to say (embedded, or shared fine), a brain with no remote, or a real failure. */
+type ShareState = null | { kind: 'local-only' } | { kind: 'failed'; detail: string }
+
+function shareState(push: { pushed?: boolean; localOnly?: boolean; detail?: string }): ShareState {
+  if (push.pushed !== false) {
+    // Undefined in embedded mode, where BuildEx never pushes at all.
+    return null
+  }
+  if (push.localOnly) {
+    return { kind: 'local-only' }
+  }
+  return { kind: 'failed', detail: push.detail ?? '' }
+}
+
 function relativeTime(unixSeconds: number, now: number): string {
   const seconds = Math.max(0, Math.floor(now / 1000) - unixSeconds)
   const days = Math.floor(seconds / 86400)
@@ -37,8 +51,10 @@ export default function BrainHistory({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Why: a commit that never reached the remote. The writing is safe here, and
-  // saying "saved" alone would let an operator believe their team has it.
-  const [notShared, setNotShared] = useState<string | null>(null)
+  // saying "saved" alone would let an operator believe their team has it. A
+  // brain with no remote is its own state, not a failure — nothing went wrong
+  // and a retry cannot change it.
+  const [share, setShare] = useState<ShareState>(null)
   const [sharing, setSharing] = useState(false)
   const now = Date.now()
 
@@ -55,22 +71,31 @@ export default function BrainHistory({
         return
       }
       setMessage('')
-      // Undefined in embedded mode, where BuildEx never pushes at all.
-      setNotShared(result.pushed === false ? (result.pushError ?? '') : null)
+      // The save and the push channel name the same thing differently:
+      // `pushError` beside a committed save, `error` on a push of its own.
+      setShare(
+        shareState({
+          pushed: result.pushed,
+          localOnly: result.localOnly,
+          detail: result.pushError
+        })
+      )
       await onSaved()
     } finally {
       setSaving(false)
     }
   }
 
-  const share = async (): Promise<void> => {
+  const shareAgain = async (): Promise<void> => {
     if (!repoPath) {
       return
     }
     setSharing(true)
     try {
       const result = await window.api.buildexBrain.push({ repoPath })
-      setNotShared(result.pushed ? null : (result.error ?? ''))
+      setShare(
+        shareState({ pushed: result.pushed, localOnly: result.localOnly, detail: result.error })
+      )
     } finally {
       setSharing(false)
     }
@@ -183,7 +208,15 @@ export default function BrainHistory({
             </p>
           </div>
         )}
-        {notShared === null ? null : (
+        {share?.kind === 'local-only' ? (
+          <p className="mt-2 text-[12px] text-muted-foreground">
+            {translate(
+              'buildex.brain.history.localOnly',
+              'Saved. This brain has no remote yet, so it stays on this machine until it has one.'
+            )}
+          </p>
+        ) : null}
+        {share?.kind === 'failed' ? (
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
             <p className="text-[12px] text-amber-500">
               {translate(
@@ -194,19 +227,19 @@ export default function BrainHistory({
             <button
               type="button"
               disabled={sharing}
-              onClick={() => void share()}
+              onClick={() => void shareAgain()}
               className="inline-flex h-6 items-center gap-1 rounded-md border border-border px-2 text-[11px] font-medium hover:bg-accent disabled:opacity-50"
             >
               {sharing ? <Loader2 size={11} className="animate-spin" /> : null}
               {translate('buildex.brain.history.retryShare', 'Try again')}
             </button>
-            {notShared ? (
+            {share.detail ? (
               <p className="w-full truncate font-mono text-[11px] text-muted-foreground/60">
-                {notShared}
+                {share.detail}
               </p>
             ) : null}
           </div>
-        )}
+        ) : null}
         {error ? <p className="mt-2 text-[12px] text-destructive">{error}</p> : null}
       </div>
     </div>

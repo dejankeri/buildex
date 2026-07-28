@@ -13919,7 +13919,8 @@
         "save": "Save",
         "scope": "Saves the .buildex folder only. Nothing else in this project is touched.",
         "notShared": "Saved here, not shared yet — the brain repo did not accept the push.",
-        "retryShare": "Try again"
+        "retryShare": "Try again",
+        "localOnly": "Saved. This brain has no remote yet, so it stays on this machine until it has one."
       },
       "page": {
         "sections": "Sections",

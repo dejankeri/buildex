@@ -5,7 +5,7 @@ import type {
   BrainSave,
   BrainSaveResult
 } from '../../shared/buildex-brain-types'
-import { pushBrain } from './brain-sync'
+import { pushBrain, reportPush } from './brain-sync'
 
 // The brain's history, and the one action that adds to it.
 //
@@ -149,10 +149,13 @@ export async function saveBrain(
   if (!committed.ok || location.mode === 'embedded') {
     return committed
   }
-  const push = await pushBrain(location)
+  // Mapped rather than spread: `error` on a save result means the save itself
+  // failed, and a push that did not land never means that.
+  const push = reportPush(await pushBrain(location))
   return {
     ...committed,
     pushed: push.pushed,
-    ...(push.pushed ? {} : { pushError: push.error ?? push.reason ?? 'not shared' })
+    ...(push.localOnly ? { localOnly: true } : {}),
+    ...(push.error ? { pushError: push.error } : {})
   }
 }

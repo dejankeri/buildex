@@ -53,6 +53,8 @@ describe('BrainHistory saving', () => {
 
     await waitFor(() => expect(screen.getByText(/not shared yet/i)).toBeInTheDocument())
     expect(screen.getByText(/could not resolve host/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument()
+    expect(screen.queryByText(/no remote yet/i)).not.toBeInTheDocument()
   })
 
   it('shares again on retry, and stops saying so once it lands', async () => {
@@ -64,6 +66,20 @@ describe('BrainHistory saving', () => {
 
     expect(push).toHaveBeenCalledWith({ repoPath: '/repo' })
     await waitFor(() => expect(screen.queryByText(/not shared yet/i)).not.toBeInTheDocument())
+  })
+
+  it('calls a brain with no remote local-only, with no warning and no retry', async () => {
+    await saveWith({
+      ok: true,
+      savedPaths: ['decisions/pricing.md'],
+      pushed: false,
+      localOnly: true
+    })
+
+    await waitFor(() => expect(screen.getByText(/no remote yet/i)).toBeInTheDocument())
+    // Nothing failed, and pressing a retry could only fail the same way forever.
+    expect(screen.queryByText(/not shared yet/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument()
   })
 
   it('says nothing about sharing in embedded mode, where BuildEx never pushes', async () => {

@@ -26,7 +26,7 @@ import {
   requireBrainLocation,
   resolveBrainLocation
 } from '../buildex-brain/brain-location'
-import { pullBrain, pushBrain } from '../buildex-brain/brain-sync'
+import { pullBrain, pushBrain, reportPush } from '../buildex-brain/brain-sync'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { bundledCatalogRoot } from '../buildex-repo-init'
 
@@ -192,11 +192,7 @@ export function registerBuildExBrainPlacementHandlers(): void {
       if (!location) {
         return { pushed: false, error: BRAIN_UNRESOLVED }
       }
-      const result = await pushBrain(location)
-      return {
-        pushed: result.pushed,
-        ...(result.pushed ? {} : { error: result.error ?? result.reason ?? 'not shared' })
-      }
+      return reportPush(await pushBrain(location))
     }
   )
 }
