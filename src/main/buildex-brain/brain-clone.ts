@@ -1,12 +1,11 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
+import type { BrainCloneResult } from '../../shared/buildex-brain-types'
 import { gitExecFileAsync } from '../git/runner'
 import { rememberClone } from './brain-bindings'
 
 // Getting a brain onto this machine, for the operator who cloned the code repo
 // and found a pointer to a brain they do not have yet.
-
-export type BrainCloneResult = { ok: boolean; path?: string; error?: string }
 
 export async function cloneBrain(
   remote: string,

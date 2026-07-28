@@ -1,5 +1,6 @@
 import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import path from 'node:path'
+import type { BrainMigrationResult } from '../../shared/buildex-brain-types'
 import { gitExecFileAsync } from '../git/runner'
 import { BACKUP_ROOT, backupStamp } from './brain-remove'
 import { bindRepoToBrain, rememberClone } from './brain-bindings'
@@ -25,14 +26,6 @@ export type BrainMigrationRequest = {
   /** Write `.buildex/brain.json` so teammates find the brain too. */
   writePointer: boolean
   bindingsFile?: string
-}
-
-export type BrainMigrationResult = {
-  ok: boolean
-  backupPath?: string
-  /** Brain-relative paths now in the brain repo, sorted. */
-  movedPaths: string[]
-  error?: string
 }
 
 const MIGRATION_MESSAGE = 'Moved the company brain into its own repo'

@@ -348,9 +348,17 @@ import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skill
 import type {
   AgentView,
   AgentViewRequest,
+  BrainCloneRequest,
+  BrainCloneResult,
+  BrainMigrateRequest,
+  BrainMigrationResult,
+  BrainPullRequest,
+  BrainPullResult,
   BrainRemovalPlan,
   BrainRemovalRequest,
   BrainRemovalResult,
+  BrainResolution,
+  BrainResolveRequest,
   BrainScan,
   BrainScanRequest,
   BrainSetupRequest,
@@ -2367,6 +2375,11 @@ export type PreloadApi = {
     agentView: (request: AgentViewRequest) => Promise<AgentView>
     removalPlan: (request: BrainRemovalRequest) => Promise<BrainRemovalPlan>
     remove: (request: BrainRemovalRequest) => Promise<BrainRemovalResult>
+    resolve: (request: BrainResolveRequest) => Promise<BrainResolution | null>
+    clone: (request: BrainCloneRequest) => Promise<BrainCloneResult>
+    migrate: (request: BrainMigrateRequest) => Promise<BrainMigrationResult>
+    disconnect: (request: BrainRemovalRequest) => Promise<BrainRemovalResult>
+    pull: (request: BrainPullRequest) => Promise<BrainPullResult>
   }
   buildexBrainSections: {
     list: () => Promise<BrainSectionsResult>

@@ -262,3 +262,32 @@ export type BrainResolution =
   /** A pointer names a brain this machine has not cloned yet. */
   | { status: 'needs-clone'; remote: string; suggestedPath: string }
   | { status: 'broken'; reason: 'missing' | 'not-a-repo'; path: string }
+
+export type BrainResolveRequest = { repoPath: string }
+
+export type BrainCloneRequest = { repoPath: string; remote: string; targetPath: string }
+
+export type BrainCloneResult = { ok: boolean; path?: string; error?: string }
+
+export type BrainMigrateRequest = {
+  repoPath: string
+  brainPath: string
+  remote?: string
+  writePointer: boolean
+}
+
+export type BrainMigrationResult = {
+  ok: boolean
+  backupPath?: string
+  /** Brain-relative paths now in the brain repo, sorted. */
+  movedPaths: string[]
+  error?: string
+}
+
+export type BrainPullRequest = { repoPath: string }
+
+export type BrainPullResult = {
+  pulled: boolean
+  diverged: boolean
+  error?: string
+}

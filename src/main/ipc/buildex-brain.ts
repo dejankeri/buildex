@@ -2,9 +2,16 @@ import { ipcMain } from 'electron'
 import type {
   AgentView,
   AgentViewRequest,
+  BrainCloneRequest,
+  BrainCloneResult,
+  BrainMigrateRequest,
+  BrainMigrationResult,
+  BrainPullRequest,
+  BrainPullResult,
   BrainRemovalPlan,
   BrainRemovalRequest,
   BrainRemovalResult,
+  BrainResolveRequest,
   BrainSetupRequest,
   BrainSetupResult,
   BrainSkillsRequest,
@@ -26,13 +33,26 @@ import { EMPTY_AGENT_VIEW, EMPTY_BRAIN_SCAN } from '../../shared/buildex-brain-t
 import { scanCompanyBrain } from '../buildex-brain/company-brain-service'
 import { BRAIN_SECTIONS, scaffoldCompanyBrain } from '../buildex-brain/brain-scaffold'
 import { buildAgentView } from '../buildex-brain/agent-view'
+import { cloneBrain } from '../buildex-brain/brain-clone'
+import { migrateBrainToExternal } from '../buildex-brain/brain-migrate'
 import { disconnectBrain, planBrainRemoval, removeBrain } from '../buildex-brain/brain-remove'
 import { createBrainDocument } from '../buildex-brain/brain-document-create'
-import { embeddedLocation, requireBrainLocation } from '../buildex-brain/brain-location'
-import { commitBrain, readBrainHistory } from '../buildex-brain/brain-history'
+import {
+  embeddedLocation,
+  externalLocation,
+  requireBrainLocation,
+  resolveBrainLocation
+} from '../buildex-brain/brain-location'
+import { readBrainHistory, saveBrain } from '../buildex-brain/brain-history'
+import { pullBrain } from '../buildex-brain/brain-sync'
 import { createBrainSkill, listBrainSkills } from '../buildex-brain/brain-skills'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { bundledCatalogRoot, initializeCompanyRepo } from '../buildex-repo-init'
+
+// Reachable when repoPath resolved but the brain itself did not — a pointer
+// naming an unfetched remote, or a binding whose path is gone. Distinct from a
+// truly missing repoPath, which each handler checks first.
+const BRAIN_UNRESOLVED = "This repo's brain could not be resolved"
 
 export function registerBuildExBrainHandlers(): void {
   ipcMain.handle(
@@ -61,7 +81,7 @@ export function registerBuildExBrainHandlers(): void {
       }
       const location = requireBrainLocation(repoPath)
       if (!location) {
-        return { ok: false, error: 'Missing repoPath or title' }
+        return { ok: false, error: BRAIN_UNRESOLVED }
       }
       return createBrainSkill(repoPath, location, title)
     }
@@ -87,9 +107,9 @@ export function registerBuildExBrainHandlers(): void {
       const repoPath = request?.repoPath?.trim()
       const location = repoPath ? requireBrainLocation(repoPath) : null
       if (!location) {
-        return { ok: false, savedPaths: [], error: 'Missing repoPath' }
+        return { ok: false, savedPaths: [], error: BRAIN_UNRESOLVED }
       }
-      return commitBrain(location, request?.message ?? '')
+      return saveBrain(location, request?.message ?? '')
     }
   )
 
@@ -103,7 +123,7 @@ export function registerBuildExBrainHandlers(): void {
       }
       const location = requireBrainLocation(repoPath)
       if (!location) {
-        return { ok: false, error: 'Missing repoPath or title' }
+        return { ok: false, error: BRAIN_UNRESOLVED }
       }
       const result = createBrainDocument(location, request?.folder ?? '', title)
       if (result.ok) {
@@ -126,15 +146,17 @@ export function registerBuildExBrainHandlers(): void {
       // Why: the Brain is often the first BuildEx surface a run opens, so this is
       // the earliest reliable moment to put the gate and the packs in order.
       initializeCompanyRepo(repoPath)
-      const location = requireBrainLocation(repoPath)
-      if (!location) {
-        return EMPTY_BRAIN_SCAN
+      const resolution = resolveBrainLocation(repoPath)
+      if (resolution.status !== 'ready') {
+        return { ...EMPTY_BRAIN_SCAN, repoPath, resolution }
       }
-      const resolution: BrainResolution = { status: 'ready', location }
+      const { location } = resolution
       const scan = await scanCompanyBrain(repoPath, location, resolution, Date.now())
       // Why: opening the Brain is the moment to catch up on anything that changed
       // outside the app — a document pulled from a teammate, a file written by
-      // the agent itself. Not awaited: the screen should not wait for it.
+      // the agent itself. Neither is awaited: the screen renders from local
+      // state now and picks both up on the next refresh.
+      void pullBrain(location)
       void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       return scan
     }
@@ -154,7 +176,7 @@ export function registerBuildExBrainHandlers(): void {
     }
     const location = requireBrainLocation(repoPath)
     if (!location) {
-      return { ok: false, created: [], error: 'Missing repoPath' }
+      return { ok: false, created: [], error: BRAIN_UNRESOLVED }
     }
     try {
       const result = scaffoldCompanyBrain(location, { folders, summary: request?.summary })
@@ -205,28 +227,107 @@ export function registerBuildExBrainHandlers(): void {
     'buildex-brain:remove',
     async (_event, request?: BrainRemovalRequest): Promise<BrainRemovalResult> => {
       const repoPath = request?.repoPath?.trim()
-      const location = repoPath ? requireBrainLocation(repoPath) : null
-      if (!repoPath || !location) {
+      if (!repoPath) {
         return { ok: false, committed: false, error: 'Missing repoPath' }
       }
-      // External brains are shared across repos, so this button may only ever
-      // disconnect from one, never delete it. Task 12 gives disconnect its own
-      // channel; until then, mode decides here.
-      const result =
-        location.mode === 'external'
-          ? disconnectBrain(repoPath)
-          : await removeBrain(repoPath, location, Date.now())
+      const location = requireBrainLocation(repoPath)
+      if (!location) {
+        return { ok: false, committed: false, error: BRAIN_UNRESOLVED }
+      }
+      // External brains are shared across repos, so this deletes nothing for
+      // one: removeBrain refuses any mode but embedded on its own. Detaching
+      // from an external brain is `buildex-brain:disconnect`'s job, not this
+      // one's — no mode dispatch here.
+      const result = await removeBrain(repoPath, location, Date.now())
       if (result.ok) {
         // The agent's context still names every document that was just removed.
-        // Disconnecting an external brain changes what this repo's brain even
-        // is, so resolve again rather than reuse the location removal just
-        // invalidated.
-        const refreshedLocation = requireBrainLocation(repoPath) ?? embeddedLocation(repoPath)
-        void refreshCompanyContext(repoPath, refreshedLocation, {
-          bundledCatalogRoot: bundledCatalogRoot()
-        })
+        void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       }
       return result
+    }
+  )
+
+  ipcMain.handle(
+    'buildex-brain:resolve',
+    (_event, request?: BrainResolveRequest): BrainResolution | null => {
+      const repoPath = request?.repoPath?.trim()
+      return repoPath ? resolveBrainLocation(repoPath) : null
+    }
+  )
+
+  ipcMain.handle(
+    'buildex-brain:clone',
+    async (_event, request?: BrainCloneRequest): Promise<BrainCloneResult> => {
+      const repoPath = request?.repoPath?.trim()
+      const remote = request?.remote?.trim()
+      const targetPath = request?.targetPath?.trim()
+      if (!repoPath || !remote || !targetPath) {
+        return { ok: false, error: 'Missing repoPath, remote or targetPath' }
+      }
+      const result = await cloneBrain(remote, targetPath)
+      if (result.ok) {
+        const location = requireBrainLocation(repoPath) ?? externalLocation(targetPath, remote)
+        void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
+      }
+      return result
+    }
+  )
+
+  ipcMain.handle(
+    'buildex-brain:migrate',
+    async (_event, request?: BrainMigrateRequest): Promise<BrainMigrationResult> => {
+      const repoPath = request?.repoPath?.trim()
+      const brainPath = request?.brainPath?.trim()
+      if (!repoPath || !brainPath) {
+        return { ok: false, movedPaths: [], error: 'Missing repoPath or brainPath' }
+      }
+      const result = await migrateBrainToExternal(
+        {
+          repoPath,
+          brainPath,
+          ...(request?.remote ? { remote: request.remote } : {}),
+          writePointer: Boolean(request?.writePointer)
+        },
+        Date.now()
+      )
+      if (result.ok) {
+        // The brain just left the repo entirely, so resolve fresh rather than
+        // reuse a location the migration just invalidated.
+        const location =
+          requireBrainLocation(repoPath) ?? externalLocation(brainPath, request?.remote)
+        void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
+      }
+      return result
+    }
+  )
+
+  ipcMain.handle(
+    'buildex-brain:disconnect',
+    (_event, request?: BrainRemovalRequest): BrainRemovalResult => {
+      const repoPath = request?.repoPath?.trim()
+      if (!repoPath) {
+        return { ok: false, committed: false, error: 'Missing repoPath' }
+      }
+      const result = disconnectBrain(repoPath)
+      if (result.ok) {
+        // Disconnecting changes what this repo's brain even is, so resolve
+        // again rather than reuse the location disconnect just invalidated.
+        const location = requireBrainLocation(repoPath) ?? embeddedLocation(repoPath)
+        void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
+      }
+      return result
+    }
+  )
+
+  ipcMain.handle(
+    'buildex-brain:pull',
+    async (_event, request?: BrainPullRequest): Promise<BrainPullResult> => {
+      const repoPath = request?.repoPath?.trim()
+      const location = repoPath ? requireBrainLocation(repoPath) : null
+      if (!location) {
+        return { pulled: false, diverged: false }
+      }
+      return pullBrain(location)
     }
   )
 }

@@ -1,4 +1,4 @@
-import type { BrainLocation } from '../../shared/buildex-brain-types'
+import type { BrainLocation, BrainPullResult } from '../../shared/buildex-brain-types'
 import { gitExecFileAsync } from '../git/runner'
 
 // Sharing a brain that lives in its own repo.
@@ -14,12 +14,6 @@ import { gitExecFileAsync } from '../git/runner'
 export type BrainPushResult = {
   pushed: boolean
   reason?: 'embedded' | 'no-upstream' | 'failed'
-  error?: string
-}
-
-export type BrainPullResult = {
-  pulled: boolean
-  diverged: boolean
   error?: string
 }
 
