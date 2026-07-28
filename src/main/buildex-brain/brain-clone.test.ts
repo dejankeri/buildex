@@ -60,22 +60,28 @@ describe('cloneBrain', () => {
 
   it('refuses a remote starting with dash and records no binding', async () => {
     const target = path.join(dir, 'brain')
-    const maliciousRemote = '--upload-pack=touch /tmp/pwned'
+    const sentinelFile = path.join(dir, 'pwned')
+    const maliciousRemote = `--upload-pack=touch ${sentinelFile}`
 
     const result = await cloneBrain(maliciousRemote, target, { bindingsFile })
 
     expect(result.ok).toBe(false)
     expect(result.error).toBeTruthy()
     expect(readBrainBindings(bindingsFile).clonesByRemote[maliciousRemote]).toBeUndefined()
+    expect(existsSync(target)).toBe(false)
+    expect(existsSync(sentinelFile)).toBe(false)
   })
 
   it('refuses a target path starting with dash and records no binding', async () => {
-    const maliciousTarget = '-e /tmp/pwned'
+    // Relative on purpose: `path.join(dir, '-evil')` is absolute, so it starts
+    // with a separator and the guard this test exists for never fires.
+    const maliciousTarget = '-evil'
 
     const result = await cloneBrain(origin, maliciousTarget, { bindingsFile })
 
     expect(result.ok).toBe(false)
     expect(result.error).toBeTruthy()
     expect(readBrainBindings(bindingsFile).clonesByRemote[origin]).toBeUndefined()
+    expect(existsSync(maliciousTarget)).toBe(false)
   })
 })
