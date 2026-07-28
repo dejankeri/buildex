@@ -138,17 +138,28 @@ export function recordReceiptFile(
 
 /**
  * Where a receipt-recorded path resolves on disk. The key's own shape says the
- * base: `.buildex/`- or `.claude/`-prefixed keys predate external brains and
- * are repo-relative (in embedded mode that is exactly today's file); anything
- * else is brain-root-relative, the shape every new receipt uses.
+ * base: `.claude/` is always repo-relative, anything unprefixed is brain-root-
+ * relative (the shape every new receipt uses), and a `.buildex/` key predates
+ * external brains.
+ *
+ * That last one is why the mode matters: after a migration `<repo>/.buildex`
+ * holds only the pointer, and resolving a surviving legacy key there names a
+ * file that does not exist — which uninstall reads as "already gone", deleting
+ * the receipt while the pack's files sit untouched in the shared brain.
  */
 export function resolveReceiptPath(
   repoPath: string,
   location: BrainLocation,
   relativePath: string
 ): string {
-  if (relativePath.startsWith('.buildex/') || relativePath.startsWith('.claude/')) {
-    return path.join(repoPath, ...relativePath.split('/'))
+  const segments = relativePath.split('/')
+  if (relativePath.startsWith('.buildex/')) {
+    return location.mode === 'external'
+      ? path.join(location.root, ...segments.slice(1))
+      : path.join(repoPath, ...segments)
   }
-  return path.join(location.root, ...relativePath.split('/'))
+  if (relativePath.startsWith('.claude/')) {
+    return path.join(repoPath, ...segments)
+  }
+  return path.join(location.root, ...segments)
 }

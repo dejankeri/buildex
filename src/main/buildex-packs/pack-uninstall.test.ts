@@ -1,8 +1,20 @@
 import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { embeddedLocation } from '../buildex-brain/brain-location'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { embeddedLocation, externalLocation } from '../buildex-brain/brain-location'
+import type * as BrainLocationModule from '../buildex-brain/brain-location'
+
+// Why: resolution reads a bindings file under the app's user data path, which a
+// test has no Electron to give it. This is the one seam that lets an external
+// brain be exercised end to end.
+const resolved = vi.hoisted(() => ({ location: null as null | { root: string } }))
+vi.mock('../buildex-brain/brain-location', async () => {
+  const actual = await vi.importActual<typeof BrainLocationModule>(
+    '../buildex-brain/brain-location'
+  )
+  return { ...actual, requireBrainLocation: () => resolved.location }
+})
 import { listBrainSkills } from '../buildex-brain/brain-skills'
 import { installPack } from './pack-install'
 import { hashContent } from './pack-files'
@@ -182,6 +194,46 @@ describe('uninstallPack', () => {
       'skills/slack-search/SKILL.md',
       'skills/slack-search/references/api.md'
     ])
+  })
+
+  it('uninstalls from the shared brain when the receipt still names the old repo path', () => {
+    // A pack installed before this branch, then migrated: refresh only rewrites
+    // a receipt when something is written or kept, so an unchanged catalog
+    // leaves the legacy `.buildex/`-prefixed key exactly where it was.
+    const brain = mkdtempSync(path.join(tmpdir(), 'buildex-uninstall-brain-'))
+    resolved.location = externalLocation(brain)
+    try {
+      writeIn(brain, 'skills/slack-search/SKILL.md', '# search\n')
+      writeIn(brain, 'skills/slack-search/references/api.md', '# api\n')
+      writeIn(
+        brain,
+        'packs.json',
+        JSON.stringify({
+          packs: {
+            slack: {
+              files: {
+                '.buildex/skills/slack-search/SKILL.md': hashContent('# search\n'),
+                '.buildex/skills/slack-search/references/api.md': hashContent('# api\n')
+              }
+            }
+          }
+        })
+      )
+
+      const result = uninstallPack(repo, 'slack', bundle)
+
+      // Was: ok with an empty removedPaths, the files still in the shared brain,
+      // the pack still reporting installed, and a second uninstall erroring.
+      expect(result.ok).toBe(true)
+      expect(result.removedPaths).toEqual([
+        '.buildex/skills/slack-search/SKILL.md',
+        '.buildex/skills/slack-search/references/api.md'
+      ])
+      expect(existsSync(path.join(brain, 'skills', 'slack-search'))).toBe(false)
+    } finally {
+      resolved.location = null
+      rmSync(brain, { recursive: true, force: true })
+    }
   })
 
   it('reports a pack that was never installed', () => {
