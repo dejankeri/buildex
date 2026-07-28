@@ -222,4 +222,29 @@ describe('disconnectBrain', () => {
       rmSync(brain, { recursive: true, force: true })
     }
   })
+
+  it('takes the agent off a healthy brain it no longer belongs to', async () => {
+    const brain = mkdtempSync(path.join(tmpdir(), 'buildex-shared-brain-'))
+    const bindingsFile = path.join(brain, 'bindings.json')
+    try {
+      mkdirSync(path.join(brain, '.git'), { recursive: true })
+      mkdirSync(path.join(brain, 'skills', 'slack-search'), { recursive: true })
+      writeFileSync(path.join(brain, 'skills', 'slack-search', 'SKILL.md'), '# Slack\n', 'utf8')
+      bindRepoToBrain(repo, brain, bindingsFile)
+      const { relinkBrainSkills } = await import('../buildex-packs/skill-link')
+      const { externalLocation: external } = await import('./brain-location')
+      relinkBrainSkills(repo, external(brain))
+      write('.claude/skills/hand-written/SKILL.md', '# Mine\n')
+
+      disconnectBrain(repo, { bindingsFile })
+
+      // Why: pruning cannot do this — the brain is healthy, so every link still
+      // resolves and the agent would keep loading a disconnected company's skills.
+      const { readdirSync } = await import('node:fs')
+      expect(readdirSync(path.join(repo, '.claude', 'skills'))).toEqual(['hand-written'])
+      expect(existsSync(path.join(brain, 'skills', 'slack-search', 'SKILL.md'))).toBe(true)
+    } finally {
+      rmSync(brain, { recursive: true, force: true })
+    }
+  })
 })

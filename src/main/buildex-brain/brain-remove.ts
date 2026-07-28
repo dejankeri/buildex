@@ -8,9 +8,9 @@ import type {
   BrainRemovalResult
 } from '../../shared/buildex-brain-types'
 import { gitExecFileAsync } from '../git/runner'
-import { pruneDanglingSkillLinks } from '../buildex-packs/skill-link'
+import { pruneDanglingSkillLinks, unlinkBrainSkills } from '../buildex-packs/skill-link'
 import { isBrainInitialized } from './company-brain-scan'
-import { removeBrainPointer } from './brain-location'
+import { removeBrainPointer, requireBrainLocation } from './brain-location'
 import { unbindRepo } from './brain-bindings'
 import { readBrainHistory } from './brain-history'
 
@@ -159,11 +159,17 @@ export function disconnectBrain(
   repoPath: string,
   options: { bindingsFile?: string } = {}
 ): BrainRemovalResult {
+  // Read before the binding goes: afterwards there is nothing left to say which
+  // brain these links lead into, and a live one's links prune away as healthy.
+  const location = requireBrainLocation(repoPath, options)
   try {
     removeBrainPointer(repoPath)
     unbindRepo(repoPath, options.bindingsFile)
   } catch (error) {
     return { ok: false, committed: false, error: message(error) }
+  }
+  if (location?.mode === 'external') {
+    unlinkBrainSkills(repoPath, location)
   }
   pruneDanglingSkillLinks(repoPath)
   return { ok: true, committed: false }
