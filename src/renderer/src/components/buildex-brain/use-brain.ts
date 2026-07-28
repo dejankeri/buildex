@@ -203,11 +203,16 @@ export function useBrain(): BrainState {
       if (!repoPath || scan.resolution?.status !== 'needs-clone') {
         return
       }
-      await window.api.buildexBrain.clone({
+      const result = await window.api.buildexBrain.clone({
         repoPath,
         remote: scan.resolution.remote,
         targetPath
       })
+      // Thrown, like setUp's failures: swallowed, a bad remote or an auth
+      // failure just re-rendered the same screen with no word of why.
+      if (!result.ok) {
+        throw new Error(result.error ?? 'Could not clone the brain')
+      }
       await refresh()
     },
     [refresh, repoPath, scan.resolution]

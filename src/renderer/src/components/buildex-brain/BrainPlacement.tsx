@@ -23,6 +23,7 @@ export default function BrainPlacement({
   const needsClone = resolution?.status === 'needs-clone' ? resolution : null
   const [targetPath, setTargetPath] = useState(needsClone?.suggestedPath ?? '')
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   if (!resolution || resolution.status === 'ready') {
     return null
@@ -33,8 +34,17 @@ export default function BrainPlacement({
       return
     }
     setBusy(true)
+    setError(null)
     try {
       await action()
+    } catch (caught) {
+      // A wrong remote or an auth prompt nobody answered: without this the
+      // screen simply re-renders and the operator presses the button again.
+      setError(
+        caught instanceof Error && caught.message
+          ? caught.message
+          : translate('buildex.brain.placement.cloneFailed', 'Could not clone the brain')
+      )
     } finally {
       setBusy(false)
     }
@@ -118,6 +128,8 @@ export default function BrainPlacement({
             </button>
           ) : null}
         </div>
+
+        {error ? <p className="mt-3 break-words text-[12px] text-destructive">{error}</p> : null}
       </div>
     </div>
   )

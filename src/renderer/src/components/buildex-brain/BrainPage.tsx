@@ -222,7 +222,15 @@ export default function BrainPage(): React.JSX.Element {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem variant="destructive" onSelect={() => setRemoveOpen(true)}>
                     <Trash2 size={13} />
-                    {translate('buildex.brain.page.remove', 'Remove the company brain')}
+                    {/* Why: an external brain is shared, and this button never
+                        deletes one. Promising removal is promising the wrong
+                        blast radius — the dialog already says so. */}
+                    {brainLocation?.mode === 'external'
+                      ? translate(
+                          'buildex.brain.page.disconnect',
+                          'Disconnect this repo from the brain'
+                        )
+                      : translate('buildex.brain.page.remove', 'Remove the company brain')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

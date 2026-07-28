@@ -1,4 +1,3 @@
-import path from 'node:path'
 import { gitExecFileAsync } from '../git/runner'
 import type {
   BrainHistoryResult,
@@ -156,9 +155,4 @@ export async function saveBrain(
     pushed: push.pushed,
     ...(push.pushed ? {} : { pushError: push.error ?? push.reason ?? 'not shared' })
   }
-}
-
-/** Absolute path of a brain document, for opening it in the editor. */
-export function brainDocumentPath(location: BrainLocation, documentId: string): string {
-  return path.join(location.root, ...documentId.split('/'))
 }

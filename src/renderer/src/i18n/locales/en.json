@@ -13939,7 +13939,8 @@
         "remove": "Remove the company brain",
         "removedWithBackup": "Brain removed. A copy of what was not yet saved is in {{value0}}",
         "removed": "Brain removed, and the removal was saved to history.",
-        "diverged": "This brain and the shared one have both changed. BuildEx will not merge a company’s decisions — open the brain repo and reconcile them there."
+        "diverged": "This brain and the shared one have both changed. BuildEx will not merge a company’s decisions — open the brain repo and reconcile them there.",
+        "disconnect": "Disconnect this repo from the brain"
       },
       "sections": {
         "empty": "Nothing here yet",
@@ -14021,7 +14022,8 @@
         "notARepoBody": "Without git there is no history and nothing to share, so the brain cannot be used from here.",
         "pathLabel": "Where to clone it",
         "clone": "Clone the brain",
-        "disconnect": "Disconnect this repo"
+        "disconnect": "Disconnect this repo",
+        "cloneFailed": "Could not clone the brain"
       }
     },
     "sidebar": {

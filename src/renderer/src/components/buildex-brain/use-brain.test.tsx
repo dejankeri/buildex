@@ -24,6 +24,7 @@ const bind = vi.fn()
 const historyList = vi.fn()
 const sectionsList = vi.fn()
 const pull = vi.fn()
+const clone = vi.fn()
 
 let latestState: BrainState | null = null
 let root: Root | null = null
@@ -63,11 +64,12 @@ beforeEach(() => {
   bind.mockReset()
   historyList.mockReset().mockResolvedValue({ saves: [], unavailable: true, unsavedPaths: [] })
   pull.mockReset().mockResolvedValue({ pulled: false, diverged: false })
+  clone.mockReset()
   sectionsList.mockReset().mockResolvedValue({ sections: [] })
   latestState = null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window.api shim
   ;(window as any).api = {
-    buildexBrain: { scan, setUp, migrate, bind, pull },
+    buildexBrain: { scan, setUp, migrate, bind, pull, clone },
     buildexBrainSections: { list: sectionsList, history: historyList }
   }
 })
@@ -131,6 +133,31 @@ describe('useBrain opening a shared brain', () => {
 
     expect(pull).not.toHaveBeenCalled()
     expect(state().diverged).toBe(false)
+  })
+})
+
+describe('useBrain cloneBrain', () => {
+  it('raises a failed clone rather than swallowing it', async () => {
+    scan.mockResolvedValue({
+      ...EMPTY_BRAIN_SCAN,
+      repoPath: '/repo',
+      resolution: {
+        status: 'needs-clone' as const,
+        remote: 'git@github.com:acme/brain.git',
+        suggestedPath: '/brains/brain'
+      }
+    })
+    clone.mockResolvedValue({ ok: false, error: 'Permission denied (publickey)' })
+    await renderProbe()
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await expect(
+      act(async () => {
+        await state().cloneBrain('/brains/brain')
+      })
+    ).rejects.toThrow('Permission denied (publickey)')
   })
 })
 

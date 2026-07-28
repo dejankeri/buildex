@@ -7,7 +7,7 @@ import {
   bindRepoToBrain,
   readBrainBindings,
   rememberClone,
-  setDefaultBrain
+  writeBrainBindings
 } from './brain-bindings'
 import {
   bindExistingBrain,
@@ -69,7 +69,10 @@ describe('resolveBrainLocation', () => {
 
   it('falls back to the machine-wide default brain', () => {
     makeGitRepo(brain)
-    setDefaultBrain(brain, bindingsFile)
+    writeBrainBindings(
+      { defaultBrainPath: brain, clonesByRemote: {}, brainByRepo: {} },
+      bindingsFile
+    )
 
     const result = resolveBrainLocation(repo, { bindingsFile })
 
@@ -166,6 +169,16 @@ describe('suggestedClonePath', () => {
     expect(path.basename(suggestedClonePath('https://github.com/acme/company-brain'))).toBe(
       'company-brain'
     )
+  })
+
+  it('never lets a remote walk the suggested path out of brains/', () => {
+    // The remote comes from a tracked file this machine did not write, and a
+    // name of `..` normalises away a whole directory — this one used to
+    // suggest `~/.buildex`.
+    const suggested = suggestedClonePath('git@github.com:acme/..')
+
+    expect(path.basename(suggested)).toBe('acme')
+    expect(suggested).toContain(path.join('.buildex', 'brains'))
   })
 })
 

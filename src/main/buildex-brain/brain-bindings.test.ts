@@ -6,8 +6,8 @@ import {
   bindRepoToBrain,
   readBrainBindings,
   rememberClone,
-  setDefaultBrain,
-  unbindRepo
+  unbindRepo,
+  writeBrainBindings
 } from './brain-bindings'
 
 let dir = ''
@@ -50,10 +50,16 @@ describe('brain bindings', () => {
     )
   })
 
-  it('clears the default brain when set to null', () => {
-    setDefaultBrain('/brains/acme', file)
-    setDefaultBrain(null, file)
+  it('reads a hand-written machine-wide default back, and its absence as none', () => {
+    // Nothing in the app writes this yet; the resolver honours it, so reading
+    // it has to keep working for whoever edits the file.
+    writeBrainBindings(
+      { defaultBrainPath: '/brains/acme', clonesByRemote: {}, brainByRepo: {} },
+      file
+    )
+    expect(readBrainBindings(file).defaultBrainPath).toBe('/brains/acme')
 
+    writeBrainBindings({ clonesByRemote: {}, brainByRepo: {} }, file)
     expect(readBrainBindings(file).defaultBrainPath).toBeUndefined()
   })
 

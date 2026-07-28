@@ -77,14 +77,20 @@ export function externalLocation(brainPath: string, remote?: string): BrainLocat
   }
 }
 
-/** `git@github.com:acme/brain.git` -> `~/.buildex/brains/brain`. */
+/**
+ * `git@github.com:acme/brain.git` -> `~/.buildex/brains/brain`.
+ *
+ * `.` and `..` are skipped rather than used: the remote comes from a tracked
+ * file this machine did not write, and a name of `..` normalises the suggested
+ * path up out of `brains/` — one that ends `/..` would offer `~/.buildex`.
+ */
 export function suggestedClonePath(remote: string): string {
   const name =
     remote
       .replace(/\.git$/i, '')
-      .split(/[/:]/)
+      .split(/[/:\\]/)
       .toReversed()
-      .find(Boolean) ?? 'brain'
+      .find((segment) => segment && segment !== '.' && segment !== '..') ?? 'brain'
   return path.join(homedir(), '.buildex', 'brains', name)
 }
 

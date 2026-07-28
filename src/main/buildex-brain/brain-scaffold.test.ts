@@ -124,6 +124,16 @@ describe('isBrainInitialized', () => {
 
     expect(isBrainInitialized(location())).toBe(false)
   })
+
+  it('stays false for a repo that has only a gate preset', () => {
+    // The agent's permission policy is policy, not company knowledge — the
+    // same mistake `.buildex/gate-applied.json` already caused, where its
+    // presence alone meant setup was never offered again.
+    mkdirSync(path.join(repo, '.buildex'), { recursive: true })
+    writeFileSync(path.join(repo, '.buildex', 'gate-preset.json'), '{"deny":[]}', 'utf8')
+
+    expect(isBrainInitialized(location())).toBe(false)
+  })
 })
 
 describe('an external brain', () => {

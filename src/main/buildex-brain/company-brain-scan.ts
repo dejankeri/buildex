@@ -48,7 +48,15 @@ export function isGeneratedBrainFile(relativeId: string): boolean {
 // and that must not count as "this company has a brain" — otherwise an operator
 // who installs Slack before writing anything never gets offered setup, and ends
 // up with a brain that is nothing but somebody else's skills.
-const MACHINE_BRAIN_ENTRIES = new Set(['skills', 'packs.json', 'brain.json'])
+const MACHINE_BRAIN_ENTRIES = new Set([
+  'skills',
+  'packs.json',
+  'brain.json',
+  // Policy, not knowledge — and the same mistake `gate-applied.json` already
+  // cost us: its presence alone made a repo read as having a brain, so setup
+  // was never offered there.
+  'gate-preset.json'
+])
 
 /**
  * True once this repo holds a company brain.
