@@ -25,11 +25,8 @@ import { scanCompanyBrain } from '../buildex-brain/company-brain-service'
 import { BRAIN_SECTIONS, scaffoldCompanyBrain } from '../buildex-brain/brain-scaffold'
 import { buildAgentView } from '../buildex-brain/agent-view'
 import { createBrainDocument } from '../buildex-brain/brain-document-create'
-import {
-  embeddedLocation,
-  requireBrainLocation,
-  resolveBrainLocation
-} from '../buildex-brain/brain-location'
+import { embeddedLocation } from '../buildex-brain/brain-location'
+import { requireBrainLocation, resolveBrainLocation } from './authorized-brain-location'
 import { readBrainHistory, saveBrain } from '../buildex-brain/brain-history'
 import { createBrainSkill, listBrainSkills } from '../buildex-brain/brain-skills'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'

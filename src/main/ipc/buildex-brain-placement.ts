@@ -22,10 +22,13 @@ import { disconnectBrain, planBrainRemoval, removeBrain } from '../buildex-brain
 import {
   bindExistingBrain,
   embeddedLocation,
-  externalLocation,
+  externalLocation
+} from '../buildex-brain/brain-location'
+import {
+  authorizeBrainLocation,
   requireBrainLocation,
   resolveBrainLocation
-} from '../buildex-brain/brain-location'
+} from './authorized-brain-location'
 import { pullBrain, pushBrain, reportPush } from '../buildex-brain/brain-sync'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { bundledCatalogRoot } from '../buildex-repo-init'
@@ -92,7 +95,9 @@ export function registerBuildExBrainPlacementHandlers(): void {
       }
       const result = await cloneBrain(remote, targetPath, { repoPath })
       if (result.ok) {
-        const location = requireBrainLocation(repoPath) ?? externalLocation(targetPath, remote)
+        const location =
+          requireBrainLocation(repoPath) ??
+          authorizeBrainLocation(externalLocation(targetPath, remote))
         void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       }
       return result
@@ -120,7 +125,8 @@ export function registerBuildExBrainPlacementHandlers(): void {
         // The brain just left the repo entirely, so resolve fresh rather than
         // reuse a location the migration just invalidated.
         const location =
-          requireBrainLocation(repoPath) ?? externalLocation(brainPath, request?.remote)
+          requireBrainLocation(repoPath) ??
+          authorizeBrainLocation(externalLocation(brainPath, request?.remote))
         void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       }
       return result
@@ -146,7 +152,8 @@ export function registerBuildExBrainPlacementHandlers(): void {
     })
     if (result.ok) {
       const location =
-        requireBrainLocation(repoPath) ?? externalLocation(brainPath, request?.remote)
+        requireBrainLocation(repoPath) ??
+        authorizeBrainLocation(externalLocation(brainPath, request?.remote))
       void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
     }
     return result
