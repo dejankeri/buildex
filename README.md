@@ -29,10 +29,11 @@
 > [contributors](https://github.com/stablyai/orca/graphs/contributors) for building the hard part in
 > the open under MIT.
 
-> **Status: pre-alpha.** This fork runs from source (see [Run it](#run-it)). There is no signed
-> download yet — update checks point at a repo with no matching releases and fail safe, applying
-> nothing. It has not been launched outside its isolated test profile; read
-> [the caveat](#running-alongside-orca) before running it next to your daily Orca.
+> **Status: early.** Signed and notarized macOS builds ship on
+> [releases](https://github.com/dejankeri/buildex/releases/latest) for both Apple Silicon
+> (`buildex-macos-arm64.dmg`) and Intel (`buildex-macos-x64.dmg`); Linux and Windows still run from
+> source (see [Run it](#run-it)). Read [the caveat](#running-alongside-orca) before running this
+> next to your daily Orca.
 
 ---
 
@@ -69,7 +70,7 @@ other agent Orca supports still runs; it just does not get the company context a
 
 | Works now | Not yet |
 |---|---|
-| Everything Orca does — worktrees, terminals, diffs, agents, SSH | A signed download (runs from source today) |
+| Everything Orca does — worktrees, terminals, diffs, agents, SSH | Linux and Windows downloads (both run from source today) |
 | The Brain: nine sections over `.buildex/`, edited in place | Inline approval cards and the activity ledger ([why](PROGRESS.md#the-gate-what-is-done-and-what-is-not)) |
 | The Store on first run, with 11 packs shipped in the app | Pack MCP faces — parsed and carried, but installing does not write `.mcp.json` yet |
 | Auto-fed company context, refreshed without a button | Gate applied on worktree activation (today it applies when a BuildEx surface first touches a repo) |
