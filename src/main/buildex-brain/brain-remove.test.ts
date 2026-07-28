@@ -13,14 +13,9 @@ vi.mock('node:os', async () => {
   return { ...actual, homedir: () => home, default: { ...actual, homedir: () => home } }
 })
 
-const {
-  BACKUP_ROOT,
-  backupStamp,
-  disconnectBrain,
-  planBrainRemoval,
-  pruneDanglingSkillLinks,
-  removeBrain
-} = await import('./brain-remove')
+const { BACKUP_ROOT, backupStamp, disconnectBrain, planBrainRemoval, removeBrain } =
+  await import('./brain-remove')
+const { pruneDanglingSkillLinks } = await import('../buildex-packs/skill-link')
 const { gitExecFileAsync } = await import('../git/runner')
 const { bindRepoToBrain, readBrainBindings } = await import('./brain-bindings')
 const { embeddedLocation, externalLocation, readBrainPointer, writeBrainPointer } =
@@ -189,9 +184,12 @@ describe('pruneDanglingSkillLinks', () => {
 
     rmSync(path.join(repo, '.buildex'), { recursive: true, force: true })
 
-    // Why: left behind, the agent reads a set of broken skills.
+    // Why: left behind, the agent reads a set of broken skills. Checked by
+    // listing the directory, not with existsSync — a dangling link is invisible
+    // to existsSync whether it was removed or not.
     expect(pruneDanglingSkillLinks(repo)).toEqual(['slack-search'])
-    expect(existsSync(path.join(repo, '.claude', 'skills', 'slack-search'))).toBe(false)
+    const { readdirSync } = await import('node:fs')
+    expect(readdirSync(path.join(repo, '.claude', 'skills'))).toEqual([])
   })
 
   it('never removes a real directory somebody put there by hand', () => {

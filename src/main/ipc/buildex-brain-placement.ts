@@ -88,7 +88,7 @@ export function registerBuildExBrainPlacementHandlers(): void {
       if (!repoPath || !remote || !targetPath) {
         return { ok: false, error: 'Missing repoPath, remote or targetPath' }
       }
-      const result = await cloneBrain(remote, targetPath)
+      const result = await cloneBrain(remote, targetPath, { repoPath })
       if (result.ok) {
         const location = requireBrainLocation(repoPath) ?? externalLocation(targetPath, remote)
         void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })

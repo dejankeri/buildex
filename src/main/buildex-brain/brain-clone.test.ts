@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -35,6 +35,24 @@ describe('cloneBrain', () => {
     expect(result.ok).toBe(true)
     expect(existsSync(path.join(target, 'note.md'))).toBe(true)
     expect(readBrainBindings(bindingsFile).clonesByRemote[origin]).toBe(target)
+  })
+
+  it('links the cloned brain skills into the repo that asked for it', async () => {
+    mkdirSync(path.join(origin, 'skills', 'slack-search'), { recursive: true })
+    writeFileSync(path.join(origin, 'skills', 'slack-search', 'SKILL.md'), '# Slack\n', 'utf8')
+    execFileSync('git', ['add', '.'], { cwd: origin })
+    execFileSync('git', ['commit', '--quiet', '-m', 'a skill'], { cwd: origin })
+    const repo = path.join(dir, 'api')
+    mkdirSync(repo, { recursive: true })
+    const target = path.join(dir, 'brain')
+
+    const result = await cloneBrain(origin, target, { bindingsFile, repoPath: repo })
+
+    expect(result.ok).toBe(true)
+    // Otherwise a fresh clone produces zero links until something else runs.
+    expect(realpathSync(path.join(repo, '.claude', 'skills', 'slack-search'))).toBe(
+      realpathSync(path.join(target, 'skills', 'slack-search'))
+    )
   })
 
   it('adopts a clone that is already there rather than failing', async () => {

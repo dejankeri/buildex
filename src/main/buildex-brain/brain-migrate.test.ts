@@ -1,5 +1,14 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -117,6 +126,33 @@ describe('migrateBrainToExternal', () => {
     expect(result.ok).toBe(false)
     expect(result.backupPath).toBeTruthy()
     expect(existsSync(path.join(repo, '.buildex', 'decisions', 'pricing.md'))).toBe(true)
+    rmSync(result.backupPath ?? '', { recursive: true, force: true })
+  })
+
+  it('leaves the agent holding links that resolve into the new brain root', async () => {
+    mkdirSync(path.join(repo, '.buildex', 'skills', 'slack-search'), { recursive: true })
+    writeFileSync(path.join(repo, '.buildex', 'skills', 'slack-search', 'SKILL.md'), '# S\n')
+    mkdirSync(path.join(repo, '.buildex', 'skills', 'how-we-price'), { recursive: true })
+    writeFileSync(path.join(repo, '.buildex', 'skills', 'how-we-price', 'SKILL.md'), '# P\n')
+    // Embedded links are relative, so the move leaves every one of them dangling.
+    mkdirSync(path.join(repo, '.claude', 'skills'), { recursive: true })
+    symlinkSync(
+      path.join('..', '..', '.buildex', 'skills', 'slack-search'),
+      path.join(repo, '.claude', 'skills', 'slack-search'),
+      'dir'
+    )
+
+    const result = await migrateBrainToExternal(
+      { repoPath: repo, brainPath: brain, writePointer: false, bindingsFile },
+      1_700_000_000_000
+    )
+
+    expect(result.ok).toBe(true)
+    // Both: the one that was linked before, and the company skill that never was.
+    for (const name of ['how-we-price', 'slack-search']) {
+      const link = path.join(repo, '.claude', 'skills', name)
+      expect(realpathSync(link)).toBe(realpathSync(path.join(brain, 'skills', name)))
+    }
     rmSync(result.backupPath ?? '', { recursive: true, force: true })
   })
 })

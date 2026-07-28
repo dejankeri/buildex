@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import type { BrainMigrationResult } from '../../shared/buildex-brain-types'
 import { gitExecFileAsync } from '../git/runner'
+import { relinkBrainSkills } from '../buildex-packs/skill-link'
 import { BACKUP_ROOT, backupStamp } from './brain-remove'
 import { bindRepoToBrain, rememberClone } from './brain-bindings'
 import { commitBrain } from './brain-history'
@@ -87,16 +88,29 @@ export async function migrateBrainToExternal(
     return { ok: false, backupPath, movedPaths, error: message(error) }
   }
 
-  if (request.writePointer && request.remote) {
-    writeBrainPointer(request.repoPath, request.remote)
-    rememberClone(request.remote, request.brainPath, request.bindingsFile)
-    try {
-      await gitExecFileAsync(['add', '--', BRAIN_POINTER_RELATIVE_PATH], { cwd: request.repoPath })
-    } catch {
-      // The pointer is on disk either way; an uncommitted one still resolves.
+  try {
+    if (request.writePointer && request.remote) {
+      writeBrainPointer(request.repoPath, request.remote)
+      rememberClone(request.remote, request.brainPath, request.bindingsFile)
+      try {
+        await gitExecFileAsync(['add', '--', BRAIN_POINTER_RELATIVE_PATH], {
+          cwd: request.repoPath
+        })
+      } catch {
+        // The pointer is on disk either way; an uncommitted one still resolves.
+      }
+    } else {
+      bindRepoToBrain(request.repoPath, request.brainPath, request.bindingsFile)
     }
-  } else {
-    bindRepoToBrain(request.repoPath, request.brainPath, request.bindingsFile)
+  } catch (error) {
+    // The files have already moved, so the one thing the operator must not be
+    // left guessing at is where they went.
+    return {
+      ok: false,
+      backupPath,
+      movedPaths,
+      error: `The brain is now in ${request.brainPath}, but this repo could not be pointed at it: ${message(error)}`
+    }
   }
 
   try {
@@ -109,6 +123,10 @@ export async function migrateBrainToExternal(
     // No git, or nothing staged for this pathspec: the files are gone from
     // disk regardless, and there was nothing left to commit.
   }
+
+  // Every link in `.claude/skills/` pointed into the folder just emptied, and a
+  // dangling one is invisible to the agent and to every later install.
+  relinkBrainSkills(request.repoPath, target)
 
   return { ok: true, backupPath, movedPaths }
 }

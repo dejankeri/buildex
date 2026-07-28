@@ -1,4 +1,4 @@
-import { cpSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync } from 'node:fs'
+import { cpSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import type { Dirent } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
@@ -8,7 +8,7 @@ import type {
   BrainRemovalResult
 } from '../../shared/buildex-brain-types'
 import { gitExecFileAsync } from '../git/runner'
-import { AGENT_SKILLS_DIR } from '../buildex-packs/skill-link'
+import { pruneDanglingSkillLinks } from '../buildex-packs/skill-link'
 import { isBrainInitialized } from './company-brain-scan'
 import { removeBrainPointer } from './brain-location'
 import { unbindRepo } from './brain-bindings'
@@ -72,44 +72,6 @@ function countDocuments(absoluteRoot: string): number {
   }
   walk(absoluteRoot)
   return total
-}
-
-/**
- * Drop `.claude/skills/` links that now point at nothing.
- *
- * Without this the agent is left holding symlinks into a folder that no longer
- * exists, which reads to it as a set of broken skills. Only ever removes a
- * symlink, and only one whose target is gone — a real directory somebody put
- * there by hand is untouched.
- */
-export function pruneDanglingSkillLinks(repoPath: string): string[] {
-  const root = path.join(repoPath, AGENT_SKILLS_DIR)
-  let entries: string[]
-  try {
-    entries = readdirSync(root).sort()
-  } catch {
-    return []
-  }
-  const pruned: string[] = []
-  for (const entry of entries) {
-    const linkPath = path.join(root, entry)
-    try {
-      if (!lstatSync(linkPath).isSymbolicLink()) {
-        continue
-      }
-      realpathSync(linkPath)
-    } catch {
-      // Either it stopped being readable or it resolves nowhere; both mean the
-      // link is no longer usable by the agent.
-      try {
-        rmSync(linkPath)
-        pruned.push(entry)
-      } catch {
-        // Nothing to do about a link we cannot remove.
-      }
-    }
-  }
-  return pruned
 }
 
 /**

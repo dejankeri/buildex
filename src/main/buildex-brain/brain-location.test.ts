@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -244,6 +244,23 @@ describe('bindExistingBrain', () => {
     expect(result.ok).toBe(false)
     expect(result.error).toBeTruthy()
     expect(readBrainBindings(bindingsFile).brainByRepo[repo]).toBeUndefined()
+  })
+})
+
+describe('bindExistingBrain and the brain it binds to', () => {
+  it('gives this repo the skills the brain already holds', () => {
+    makeGitRepo(brain)
+    mkdirSync(path.join(brain, 'skills', 'slack-search'), { recursive: true })
+    writeFileSync(path.join(brain, 'skills', 'slack-search', 'SKILL.md'), '# Slack\n', 'utf8')
+
+    bindExistingBrain({ repoPath: repo, brainPath: brain, writePointer: false, bindingsFile })
+
+    // The design's whole point: install an app once and every repo bound to
+    // that brain gets it. Without this the repo has no skills until something
+    // else happens to relink.
+    expect(realpathSync(path.join(repo, '.claude', 'skills', 'slack-search'))).toBe(
+      realpathSync(path.join(brain, 'skills', 'slack-search'))
+    )
   })
 })
 

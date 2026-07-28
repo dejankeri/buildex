@@ -7,6 +7,7 @@ import type {
   BrainLocation,
   BrainResolution
 } from '../../shared/buildex-brain-types'
+import { relinkBrainSkills } from '../buildex-packs/skill-link'
 import { bindRepoToBrain, readBrainBindings, rememberClone } from './brain-bindings'
 import { BRAIN_ROOT } from './company-brain-scan'
 
@@ -157,5 +158,8 @@ export function bindExistingBrain(
   } else {
     bindRepoToBrain(repoPath, brainPath, bindingsFile)
   }
+  // The brain's skills are the company's, and binding is the moment this repo
+  // gains them: without the links the agent here sees none of them, ever.
+  relinkBrainSkills(repoPath, externalLocation(brainPath, remote))
   return { ok: true }
 }
