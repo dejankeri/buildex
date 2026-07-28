@@ -80,11 +80,14 @@ export async function migrateBrainToExternal(
 
   const pathspecs = owned.map((relative) => `${source.pathspec}/${relative}`)
   try {
-    await gitExecFileAsync(['rm', '-r', '-f', '--quiet', '--', ...pathspecs], {
+    // --ignore-unmatch because the pathspecs are now per-file: one document the
+    // operator never saved would otherwise fail the whole command, and none of
+    // the tracked ones would be staged for removal.
+    await gitExecFileAsync(['rm', '-r', '-f', '--ignore-unmatch', '--quiet', '--', ...pathspecs], {
       cwd: request.repoPath
     })
   } catch {
-    // Untracked, or no git here: the plain removal below still applies.
+    // No git here at all: the plain removal below still applies.
   }
   try {
     for (const relative of owned) {

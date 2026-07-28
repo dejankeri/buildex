@@ -129,6 +129,25 @@ describe('migrateBrainToExternal', () => {
     rmSync(result.backupPath ?? '', { recursive: true, force: true })
   })
 
+  it('moves a document git never saw without losing the ones it did', async () => {
+    writeFileSync(path.join(repo, '.buildex', 'decisions', 'draft.md'), '# Half a thought\n')
+
+    const result = await migrateBrainToExternal(
+      { repoPath: repo, brainPath: brain, writePointer: false, bindingsFile },
+      1_700_000_000_000
+    )
+
+    expect(result.ok).toBe(true)
+    expect(existsSync(path.join(brain, 'decisions', 'draft.md'))).toBe(true)
+    // The tracked one still has to leave HEAD, however the untracked one fared.
+    const tracked = execFileSync('git', ['ls-tree', '-r', 'HEAD', '--name-only'], {
+      cwd: repo,
+      encoding: 'utf8'
+    })
+    expect(tracked).not.toContain('.buildex/')
+    rmSync(result.backupPath ?? '', { recursive: true, force: true })
+  })
+
   it('says where the files went when the repo cannot be pointed at them', async () => {
     // A bindings file that cannot be written: its parent is a regular file.
     writeFileSync(path.join(dir, 'blocked'), 'not a directory\n', 'utf8')
