@@ -26,7 +26,10 @@ afterEach(() => {
 })
 
 describe('listBrainSkills', () => {
-  it('separates what a pack installed from what the company wrote', () => {
+  // Why: the Store installs through the agent's plugin cache now, so nothing it
+  // does lands here. A legacy receipt from the pack era must not make the
+  // company's own skill look like somebody else's.
+  it('treats every skill in the brain as the company own, legacy receipt or not', () => {
     write('.buildex/skills/slack-search/SKILL.md', '# Slack search\n')
     write('.buildex/skills/onboard-client/SKILL.md', '# Onboard a client\n')
     write(
@@ -38,8 +41,7 @@ describe('listBrainSkills', () => {
 
     const skills = listBrainSkills(repo, location())
 
-    expect(skills.find((s) => s.name === 'slack-search')?.source).toBe('pack')
-    expect(skills.find((s) => s.name === 'onboard-client')?.source).toBe('company')
+    expect(skills.map((s) => s.source)).toEqual(['company', 'company'])
   })
 
   it('reads the title and the description the agent matches on', () => {

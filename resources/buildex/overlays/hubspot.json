@@ -1,0 +1,15 @@
+{
+  "pluginName": "hubspot",
+  "marketplaceId": "buildex-packs",
+  "segment": "business",
+  "displayName": "HubSpot",
+  "icon": "🧲",
+  "summary": "CRM - find contacts, companies, and deals, and log activity, drivable by the agent.",
+  "mcp": false,
+  "apiKey": {
+    "transport": "rest",
+    "apiBase": "https://api.hubapi.com",
+    "docsUrl": "https://developers.hubspot.com/docs/guides/apps/private-apps/overview",
+    "hint": "Private-app token"
+  }
+}

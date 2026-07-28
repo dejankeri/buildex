@@ -1,117 +1,135 @@
-import React, { useEffect, useState } from 'react'
-import { Check, Loader2, ShieldCheck, Store, Trash2 } from 'lucide-react'
+import React, { useMemo, useRef, useState } from 'react'
+import { Briefcase, Code2, Loader2, RefreshCw, Search, ShieldCheck, Store, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
-import type { BuildExPack } from '../../../../shared/buildex-packs-types'
-import PackConnectRow from './PackConnectRow'
-import { usePackCatalog } from './use-pack-catalog'
+import { Input } from '@/components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import type {
+  StoreEntry,
+  StoreRequirement,
+  StoreSegment
+} from '../../../../shared/buildex-store-types'
+import StoreNotices from './StoreNotices'
+import StoreRosterBanner from './StoreRosterBanner'
+import StoreShelf from './StoreShelf'
+import UngatedInstallDialog from './UngatedInstallDialog'
+import { splitStoreEntriesBySegment, storeEntryKey } from './store-entry-search'
+import { resolveRosterStatus } from './store-roster-status'
+import { useRosterBulkInstall } from './use-roster-bulk-install'
+import { useStoreCatalog } from './use-store-catalog'
+import { useStoreWorkspaceNotices } from './use-store-workspace-notices'
 
-// The app store: capability packs a company installs into its own repo.
-// Installing writes skills into the repo, so `git status` shows exactly what the
-// company gained and reverting is a checkout — git stays the record.
+// The Store: a client of the plugin marketplaces each coding agent already has.
+//
+// Two shelves, because they are two products for two people — someone running a
+// business and someone building software — and the same app can honestly sit on
+// both. Installing is the agent's own plugin mechanism; what BuildEx adds is the
+// ask-first gate, the credential, and the company-context line, and it adds them
+// only where it has an overlay. Everything else installs ungated and says so.
+//
+// The one shared thing is the roster: which apps the company expects. It is a
+// git-tracked file in the brain, so it is the only part of the Store a teammate
+// inherits by cloning.
 
 export default function StorePage(): React.JSX.Element {
   useTranslation()
-  const { catalog, repoPath, loading, refresh } = usePackCatalog()
+  const {
+    catalog,
+    repoPath,
+    loading,
+    refreshingIndexes,
+    error: catalogError,
+    refresh,
+    refreshIndexes
+  } = useStoreCatalog()
+  const { gateRuleCount, sharedBrain } = useStoreWorkspaceNotices(repoPath)
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
-  const [installingId, setInstallingId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const [segment, setSegment] = useState<StoreSegment>('business')
+  const [query, setQuery] = useState('')
+  const [busyEntryKey, setBusyEntryKey] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [pendingUngated, setPendingUngated] = useState<StoreEntry | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [gateRuleCount, setGateRuleCount] = useState<number | null>(null)
-  const [sharedBrain, setSharedBrain] = useState(false)
+  const bulk = useRosterBulkInstall(repoPath, refresh)
 
-  // The gate belongs next to the Store: installing a capability and deciding
-  // which of its actions wait for a person are the same question asked twice.
-  useEffect(() => {
-    let cancelled = false
-    if (!repoPath) {
-      setGateRuleCount(null)
-      return
-    }
-    void window.api.buildexGate.sync({ repoPath }).then((result) => {
-      if (!cancelled) {
-        setGateRuleCount(result.preset.ask.length + result.preset.deny.length)
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [repoPath])
+  const shelves = useMemo(
+    () => splitStoreEntriesBySegment(catalog.entries, query),
+    [catalog.entries, query]
+  )
+  const rosterStatus = useMemo(() => resolveRosterStatus(catalog), [catalog])
 
-  // Why: installing into a shared brain turns a pack's MCP config on for every
-  // repo that points at it, not just this one — worth saying before the operator
-  // discovers it from a diff in a repo they never touched.
-  useEffect(() => {
-    let cancelled = false
-    if (!repoPath) {
-      setSharedBrain(false)
-      return
-    }
-    void window.api.buildexBrain.resolve({ repoPath }).then((resolution) => {
-      if (!cancelled) {
-        setSharedBrain(resolution?.status === 'ready' && resolution.location.mode === 'external')
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [repoPath])
+  // Installing is delegated, so an agent with no plugin system BuildEx can drive
+  // leaves the shelves browsable and the buttons off.
+  const installDisabled = !repoPath || catalog.unsupportedAgent !== null || bulk.running
 
-  const uninstall = async (pack: BuildExPack): Promise<void> => {
+  const runInstall = async (entry: StoreEntry, mode: 'install' | 'uninstall'): Promise<void> => {
     if (!repoPath) {
       return
     }
-    setInstallingId(pack.id)
-    setError(null)
+    setBusyEntryKey(storeEntryKey(entry))
+    setActionError(null)
     setNotice(null)
     try {
-      const result = await window.api.buildexPacks.uninstall({ repoPath, packId: pack.id })
+      const request = {
+        repoPath,
+        marketplaceId: entry.marketplaceId,
+        pluginName: entry.plugin.name
+      }
+      const result =
+        mode === 'install'
+          ? await window.api.buildexStore.install(request)
+          : await window.api.buildexStore.uninstall(request)
       if (!result.ok) {
-        setError(result.error ?? 'Uninstall failed')
-      } else if (result.keptOperatorEdits.length > 0) {
-        // Why: files the operator changed are theirs. Removing the pack must not
-        // quietly take their edits with it, and they should know what stayed.
-        setNotice(
-          translate(
-            'buildex.store.page.keptOnUninstall',
-            'Removed {{value0}}, but kept files you had edited: {{value1}}',
-            { value0: pack.name, value1: result.keptOperatorEdits.join(', ') }
-          )
-        )
+        // Why: the agent's CLI output is the only account of what went wrong, so
+        // it is shown rather than replaced with a generic failure line.
+        setActionError(result.error ?? result.output ?? 'The agent could not complete that.')
       }
       await refresh()
     } finally {
-      setInstallingId(null)
+      setBusyEntryKey(null)
     }
   }
 
-  const install = async (pack: BuildExPack): Promise<void> => {
+  const onInstall = (entry: StoreEntry): void => {
+    if (entry.curated) {
+      void runInstall(entry, 'install')
+      return
+    }
+    setPendingUngated(entry)
+  }
+
+  // Why: writing the roster edits a tracked file. Nothing is shared until that
+  // file is committed, so the page says which one rather than implying the
+  // teammate already has it.
+  const setRequirement = async (
+    entry: StoreEntry,
+    requirement: StoreRequirement | null
+  ): Promise<void> => {
     if (!repoPath) {
       return
     }
-    setInstallingId(pack.id)
-    setError(null)
+    setActionError(null)
     setNotice(null)
-    try {
-      const result = await window.api.buildexPacks.install({ repoPath, packId: pack.id })
-      if (!result.ok) {
-        setError(result.error ?? 'Install failed')
-      } else if (result.keptOperatorEdits.length > 0) {
-        // Why: silently skipping a file the operator wrote would look like the
-        // install worked and the pack simply behaves differently. Say it.
-        setNotice(
-          translate(
-            'buildex.store.page.keptEdits',
-            'Kept your edited files, so {{value0}} was not fully replaced: {{value1}}',
-            { value0: pack.name, value1: result.keptOperatorEdits.join(', ') }
-          )
-        )
-      }
-      await refresh()
-    } finally {
-      setInstallingId(null)
+    const result = await window.api.buildexStore.setRosterEntry({
+      repoPath,
+      pluginName: entry.plugin.name,
+      marketplaceId: entry.marketplaceId,
+      requirement
+    })
+    if (!result.ok) {
+      setActionError(result.error ?? 'Could not update the company app list.')
+      return
     }
+    setNotice(
+      translate(
+        'buildex.store.roster.committed',
+        'Updated {{value0}} — commit it to share this list with your team.',
+        { value0: result.roster?.path ?? rosterStatus?.path ?? '' }
+      )
+    )
+    await refresh()
   }
 
   return (
@@ -135,122 +153,127 @@ export default function StorePage(): React.JSX.Element {
             })}
           </span>
         ) : null}
-        {loading ? <Loader2 size={13} className="animate-spin text-muted-foreground" /> : null}
+        {/* Why: indexes are fetched, not bundled, so the operator needs a way to
+            go and get them now rather than waiting for the cache to age out. */}
+        <button
+          type="button"
+          aria-label={translate('buildex.store.page.refreshIndexes', 'Refresh apps')}
+          title={translate(
+            'buildex.store.page.refreshIndexesHint',
+            'Fetch the latest apps from the marketplaces.'
+          )}
+          disabled={refreshingIndexes}
+          onClick={() => void refreshIndexes()}
+          className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent disabled:opacity-50"
+        >
+          <RefreshCw size={12} className={refreshingIndexes ? 'animate-spin' : undefined} />
+        </button>
+        {loading && !refreshingIndexes ? (
+          <Loader2 size={13} className="animate-spin text-muted-foreground" />
+        ) : null}
       </div>
 
-      {error ? (
-        <div className="shrink-0 border-b border-border px-4 py-2 text-[12px] text-destructive">
-          {error}
-        </div>
-      ) : null}
+      <StoreNotices
+        error={actionError ?? catalogError}
+        notice={notice}
+        repoPath={repoPath}
+        sharedBrain={sharedBrain}
+        unsupportedAgent={catalog.unsupportedAgent}
+      />
 
-      {notice ? (
-        <div className="shrink-0 border-b border-border px-4 py-2 text-[12px] text-muted-foreground">
-          {notice}
-        </div>
-      ) : null}
+      <Tabs
+        value={segment}
+        onValueChange={(next) => setSegment(next as StoreSegment)}
+        className="min-h-0 flex-1 gap-0"
+      >
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-2">
+          <TabsList>
+            <TabsTrigger value="business" className="text-[13px]">
+              <Briefcase />
+              {translate('buildex.store.segment.business', 'Run your business')}
+              <span className="text-muted-foreground">{shelves.business.length}</span>
+            </TabsTrigger>
+            <TabsTrigger value="software" className="text-[13px]">
+              <Code2 />
+              {translate('buildex.store.segment.software', 'Build software')}
+              <span className="text-muted-foreground">{shelves.software.length}</span>
+            </TabsTrigger>
+          </TabsList>
 
-      {!repoPath ? (
-        <div className="shrink-0 border-b border-border px-4 py-2 text-[12px] text-muted-foreground">
-          {translate(
-            'buildex.store.page.noRepo',
-            'Open a project to install packs — they are written into its repo.'
-          )}
-        </div>
-      ) : null}
-
-      {repoPath && sharedBrain ? (
-        <div className="shrink-0 border-b border-border px-4 py-2 text-[12px] text-muted-foreground">
-          {translate(
-            'buildex.store.sharedBrain',
-            'This company shares one brain, so installing an app here gives every repo that uses it the same skills.'
-          )}
-        </div>
-      ) : null}
-
-      {catalog.packs.length === 0 ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-          <Store size={22} className="text-muted-foreground/40" />
-          <p className="text-[13px] text-muted-foreground">
-            {translate('buildex.store.page.emptyTitle', 'No packs available yet')}
-          </p>
-          <p className="max-w-sm text-[12px] text-muted-foreground/70">
-            {translate(
-              'buildex.store.page.emptyHint',
-              'The catalog that ships with BuildEx could not be read. Reinstall the app, or add a catalog to your company repo.'
-            )}
-          </p>
-        </div>
-      ) : (
-        <div className="scrollbar-sleek min-h-0 flex-1 overflow-y-auto p-4">
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-            {catalog.packs.map((pack) => (
-              <div
-                key={pack.id}
-                className="flex flex-col gap-2 rounded-xl border border-border bg-card p-3 shadow-xs"
+          {/* Why: hundreds of plugins per shelf, so search is the way through and
+              gets the focus the moment the page opens. */}
+          <div className="relative ml-auto w-full min-w-[200px] sm:w-64">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              ref={searchRef}
+              autoFocus
+              type="text"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape' && query) {
+                  event.stopPropagation()
+                  setQuery('')
+                }
+              }}
+              placeholder={translate('buildex.store.page.search', 'Search apps')}
+              aria-label={translate('buildex.store.page.searchLabel', 'Search apps')}
+              className="h-8 pr-8 pl-8 text-[13px]"
+            />
+            {query ? (
+              <button
+                type="button"
+                aria-label={translate('buildex.store.page.clearSearch', 'Clear search')}
+                onClick={() => {
+                  setQuery('')
+                  searchRef.current?.focus()
+                }}
+                className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                <div className="flex items-start gap-2">
-                  <span className="text-[18px] leading-none">{pack.icon}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-medium">{pack.name}</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {pack.skills.length} {translate('buildex.store.page.skills', 'skills')}
-                    </div>
-                  </div>
-                </div>
-                <p className="line-clamp-3 min-h-[2.5rem] text-[12px] text-muted-foreground">
-                  {pack.summary}
-                </p>
-                {pack.installed ? (
-                  <div className="flex items-center gap-1">
-                    <span className="inline-flex h-7 flex-1 items-center justify-center gap-1 text-[12px] font-medium text-muted-foreground">
-                      <Check size={12} />
-                      {translate('buildex.store.page.installed', 'Installed')}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={`${translate('buildex.store.page.uninstall', 'Uninstall')} ${pack.name}`}
-                      disabled={installingId === pack.id || !repoPath}
-                      onClick={() => void uninstall(pack)}
-                      title={translate(
-                        'buildex.store.page.uninstallHint',
-                        'Removes the files BuildEx installed. Anything you edited stays.'
-                      )}
-                      className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-destructive disabled:opacity-50"
-                    >
-                      {installingId === pack.id ? (
-                        <Loader2 size={12} className="animate-spin" />
-                      ) : (
-                        <Trash2 size={12} />
-                      )}
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    aria-label={`${translate('buildex.store.page.install', 'Install')} ${pack.name}`}
-                    disabled={installingId === pack.id || !repoPath}
-                    onClick={() => void install(pack)}
-                    className="inline-flex h-7 items-center justify-center gap-1 rounded-md bg-primary px-2 text-[12px] font-medium text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-50"
-                  >
-                    {installingId === pack.id ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : (
-                      translate('buildex.store.page.install', 'Install')
-                    )}
-                  </button>
-                )}
-
-                {/* Why: connecting only matters once the skills are there, so it
-                    appears after install rather than competing with it. */}
-                {pack.installed ? (
-                  <PackConnectRow pack={pack} worktreeId={activeWorktreeId} onChanged={refresh} />
-                ) : null}
-              </div>
-            ))}
+                <X className="size-3.5" />
+              </button>
+            ) : null}
           </div>
         </div>
-      )}
+
+        {(['business', 'software'] as StoreSegment[]).map((value) => (
+          <TabsContent key={value} value={value} className="flex min-h-0 flex-col">
+            <StoreShelf
+              entries={shelves[value]}
+              header={
+                value === 'business' && rosterStatus ? (
+                  <StoreRosterBanner
+                    status={rosterStatus}
+                    bulk={bulk}
+                    installDisabled={installDisabled}
+                    onInstallAll={(missing) => void bulk.run(missing)}
+                  />
+                ) : null
+              }
+              query={query}
+              catalogEmpty={catalog.entries.length === 0}
+              fetchingIndexes={refreshingIndexes}
+              worktreeId={activeWorktreeId}
+              busyEntryKey={busyEntryKey}
+              installDisabled={installDisabled}
+              rosterDisabled={!repoPath || bulk.running}
+              onInstall={onInstall}
+              onUninstall={(entry) => void runInstall(entry, 'uninstall')}
+              onSetRequirement={(entry, requirement) => void setRequirement(entry, requirement)}
+              onChanged={refresh}
+            />
+          </TabsContent>
+        ))}
+      </Tabs>
+
+      <UngatedInstallDialog
+        entry={pendingUngated}
+        onCancel={() => setPendingUngated(null)}
+        onConfirm={(entry) => {
+          setPendingUngated(null)
+          void runInstall(entry, 'install')
+        }}
+      />
     </div>
   )
 }

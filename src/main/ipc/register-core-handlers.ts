@@ -46,7 +46,7 @@ import { registerAutomationHandlers } from './automations'
 // BuildEx: see BUILDEX-PATCHES.md
 import { registerBuildExBrainHandlers } from './buildex-brain'
 import { registerBuildExGateHandlers } from './buildex-gate'
-import { registerBuildExPackHandlers } from './buildex-packs'
+import { registerBuildExStoreHandlers } from './buildex-store'
 import { registerKeybindingHandlers } from './keybindings'
 import { registerTelemetryHandlers } from './telemetry'
 import { registerBrowserHandlers } from './browser'
@@ -177,7 +177,7 @@ export function registerCoreHandlers(
   registerSkillsHandlers(store)
   registerBuildExBrainHandlers()
   registerBuildExGateHandlers()
-  registerBuildExPackHandlers()
+  registerBuildExStoreHandlers()
   if (automations) {
     registerAutomationHandlers(store, automations)
   }

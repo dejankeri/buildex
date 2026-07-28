@@ -1,0 +1,14 @@
+{
+  "pluginName": "stripe",
+  "marketplaceId": "buildex-packs",
+  "segment": "business",
+  "displayName": "Stripe",
+  "icon": "💳",
+  "summary": "Payments & subscriptions - look up customers and invoices, draft payment links, from the agent.",
+  "mcp": true,
+  "apiKey": {
+    "transport": "mcp-bearer",
+    "docsUrl": "https://docs.stripe.com/keys/restricted-api-keys",
+    "hint": "Restricted key (rk_…)"
+  }
+}

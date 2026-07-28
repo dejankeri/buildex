@@ -10,9 +10,9 @@ import { GATE_PRESET_RELATIVE_PATH } from '../../shared/buildex-gate-types'
 // deliberately short and covers one thing — actions that destroy work or rewrite
 // shared history, where a wrong call cannot be undone by reading the diff.
 //
-// Outbound-to-people and money live in pack manifests (a pack's mcp.policy names
-// its own gated tools), not here, because only the pack knows which of its verbs
-// send an email or move a euro.
+// Outbound-to-people and money live in the Store's overlays, not here, because
+// only the app in question knows which of its verbs send an email or move a
+// euro. `withPluginRules` folds those in — see below.
 
 export const DEFAULT_GATE_PRESET: GatePreset = {
   allow: [
@@ -79,6 +79,32 @@ export function parseGatePreset(json: string): GatePreset | null {
     deny: stringList(record.deny) ?? DEFAULT_GATE_PRESET.deny,
     default: isDecision(record.default) ? record.default : DEFAULT_GATE_PRESET.default
   }
+}
+
+/** Ask/deny rules contributed by the installed plugins BuildEx curates. */
+export type PluginGateRules = {
+  ask?: readonly string[]
+  deny?: readonly string[]
+}
+
+/**
+ * Fold an installed plugin's rules into the company's preset.
+ *
+ * Kept out of the preset file itself: those rules follow what is installed
+ * right now, and writing them into a file the operator edits would mean an
+ * uninstall left its gates behind. The sync receipt records the combined lists,
+ * so a plugin's rules retire on the next sync after it goes away.
+ *
+ * A rule the operator already has is not added twice, and `deny` wins over
+ * `ask` for the same rule — the stricter answer is the safe one.
+ */
+export function withPluginRules(preset: GatePreset, rules: PluginGateRules): GatePreset {
+  const deny = [...new Set([...preset.deny, ...(rules.deny ?? [])])]
+  const denied = new Set(deny)
+  const ask = [...new Set([...preset.ask, ...(rules.ask ?? [])])].filter(
+    (rule) => !denied.has(rule)
+  )
+  return { ...preset, ask, deny }
 }
 
 export type ResolvedGatePreset = {

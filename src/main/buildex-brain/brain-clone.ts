@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import type { BrainCloneResult } from '../../shared/buildex-brain-types'
 import { gitExecFileAsync } from '../git/runner'
-import { relinkBrainSkills } from '../buildex-packs/skill-link'
+import { relinkBrainSkills } from './skill-link'
 import { rememberClone } from './brain-bindings'
 import { externalLocation } from './brain-location'
 

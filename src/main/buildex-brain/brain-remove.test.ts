@@ -15,7 +15,7 @@ vi.mock('node:os', async () => {
 
 const { BACKUP_ROOT, backupStamp, disconnectBrain, planBrainRemoval, removeBrain } =
   await import('./brain-remove')
-const { pruneDanglingSkillLinks } = await import('../buildex-packs/skill-link')
+const { pruneDanglingSkillLinks } = await import('./skill-link')
 const { gitExecFileAsync } = await import('../git/runner')
 const { bindRepoToBrain, readBrainBindings } = await import('./brain-bindings')
 const { embeddedLocation, externalLocation, readBrainPointer, writeBrainPointer } =
@@ -231,7 +231,7 @@ describe('disconnectBrain', () => {
       mkdirSync(path.join(brain, 'skills', 'slack-search'), { recursive: true })
       writeFileSync(path.join(brain, 'skills', 'slack-search', 'SKILL.md'), '# Slack\n', 'utf8')
       bindRepoToBrain(repo, brain, bindingsFile)
-      const { relinkBrainSkills } = await import('../buildex-packs/skill-link')
+      const { relinkBrainSkills } = await import('./skill-link')
       const { externalLocation: external } = await import('./brain-location')
       relinkBrainSkills(repo, external(brain))
       write('.claude/skills/hand-written/SKILL.md', '# Mine\n')

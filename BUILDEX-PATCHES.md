@@ -94,9 +94,9 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 
 | File | Change |
 |---|---|
-| `src/shared/buildex-brain-types.ts`, `buildex-packs-types.ts` | **BuildEx-owned** wire contracts |
-| `src/main/buildex-brain/*`, `src/main/buildex-packs/*` | **BuildEx-owned** domain layers |
-| `src/main/ipc/buildex-brain.ts`, `buildex-packs.ts` | **BuildEx-owned** IPC modules |
+| `src/shared/buildex-brain-types.ts`, `buildex-store-types.ts` | **BuildEx-owned** wire contracts |
+| `src/main/buildex-brain/*`, `src/main/buildex-store/*` | **BuildEx-owned** domain layers |
+| `src/main/ipc/buildex-brain.ts`, `buildex-store.ts` | **BuildEx-owned** IPC modules |
 | `src/main/ipc/register-core-handlers.ts` | 2 imports + 2 registration calls |
 | `src/preload/index.ts` | 2 type imports + 2 api namespaces |
 | `src/preload/api-types.ts` | 2 type imports + 2 members on `PreloadApi` |
@@ -314,9 +314,13 @@ its largest frame. Do not hand-build it — run
 
 **Initializing a repo from two entry points needs one resolver.** The Brain and
 the Store both call `initializeCompanyRepo`, which is once-per-repo-per-run. An
-early version let the Brain pass `null` for the bundled catalog root and then
-mark the repo done, silently skipping the pack refresh the Store would have run.
-The root is resolved inside the module now; keep it that way.
+early version let the Brain pass `null` for the resource root and then mark the
+repo done, silently skipping work the Store would have run. The root is resolved
+inside the module now; keep it that way. The same shape bit again when the Store
+became a marketplace client: `initializeCompanyRepo` synced the gate with no
+plugin rules, so merely opening a surface took an installed app's `ask` rules
+back out of `.claude/settings.json`. Whatever calls `syncGateSettings` must pass
+`collectPluginGateRules` for what is installed.
 
 **Hook state is global and shared with the operator's real Orca.** Managed hooks
 install to `~/.orca/agent-hooks/` and `~/.claude/settings.json` — not to

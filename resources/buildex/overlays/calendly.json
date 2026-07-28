@@ -1,0 +1,9 @@
+{
+  "pluginName": "calendly",
+  "marketplaceId": "buildex-packs",
+  "segment": "business",
+  "displayName": "Calendly",
+  "icon": "📅",
+  "summary": "Scheduling - read your availability and booked events, and draft scheduling links, from the agent.",
+  "mcp": true
+}

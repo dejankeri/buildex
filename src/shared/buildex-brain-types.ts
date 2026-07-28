@@ -163,7 +163,7 @@ export type BrainSkill = {
   title: string
   description: string
   /** `pack` came from the Store; `company` was written here. */
-  source: 'pack' | 'company'
+  source: 'company'
   /** True when `.claude/skills/<name>` points at it, which is how the agent sees it. */
   linked: boolean
 }

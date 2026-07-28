@@ -5,15 +5,14 @@ import type {
   BrainSkill,
   BrainSkillCreateResult
 } from '../../shared/buildex-brain-types'
-import { readPackState } from '../buildex-packs/pack-state'
-import { linkSkillIntoAgentDir, skillsRoot } from '../buildex-packs/skill-link'
+import { linkSkillIntoAgentDir, skillsRoot } from './skill-link'
 import { toDocumentFileName } from './brain-document-create'
 
 // The company's skills — what its agent knows how to do here.
 //
-// Two kinds live side by side in the brain's `skills/`: skills a pack installed,
-// and skills the company wrote. Telling them apart matters, because one is
-// replaced by an app update and the other is somebody's work.
+// All of them are the company's own. The Store installs plugins through the
+// agent's plugin cache now, so nothing it does lands in the brain's `skills/`
+// and there is no longer a second kind to tell apart.
 //
 // Sharing is git. The brain is tracked, so a teammate who pulls gets the
 // skills, and the link into `.claude/skills/` is rebuilt for them on open —
@@ -58,18 +57,6 @@ export function listBrainSkills(repoPath: string, location: BrainLocation): Brai
     return []
   }
 
-  // Every skill the receipt attributes to a pack; everything else the company wrote.
-  const fromPacks = new Set<string>()
-  for (const record of Object.values(readPackState(location).packs)) {
-    for (const relativePath of Object.keys(record.files)) {
-      // Older receipts recorded paths from the repo root; newer ones from the brain root.
-      const match = relativePath.match(/^(?:\.buildex\/)?skills\/([^/]+)\//)
-      if (match) {
-        fromPacks.add(match[1])
-      }
-    }
-  }
-
   const skills: BrainSkill[] = []
   for (const entry of entries) {
     if (entry.startsWith('.')) {
@@ -93,7 +80,7 @@ export function listBrainSkills(repoPath: string, location: BrainLocation): Brai
       name: entry,
       title: firstHeading(body) ?? entry,
       description: frontmatterDescription(body) ?? '',
-      source: fromPacks.has(entry) ? 'pack' : 'company',
+      source: 'company',
       // The agent only sees a skill through this link.
       linked: existsSync(path.join(repoPath, '.claude', 'skills', entry))
     })

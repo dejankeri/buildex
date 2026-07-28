@@ -1,14 +1,15 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { MCP_CONFIG_RELATIVE_PATH } from '../buildex-packs/pack-mcp-config'
-
 // Describing the MCP servers this repo hands the agent, without ever describing
 // a secret.
 //
-// BuildEx's own entries reference keys as `${VAR}` and hold no value, but this
-// file is the operator's too — a server added by hand can carry a pasted token
-// in a header or an env value. Since this is rendered into a dialog somebody may
-// well screenshot, anything that is not plainly a variable reference is masked.
+// Read-only: BuildEx no longer writes this file — an installed plugin carries
+// its own `.mcp.json` — so everything here is the operator's or a plugin's, and
+// either can carry a pasted token in a header or an env value. Since this is
+// rendered into a dialog somebody may well screenshot, anything that is not
+// plainly a variable reference is masked.
+
+const MCP_CONFIG_RELATIVE_PATH = '.mcp.json'
 
 export type McpServerEntry = Record<string, unknown>
 

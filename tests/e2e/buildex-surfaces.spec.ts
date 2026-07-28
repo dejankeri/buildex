@@ -17,6 +17,11 @@ import { test, expect } from './helpers/orca-app'
 // read of the settings it came from.
 test.describe.configure({ mode: 'serial' })
 
+// Why: the Store fetches its marketplace indexes and caches them. Seeding that
+// cache keeps the shelf deterministic and the suite offline — without it these
+// tests would either find an empty Store or reach the network.
+test.use({ seedMarketplaceIndexes: true })
+
 const PROOF_DIR = path.resolve(__dirname, '..', '..', '.buildex-proofs', 'phase-0.5')
 
 function proofPath(name: string): string {
@@ -170,78 +175,110 @@ test('the brain shows what the agent will actually see', async ({ orcaPage, test
   }
 })
 
-test('store installs a pack into the company repo', async ({ orcaPage, testRepoPath }) => {
-  // Seed a catalog pack in the repo the app has open, carrying a real skill
-  // file. Installing copies files out of a catalog, so a pack with no files to
-  // copy would prove nothing.
-  const packDir = path.join(testRepoPath, 'catalog', 'acme')
-  const skillManifest = path.join(testRepoPath, '.buildex', 'skills', 'acme-search', 'SKILL.md')
-  const agentSkillLink = path.join(testRepoPath, '.claude', 'skills', 'acme-search')
-  mkdirSync(path.join(packDir, 'skills', 'acme-search'), { recursive: true })
+// Installing is not exercised here on purpose: it delegates to `claude plugin
+// install`, which would reach the network and change the plugins on whatever
+// machine runs the suite. The driver's own unit tests cover the command it
+// builds; these cover the shelf the operator actually sees.
+
+test('the store fills from the marketplace indexes this machine has fetched', async ({
+  orcaPage
+}) => {
+  // Why: indexes are cached, not bundled, and the shelf is drawn from all three
+  // marketplaces at once — BuildEx's, Protocol's, and Anthropic's.
+  await orcaPage.getByRole('button', { name: 'Store', exact: true }).click()
+  await expect(orcaPage.getByRole('heading', { name: 'Store' })).toBeVisible()
+
+  // BuildEx's own operator packs lead, because they are what was curated.
+  await expect(orcaPage.getByText('Protocol', { exact: true }).first()).toBeVisible()
+  await expect(orcaPage.getByText('Stripe', { exact: true }).first()).toBeVisible()
+
+  await orcaPage.screenshot({ path: proofPath('store-business-shelf.png') })
+})
+
+test('the two shelves are two products, and the same app can sit on both', async ({ orcaPage }) => {
+  await orcaPage.getByRole('button', { name: 'Store', exact: true }).click()
+
+  const business = orcaPage.getByRole('tab', { name: /Run your business/ })
+  const software = orcaPage.getByRole('tab', { name: /Build software/ })
+  await expect(business).toBeVisible()
+  await expect(software).toBeVisible()
+
+  // Searching one name reaches both shelves: our Stripe is the operator's, and
+  // stripe/ai's is the developer's. Counts rather than an exact number — other
+  // apps legitimately mention Stripe in their description.
+  await orcaPage.getByRole('textbox', { name: 'Search apps' }).fill('stripe')
+  await expect(business).not.toContainText('0')
+  await expect(software).not.toContainText('0')
+
+  // Ours leads the business shelf, named the way an operator says it.
+  await expect(orcaPage.getByText('Stripe', { exact: true }).first()).toBeVisible()
+
+  await software.click()
+  await expect(orcaPage.getByText('Unverified').first()).toBeVisible()
+
+  await orcaPage.screenshot({ path: proofPath('store-software-shelf.png') })
+})
+
+test('a plugin nobody vetted says so before it is installed', async ({ orcaPage }) => {
+  // Why: uncurated plugins install ungated, and that is a deliberate decision.
+  // It has to be visible on the card rather than discovered afterwards.
+  await orcaPage.getByRole('button', { name: 'Store', exact: true }).click()
+  await orcaPage.getByRole('tab', { name: /Build software/ }).click()
+  await orcaPage.getByRole('textbox', { name: 'Search apps' }).fill('clickhouse')
+
+  await expect(orcaPage.getByText('Unverified').first()).toBeVisible()
+  await expect(orcaPage.getByText(/Installs ungated/).first()).toBeVisible()
+
+  await orcaPage.screenshot({ path: proofPath('store-unverified.png') })
+})
+
+test('a teammate sees what this company runs on, first', async ({ orcaPage, testRepoPath }) => {
+  // Why: this is the whole point of the roster. Installs are per-operator now, so
+  // without a file in the brain a new teammate has no way to learn that this
+  // company runs on Protocol.
+  mkdirSync(path.join(testRepoPath, '.buildex'), { recursive: true })
+  const rosterPath = path.join(testRepoPath, '.buildex', 'apps.json')
   writeFileSync(
-    path.join(packDir, 'pack.json'),
+    rosterPath,
     JSON.stringify({
-      id: 'acme',
-      name: 'Acme',
-      icon: '🧪',
-      summary: 'End-to-end fixture pack.',
-      app: { url: 'https://example.com' },
-      skills: ['acme-search']
+      apps: [
+        {
+          pluginName: 'protocol-crm',
+          marketplaceId: 'protocol',
+          requirement: 'required',
+          reason: 'Every client lives here.'
+        },
+        { pluginName: 'stripe', marketplaceId: 'buildex-packs', requirement: 'suggested' }
+      ]
     }),
-    'utf8'
-  )
-  writeFileSync(
-    path.join(packDir, 'skills', 'acme-search', 'SKILL.md'),
-    '# acme-search\n\nSeeded by the e2e fixture.\n',
     'utf8'
   )
 
   try {
     await orcaPage.getByRole('button', { name: 'Store', exact: true }).click()
-    await expect(orcaPage.getByText('Acme', { exact: true })).toBeVisible()
 
-    await orcaPage.getByRole('button', { name: 'Install Acme' }).click()
-    await expect(orcaPage.getByRole('button', { name: 'Uninstall Acme' })).toBeVisible()
+    await expect(orcaPage.getByText('What your company runs on')).toBeVisible()
+    await expect(orcaPage.getByText('Required').first()).toBeVisible()
+    await expect(orcaPage.getByText('Every client lives here.')).toBeVisible()
 
-    // Git is the record: the install must exist as a real file in the repo, and
-    // it must be the catalog's content rather than a placeholder.
-    expect(existsSync(skillManifest)).toBe(true)
-    expect(readFileSync(skillManifest, 'utf8')).toContain('Seeded by the e2e fixture.')
-
-    // Why: files under .buildex are invisible to the agent — the link into
-    // .claude/skills is what makes an installed pack actually usable.
-    expect(existsSync(agentSkillLink)).toBe(true)
-    expect(readFileSync(path.join(agentSkillLink, 'SKILL.md'), 'utf8')).toContain('e2e fixture')
-
-    await orcaPage.screenshot({ path: proofPath('store-installed.png') })
-
-    // Uninstall takes back exactly what it put in: the files and the link.
-    await orcaPage.getByRole('button', { name: 'Uninstall Acme' }).click()
-    await expect(orcaPage.getByRole('button', { name: 'Install Acme' })).toBeVisible()
-    expect(existsSync(skillManifest)).toBe(false)
-    expect(existsSync(agentSkillLink)).toBe(false)
+    await orcaPage.screenshot({ path: proofPath('store-company-roster.png') })
   } finally {
-    // Why: only what this test seeded. Wiping `.buildex` takes the brain
-    // documents other tests wrote with it.
-    rmSync(path.join(testRepoPath, 'catalog'), { recursive: true, force: true })
-    rmSync(path.join(testRepoPath, '.claude', 'skills'), { recursive: true, force: true })
-    rmSync(path.join(testRepoPath, '.buildex', 'skills', 'acme-search'), {
-      recursive: true,
-      force: true
-    })
+    rmSync(rosterPath, { force: true })
   }
 })
 
-test('the shipped catalog fills the store for a repo with no catalog', async ({ orcaPage }) => {
-  // Why: this is the first-run case. A brand-new operator's repo has no catalog
-  // of its own, so without the catalog that ships in the app bundle the Store
-  // would be permanently empty and the product would have nothing to offer.
+test('search is how hundreds of plugins become findable', async ({ orcaPage }) => {
   await orcaPage.getByRole('button', { name: 'Store', exact: true }).click()
+  const search = orcaPage.getByRole('textbox', { name: 'Search apps' })
 
-  await expect(orcaPage.getByText('Slack', { exact: true })).toBeVisible()
-  await expect(orcaPage.getByText('Stripe', { exact: true })).toBeVisible()
-  await expect(orcaPage.getByRole('button', { name: 'Install Slack' })).toBeEnabled()
-  await orcaPage.screenshot({ path: proofPath('store-bundled.png') })
+  await search.fill('protocol')
+  await expect(orcaPage.getByText('Protocol', { exact: true }).first()).toBeVisible()
+
+  await search.fill('zzzz-nothing-matches-this')
+  await expect(orcaPage.getByText('Protocol', { exact: true })).toHaveCount(0)
+
+  await orcaPage.getByRole('button', { name: 'Clear search' }).click()
+  await expect(search).toHaveValue('')
 })
 
 test('the gate lands in the settings the agent enforces', async ({ orcaPage, testRepoPath }) => {

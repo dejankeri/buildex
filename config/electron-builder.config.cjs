@@ -36,19 +36,19 @@ const relayExtraResource = {
 // from package directories where pnpm's symlink farm is absent. Copy the exact
 // runtime dependency closure to Resources/node_modules so bare require() calls
 // do not fall through to a developer checkout's node_modules.
-// BuildEx: the capability-pack catalog ships with the app, not with the company
-// repo. A fresh operator has an empty repo, so a repo-only catalog would leave
-// the Store permanently empty; and shipping it here means an app update also
-// refreshes the skills of packs the operator already installed.
-const buildexCatalogResource = {
-  from: 'resources/buildex/catalog',
-  to: 'buildex/catalog'
+// BuildEx: the overlays that curate the Store ship with the app — they are our
+// own curation, versioned with the release. Marketplace indexes do NOT ship;
+// they are fetched into a userData cache, because a bundled copy is stale the
+// day it is built and buys little (installing needs the network regardless).
+const buildexOverlaysResource = {
+  from: 'resources/buildex/overlays',
+  to: 'buildex/overlays'
 }
 
 const commonExtraResources = [
   relayExtraResource,
   skillFreshnessResources,
-  buildexCatalogResource
+  buildexOverlaysResource
 ]
 const macSpeechNativeResource = {
   from: 'node_modules/sherpa-onnx-darwin-${arch}',
@@ -100,9 +100,9 @@ module.exports = {
     // it from process.resourcesPath; exclude the source copy from app.asar.
     '!resources/onboarding/feature-wall/**',
     '!resources/skills/**',
-    // Why: the BuildEx catalog ships via extraResources so runtime reads it from
-    // process.resourcesPath as real directories; exclude the source copy so it is
-    // not duplicated inside app.asar.
+    // Why: BuildEx's marketplace indexes and overlays ship via extraResources so
+    // runtime reads them from process.resourcesPath as real directories; exclude
+    // the source copy so it is not duplicated inside app.asar.
     '!resources/buildex{,/**/*}',
     // Why: the Windows CLI shim ships via extraResources to resources/bin/orca.cmd
     // (beside the native resources/bin/orca.exe). Packing the source tree into
