@@ -49,7 +49,7 @@ function baseTooltip(): string {
   if (!devIndicator) {
     return 'BuildEx'
   }
-  return devIndicator.label ? `Orca DEV (${devIndicator.label})` : 'Orca DEV'
+  return devIndicator.label ? `BuildEx DEV (${devIndicator.label})` : 'BuildEx DEV'
 }
 
 // Why: on Windows the notification area expects a 16px icon; the app icon PNG

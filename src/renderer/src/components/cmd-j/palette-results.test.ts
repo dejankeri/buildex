@@ -116,10 +116,10 @@ const sections: SettingsNavSection[] = [
   },
   {
     id: 'servers',
-    title: 'Remote Orca Servers',
+    title: 'Remote BuildEx Servers',
     description: 'Pair remote Orca runtimes.',
     icon: Settings,
-    searchEntries: [{ title: 'Remote Orca Servers' }],
+    searchEntries: [{ title: 'Remote BuildEx Servers' }],
     group: 'remote'
   },
   {

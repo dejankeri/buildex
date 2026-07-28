@@ -72,7 +72,7 @@ const unavailableOption: NeedsSetupProjectHostOption = {
   projectId: 'project-1',
   hostId: 'runtime:old',
   label: 'Old server',
-  detail: 'Update Orca on this host to set up projects',
+  detail: 'Update BuildEx on this host to set up projects',
   isAvailable: false,
   attention: false
 }

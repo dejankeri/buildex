@@ -43,7 +43,7 @@ function WebRoot(): React.JSX.Element {
     if (startupDecision.kind === 'auto-save-runtime-offer') {
       saveStoredWebRuntimeEnvironment(
         createStoredWebRuntimeEnvironment({
-          name: 'Orca Server',
+          name: 'BuildEx Server',
           offer: startupDecision.offer,
           previousEnvironment: readStoredWebRuntimeEnvironment()
         })

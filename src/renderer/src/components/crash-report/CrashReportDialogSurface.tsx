@@ -44,8 +44,8 @@ function getDialogTitle(report: CrashReportRecord | null): string {
     return 'Report a crash'
   }
   return report && isReactErrorBoundaryReport(report)
-    ? 'Orca hit a recoverable UI error'
-    : 'Orca closed unexpectedly'
+    ? 'BuildEx hit a recoverable UI error'
+    : 'BuildEx closed unexpectedly'
 }
 
 function getDialogDescription(report: CrashReportRecord | null): string {
@@ -63,7 +63,7 @@ function getNotesPlaceholder(report: CrashReportRecord | null): string {
   }
   return report && isReactErrorBoundaryReport(report)
     ? 'Optional: what were you doing before this UI error?'
-    : 'Optional: what were you doing before Orca closed?'
+    : 'Optional: what were you doing before BuildEx closed?'
 }
 
 type CrashReportDialogSurfaceProps = {

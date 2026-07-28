@@ -102,6 +102,110 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 | `src/preload/api-types.ts` | 2 type imports + 2 members on `PreloadApi` |
 | `resources/build/icon.{png,icns,ico}`, `resources/{icon,icon-dev}.png`, `resources/logo.svg` | BuildEx artwork |
 
+### Branding the visible copy — Phase 6
+
+The app calls *itself* BuildEx everywhere; it still names Orca's own products
+accurately. The rule: **"Orca" survives only when it names Stably-operated
+infrastructure or a literal `orca` identifier.**
+
+| File | Change |
+|---|---|
+| `src/shared/buildex-brand.ts` | **BuildEx-owned.** The rule, the protection list, `brandedTranslate` |
+| `src/renderer/src/i18n/i18n.ts` | import + 1 line in `translate()` |
+| `src/main/i18n/main-i18n.ts` | import + 1 line in `translateMain()` |
+| `src/renderer/src/components/buildex-brand/BuildExWordmark.tsx` | **BuildEx-owned.** `BUILDEX` + "built on Orca" lockup |
+| `src/renderer/src/components/Landing.tsx` | import + replaces the `ORCA` `<h1>` |
+| `src/renderer/src/components/settings/BuildExAttributionSection.tsx`, `buildex-attribution-search.ts` | **BuildEx-owned.** Replaces upstream's "Support Orca" star prompt |
+| `src/renderer/src/components/settings/GeneralPane.tsx` | 2 import lines + 1 render line |
+| 17 renderer component files | 33 **unlocalized** literals, 1 line each (see below) |
+| 8 upstream settings tests | expectations realigned to the branded copy |
+
+**Why an interceptor and not a find-and-replace.** `en.json` is *generated*:
+`verify-localization-catalog.mjs` parses the source with the TypeScript API and
+writes each `translate(key, fallback)` fallback into the catalog. Editing the
+catalog is reverted by `sync:localization-catalog`, and editing the ~400 call
+sites means touching upstream `.tsx` on every rebase. Both `translate()` and
+`translateMain()` are single chokepoints, so branding there costs 4 lines and
+covers `es`/`ja`/`ko`/`zh` for free.
+
+**Brand the template, then interpolate.** `translate()` returns text *after*
+interpolation, so a post-hoc rewrite would corrupt user data — a repo named
+`stablyai/Orca` in `{{repo}} isn't added to Orca`. `brandedTranslate` resolves
+the raw template with `skipInterpolation`, brands it, then interpolates.
+
+**`buildex.*` keys are exempt.** Our own copy is authored, not inherited;
+without the exemption the credit line "built on Orca" rebrands to "built on
+BuildEx".
+
+### Traps found while branding
+
+**Not every visible string is localized.** 33 user-facing literals never reach
+`translate()`, so the interceptor cannot see them (`notification-settings-copy.ts`,
+`delete-worktree-dialog-copy.ts`, `CrashReportDialogSurface.tsx`, terminal
+hints, …). These needed direct edits. Find them with: every `Orca` string
+literal in source whose exact text is **absent** from `en.json`.
+
+**Do not rebrand a `translate()` fallback.** It is catalog-managed and its
+value is dead text at runtime — and upstream's catalog has already *drifted*
+from some fallbacks (`OnboardingFlow.ff92d15436` says "notify you know"; the
+source says "notify you"). Editing one changes nothing and costs a rebase
+conflict. The filter that distinguishes them is "is this exact string a value
+in `en.json`".
+
+**Three literals look rebrandable and are not.** `Orca Nerd Font Symbols` is a
+font family; `pr-comments-resolution-prompt.ts` is agent prompt text, not UI;
+`displayName: 'Orca'` in `RepositoryHostSetupsSection.test.tsx` is host fixture
+data.
+
+**~380 `Orca` literals remain in `src/main/**`** — internal errors, logs, and
+IPC messages. Deliberately untouched: they are plumbing, not branding, and
+editing them would multiply the rebase surface.
+
+**The dangerous class: code that string-matches its own copy.** Four places
+keyed behaviour off the exact wording, so renaming the copy silently broke a
+feature with no type error and no obvious test name. Each now accepts **both**
+brands, which also survives upstream wording returning through a rebase:
+
+| File | What broke |
+|---|---|
+| `src/shared/remote-runtime-tailscale-hint.ts` | regex gate; the Tailscale remedy stopped being offered |
+| `src/shared/remote-runtime-client-error-classification.ts` | recoverable-drop fragments; reconnects would reclassify as fatal |
+| `src/shared/orca-dispatch-status-prompt.ts` | preamble prefix is a **protocol handshake** with `src/main/runtime/orchestration/preamble.ts`, not display copy |
+| `src/renderer/src/lib/agent-row-primary-text.ts` | second dispatch detector; agent rows lost their task labels |
+
+Before renaming any copy, grep for code that matches it:
+`grep -rnE "(includes|startsWith|indexOf|test)\(\s*['\"\`][^'\"\`]*[Oo]rca"` and
+`/[^/]*\borca\b[^/]*/i` regexes. Lowercase matchers are the trap — the rebrand
+rule leaves them alone, so they keep matching a string that no longer exists.
+
+**Three sources of test breakage, in rough order of volume.** Realigning
+expectations by pattern over-applies; drive it from actual failures instead.
+1. Assertions on **`translate()` fallbacks** — these never appear in a source
+   diff, because the interceptor rebrands them at runtime with no source edit.
+2. **Non-English** expectations (`'Orca 手机端'`) — the interceptor covers all
+   five locales, so `zh`/`ja`/`ko`/`es` assertions move too.
+3. **Regex matchers** (`/Windows may be blocking Orca Mobile/i`) — not string
+   literals, so literal-based sweeps miss them entirely.
+
+**Never rewrite bare `'Orca'` in tests by pattern.** It is simultaneously a
+catalog value *and* the most common fixture in the suite — host `displayName`,
+`localAppData/Orca/daemon-host` paths, CLI install dirs. Only two assertions
+genuinely wanted it branded (the tray tooltip); a blanket pass corrupted ~130.
+
+**Tests that `vi.mock('@/i18n/i18n')` assert fallbacks, not branded output.**
+About a dozen stub `translate` as `(_key, fallback) => fallback`, bypassing the
+interceptor entirely, so their expectations must keep saying "Orca". Check for
+the mock before changing any expectation in a test file.
+
+**Check `git show HEAD:<file>` before bulk-reverting.** A revert pass that
+rewrote every bare `'BuildEx'` back to `'Orca'` also clobbered a Phase 0
+expectation (`model-manager-windows-path.test.ts`) that had been correct since
+identity was renamed. Scope reverts to lines that actually differ from HEAD.
+
+**The snapshot is the rebase gate.** `src/renderer/src/i18n/buildex-brand-catalog.test.ts`
+pins every branded catalog string. Upstream copy changes surface as one
+reviewable diff instead of ~400 silent ones. Read it during each rebase.
+
 ### Surfaces — Phase 0.5
 
 | File | Change |
@@ -173,6 +277,8 @@ pnpm run sync:localization-catalog
 pnpm run lint                 # expect ONLY the pre-existing upstream Ghostty localization failure
 SKIP_BUILD=1 pnpm exec playwright test tests/e2e/buildex-surfaces.spec.ts \
   --config tests/playwright.config.ts --project=electron-headless --workers=1
+pnpm exec vitest run --config config/vitest.config.ts \
+  src/renderer/src/i18n/buildex-brand-catalog.test.ts   # read the snapshot diff
 ```
 
 Rebase **weekly**. At ~20 touch points of 1-3 lines each it is a 10-minute job;

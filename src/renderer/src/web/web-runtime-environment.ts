@@ -65,7 +65,7 @@ export function createStoredWebRuntimeEnvironment(args: {
   const compatibleEnvironmentIds = getCompatibleEnvironmentIds(args.previousEnvironment, args.offer)
   return {
     id,
-    name: args.name.trim() || 'Orca Server',
+    name: args.name.trim() || 'BuildEx Server',
     createdAt: now,
     updatedAt: now,
     lastUsedAt: null,

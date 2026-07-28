@@ -6,7 +6,17 @@
 // inside AGENT_STATUS_MAX_FIELD_LENGTH.
 
 export const ORCA_DISPATCH_STATUS_PREAMBLE_PREFIX =
-  'You are working inside Orca, a multi-agent IDE.'
+  'You are working inside BuildEx, a multi-agent IDE.'
+// Why: this prefix is a protocol handshake with orchestration/preamble.ts, not
+// display copy. A BuildEx client can be driven by an Orca server (and vice
+// versa) whose preamble still says "Orca", so detection must accept both or
+// dispatch rows silently lose their task labels.
+const UPSTREAM_DISPATCH_STATUS_PREAMBLE_PREFIX = 'You are working inside Orca, a multi-agent IDE.'
+
+export const DISPATCH_STATUS_PREAMBLE_PREFIXES = [
+  ORCA_DISPATCH_STATUS_PREAMBLE_PREFIX,
+  UPSTREAM_DISPATCH_STATUS_PREAMBLE_PREFIX
+] as const
 export const ORCA_DISPATCH_STATUS_TASK_MARKER = '=== TASK ==='
 const ORCA_DISPATCH_STATUS_TASK_ID_MARKER = 'Your task ID is:'
 // Why: real preambles put === TASK === near the end (~4KB+). Scan past the
@@ -21,9 +31,8 @@ export function isOrcaDispatchStatusPrompt(value: string): boolean {
   while (start < scanEnd && isEcmaTrimWhitespace(value.charCodeAt(start))) {
     start++
   }
-  return (
-    start + ORCA_DISPATCH_STATUS_PREAMBLE_PREFIX.length <= scanEnd &&
-    value.startsWith(ORCA_DISPATCH_STATUS_PREAMBLE_PREFIX, start)
+  return DISPATCH_STATUS_PREAMBLE_PREFIXES.some(
+    (prefix) => start + prefix.length <= scanEnd && value.startsWith(prefix, start)
   )
 }
 

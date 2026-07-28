@@ -8,16 +8,22 @@ const RECOVERABLE_CODES = new Set([
   'timeout'
 ])
 
+// Why both brands: this fork renames the runtime copy, but an Orca server (or
+// upstream wording returning through a rebase) still emits "orca". Matching one
+// name would silently reclassify recoverable drops as fatal.
 const RECOVERABLE_MESSAGE_FRAGMENTS = [
-  'could not connect to the remote orca runtime',
-  'remote orca runtime closed the connection',
-  'remote orca runtime connection closed',
-  'remote orca runtime is not connected',
-  'remote runtime connection closed',
-  'remote runtime subscription closed before it started',
-  'remote terminal stream is not connected',
-  'timed out waiting for the remote orca runtime'
+  'could not connect to the remote {app} runtime',
+  'remote {app} runtime closed the connection',
+  'remote {app} runtime connection closed',
+  'remote {app} runtime is not connected',
+  'timed out waiting for the remote {app} runtime'
 ]
+  .flatMap((fragment) => ['orca', 'buildex'].map((app) => fragment.replace('{app}', app)))
+  .concat([
+    'remote runtime connection closed',
+    'remote runtime subscription closed before it started',
+    'remote terminal stream is not connected'
+  ])
 
 export function isRecoverableRemoteRuntimeConnectionError(
   error: RemoteRuntimeClientErrorLike

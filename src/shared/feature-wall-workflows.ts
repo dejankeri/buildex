@@ -27,7 +27,7 @@ export const FEATURE_WALL_WORKFLOWS: readonly FeatureWallWorkflow[] = [
     id: 'workspaces',
     title: 'Workspaces',
     meta: 'Isolated work · Context kept together',
-    lede: 'Orca splits each task into an isolated workspace so agents can run in parallel.',
+    lede: 'BuildEx splits each task into an isolated workspace so agents can run in parallel.',
     primaryTileId: 'tile-01',
     relatedTileIds: ['tile-10'],
     docsUrl: 'https://www.onorca.dev/docs/model/worktrees'
@@ -45,7 +45,7 @@ export const FEATURE_WALL_WORKFLOWS: readonly FeatureWallWorkflow[] = [
     id: 'agents-orchestration',
     title: 'Agents',
     meta: 'Agents · Usage · Orca CLI',
-    lede: 'Run several agents at once, track their progress, and let automation drive Orca when it helps.',
+    lede: 'Run several agents at once, track their progress, and let automation drive BuildEx when it helps.',
     primaryTileId: 'tile-04',
     relatedTileIds: ['tile-11', 'tile-09'],
     docsUrl: 'https://www.onorca.dev/docs/agents/supported'
@@ -54,7 +54,7 @@ export const FEATURE_WALL_WORKFLOWS: readonly FeatureWallWorkflow[] = [
     id: 'workbench',
     title: 'Workbench',
     meta: 'Terminal · Editor · Browser · Files',
-    lede: 'Bring your terminal setup into Orca, then split panes to keep servers, tests, logs, and agents running side by side.',
+    lede: 'Bring your terminal setup into BuildEx, then split panes to keep servers, tests, logs, and agents running side by side.',
     primaryTileId: 'tile-02',
     relatedTileIds: ['tile-07', 'tile-05', 'tile-12'],
     docsUrl: 'https://www.onorca.dev/docs/terminal'

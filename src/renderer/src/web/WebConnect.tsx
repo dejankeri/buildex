@@ -25,7 +25,7 @@ export default function WebConnect({
   onConnected
 }: WebConnectProps): React.JSX.Element {
   const existingEnvironment = readStoredWebRuntimeEnvironment()
-  const [name, setName] = useState(existingEnvironment?.name ?? 'Orca Server')
+  const [name, setName] = useState(existingEnvironment?.name ?? 'BuildEx Server')
   const [pairingCode, setPairingCode] = useState(initialPairingInput ?? '')
   const [error, setError] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
@@ -35,7 +35,7 @@ export default function WebConnect({
   const connect = async (): Promise<void> => {
     setError(null)
     if (!parsedOffer) {
-      setError('Enter a valid Orca pairing URL or pairing code.')
+      setError('Enter a valid BuildEx pairing URL or pairing code.')
       return
     }
     if (parsedOffer.scope === 'mobile') {
@@ -49,7 +49,7 @@ export default function WebConnect({
     }
     if (isMixedContentWebSocket(parsedOffer.endpoint)) {
       setError(
-        'This HTTPS page cannot connect to a plain ws:// Orca server. Open the web client over HTTP or pair with a wss:// endpoint.'
+        'This HTTPS page cannot connect to a plain ws:// BuildEx server. Open the web client over HTTP or pair with a wss:// endpoint.'
       )
       return
     }

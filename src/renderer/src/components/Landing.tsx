@@ -13,6 +13,7 @@ import { ShortcutKeyCombo } from './ShortcutKeyCombo'
 import { useShortcutKeyDetails, type ShortcutKeyComboDetails } from '@/hooks/useShortcutLabel'
 import { useMountedRef } from '@/hooks/useMountedRef'
 import logo from '../../../../resources/logo.svg'
+import { BuildExWordmark } from './buildex-brand/BuildExWordmark'
 import { translate } from '@/i18n/i18n'
 import {
   getLandingPreflightIssues,
@@ -328,9 +329,7 @@ export default function Landing(): React.JSX.Element {
               className="size-12"
             />
           </div>
-          <h1 className="text-4xl font-bold text-foreground tracking-tight">
-            {translate('auto.components.Landing.6ca6ff404e', 'ORCA')}
-          </h1>
+          <BuildExWordmark />
 
           {preflightIssues.length > 0 && <PreflightBanner issues={preflightIssues} repos={repos} />}
 

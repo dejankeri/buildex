@@ -265,7 +265,7 @@ describe('createRemoteRuntimePtyTransport', () => {
         async (_args: unknown, callbacks: NonNullable<typeof subscriptionCallbacks>) => {
           attempt += 1
           if (attempt === 1) {
-            throw Object.assign(new Error('Could not connect to the remote Orca runtime.'), {
+            throw Object.assign(new Error('Could not connect to the remote BuildEx runtime.'), {
               code: 'remote_runtime_unavailable'
             })
           }
@@ -364,7 +364,7 @@ describe('createRemoteRuntimePtyTransport', () => {
         queueMicrotask(() =>
           callbacks.onError?.({
             code: 'unauthorized',
-            message: 'Remote Orca runtime rejected the pairing token.'
+            message: 'Remote BuildEx runtime rejected the pairing token.'
           })
         )
         return { unsubscribe, sendBinary: subscriptionSendBinary }
@@ -3122,7 +3122,7 @@ describe('createRemoteRuntimePtyTransport', () => {
         transportCallbacks.push(callbacks)
         subscriptionCallbacks = callbacks
         if (subscribeAttempt === 2) {
-          throw new Error('Could not connect to the remote Orca runtime.')
+          throw new Error('Could not connect to the remote BuildEx runtime.')
         }
         queueMicrotask(emitMultiplexReady)
         return { unsubscribe: vi.fn(), sendBinary: subscriptionSendBinary }
@@ -3145,7 +3145,7 @@ describe('createRemoteRuntimePtyTransport', () => {
     })
     transportCallbacks[0].onError?.({
       code: 'remote_runtime_unavailable',
-      message: 'Remote Orca runtime stopped responding; the stream connection was reset.'
+      message: 'Remote BuildEx runtime stopped responding; the stream connection was reset.'
     })
 
     await vi.waitFor(() => expect(runtimeSubscribe).toHaveBeenCalledTimes(3))
@@ -3170,7 +3170,7 @@ describe('createRemoteRuntimePtyTransport', () => {
 
     subscriptionCallbacks?.onError?.({
       code: 'unauthorized',
-      message: 'Remote Orca runtime rejected the pairing token.'
+      message: 'Remote BuildEx runtime rejected the pairing token.'
     })
 
     expect(onError).toHaveBeenCalledTimes(1)
@@ -3250,7 +3250,7 @@ describe('createRemoteRuntimePtyTransport', () => {
       runtimeSubscribe.mockImplementation(
         async (_args: unknown, callbacks: NonNullable<typeof subscriptionCallbacks>) => {
           if (partitioned) {
-            throw Object.assign(new Error('Could not connect to the remote Orca runtime.'), {
+            throw Object.assign(new Error('Could not connect to the remote BuildEx runtime.'), {
               code: 'remote_runtime_unavailable'
             })
           }

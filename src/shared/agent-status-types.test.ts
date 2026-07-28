@@ -121,7 +121,9 @@ Fix dispatch fallback preview for normalized status prompts`
     expect(result).not.toBeNull()
     expect(result!.prompt.length).toBeLessThanOrEqual(AGENT_STATUS_MAX_FIELD_LENGTH)
     expect(result!.prompt.includes('\n')).toBe(false)
-    expect(result!.prompt.startsWith('You are working inside Orca, a multi-agent IDE.')).toBe(true)
+    expect(result!.prompt.startsWith('You are working inside BuildEx, a multi-agent IDE.')).toBe(
+      true
+    )
     expect(result!.prompt).toContain('Your task ID is: task_compact_1')
     expect(result!.prompt).toContain('=== TASK ===')
     expect(result!.prompt).toContain('Fix dispatch fallback preview')
@@ -134,7 +136,7 @@ Fix dispatch fallback preview for normalized status prompts`
       state: 'working',
       // Why: CRLF covers Windows hook payloads; commit text must not impersonate the task separator.
       prompt: [
-        'You are working inside Orca, a multi-agent IDE. You are a dispatched worker.',
+        'You are working inside BuildEx, a multi-agent IDE. You are a dispatched worker.',
         'Your task ID is: task_drift_marker',
         '',
         '--- BASE DRIFT ---',

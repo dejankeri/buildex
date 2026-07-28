@@ -27,10 +27,10 @@ describe('remote runtime client error classification', () => {
   })
 
   it.each([
-    'Could not connect to the remote Orca runtime.',
-    'Remote Orca runtime closed the connection.',
-    'Remote Orca runtime connection closed.',
-    'Remote Orca runtime is not connected.',
+    'Could not connect to the remote BuildEx runtime.',
+    'Remote BuildEx runtime closed the connection.',
+    'Remote BuildEx runtime connection closed.',
+    'Remote BuildEx runtime is not connected.',
     'Remote runtime subscription closed before it started.'
   ])('normalizes unstructured connection failure: %s', (message) => {
     const error = toRemoteRuntimeClientErrorLike(new Error(message))

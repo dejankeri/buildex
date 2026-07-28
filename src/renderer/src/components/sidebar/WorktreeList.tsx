@@ -628,7 +628,7 @@ function getWorktreeVisibilityMenuLabel(repo: Repo): string {
     repo,
     isLegacyRepoForExternalWorktreeVisibility(repo)
   )
-  return visibility === 'show' ? 'Hide non-Orca worktrees' : 'Show hidden worktrees'
+  return visibility === 'show' ? 'Hide non-BuildEx worktrees' : 'Show hidden worktrees'
 }
 
 const SIDEBAR_POINTER_DRAG_THRESHOLD_PX = 4

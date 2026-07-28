@@ -85,7 +85,7 @@ export function AddRepoHostSelector({
                 <Popover open={addHostOpen} onOpenChange={setAddHostOpen}>
                   <PopoverTrigger asChild>
                     <CommandItem
-                      value="Add remote host SSH host Orca server"
+                      value="Add remote host SSH host BuildEx server"
                       onSelect={() => setAddHostOpen(true)}
                       className="items-start gap-2 px-3 py-2 text-xs text-muted-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
                     >

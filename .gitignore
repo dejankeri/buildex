@@ -130,3 +130,6 @@ tools/benchmarks/results/terminal-pipeline-*.json
 
 # Screenshots the BuildEx e2e run writes; regenerated, never committed
 /.buildex-proofs/
+
+# Brainstorming specs and plans; working notes, not shipped docs
+/docs/superpowers/

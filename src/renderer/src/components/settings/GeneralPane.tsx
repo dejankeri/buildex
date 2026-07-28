@@ -4,7 +4,7 @@ import { useAppStore } from '../../store'
 import { Separator } from '../ui/separator'
 import { CliSection } from './CliSection'
 import { GeneralEditorSettingsSection } from './GeneralEditorSettingsSection'
-import { GeneralSupportSection } from './GeneralSupportSection'
+import { BuildExAttributionSection } from './BuildExAttributionSection'
 import { GeneralUpdateSettingsSection } from './GeneralUpdateSettingsSection'
 import { GeneralWorkspaceSettingsSection } from './GeneralWorkspaceSettingsSection'
 import {
@@ -12,10 +12,10 @@ import {
   getGeneralEditorSearchEntries,
   getGeneralNavigationSearchEntries,
   getGeneralPaneSearchEntries,
-  getGeneralSupportSearchEntries,
   getGeneralUpdateSearchEntries,
   getGeneralWorkspaceSearchEntries
 } from './general-search'
+import { getBuildExAttributionSearchEntries } from './buildex-attribution-search'
 import { getGeneralProjectRuntimeSearchEntries } from './general-project-runtime-search'
 import { RecentTabOrderControl } from './RecentTabOrderControl'
 import { matchesSettingsSearch, type SettingsSearchEntry } from './settings-search'
@@ -212,8 +212,8 @@ export function GeneralPane({
           {section}
         </div>
       ))}
-      {matchesSettingsSearch(searchQuery, getGeneralSupportSearchEntries()) ? (
-        <GeneralSupportSection hasPrecedingSections={visibleSections.length > 0} />
+      {matchesSettingsSearch(searchQuery, getBuildExAttributionSearchEntries()) ? (
+        <BuildExAttributionSection hasPrecedingSections={visibleSections.length > 0} />
       ) : null}
     </div>
   )

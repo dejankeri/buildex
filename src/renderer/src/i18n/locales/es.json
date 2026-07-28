@@ -14012,6 +14012,19 @@
       "apps": {
         "hint": "Start a chat set up to work in {{value0}}"
       }
+    },
+    "wordmark": {
+      "name": "BUILDEX",
+      "builtOn": "built on Orca"
+    },
+    "about": {
+      "title": "About",
+      "builtOn": {
+        "title": "Built on Orca",
+        "description": "BuildEx is a fork of Orca by Stably, used under the MIT license."
+      },
+      "version": "BuildEx {{version}} — built on Orca",
+      "viewUpstream": "View Orca"
     }
   }
 }

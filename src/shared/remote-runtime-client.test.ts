@@ -40,7 +40,7 @@ describe('subscribeRemoteRuntimeRequest', () => {
         onError: vi.fn()
       })
     ).rejects.toThrow(
-      'Remote Orca runtime closed the connection (1013: Maximum connections reached).'
+      'Remote BuildEx runtime closed the connection (1013: Maximum connections reached).'
     )
   })
 
@@ -187,7 +187,7 @@ describe('sendRemoteRuntimeRequest', () => {
     const server = await createClosingServer(1013, 'Maximum connections reached')
 
     await expect(sendRemoteRuntimeRequest(server.pairing, 'status.get', {}, 1000)).rejects.toThrow(
-      'Remote Orca runtime closed the connection (1013: Maximum connections reached).'
+      'Remote BuildEx runtime closed the connection (1013: Maximum connections reached).'
     )
   })
 

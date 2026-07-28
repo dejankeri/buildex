@@ -1513,7 +1513,7 @@ describe('createFilePathLinkProvider range bounds', () => {
     expect(links[0]).toBeDefined()
     links[0]!.hover?.({} as MouseEvent, links[0]!.text)
 
-    expect(linkTooltip.textContent).toBe('/repo/CLAUDE.md (⌘+click to open in Orca)')
+    expect(linkTooltip.textContent).toBe('/repo/CLAUDE.md (⌘+click to open in BuildEx)')
   })
 
   it('bounds the terminal path-exists cache while preserving recent probes', async () => {

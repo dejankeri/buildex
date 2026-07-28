@@ -53,7 +53,7 @@ export function buildDispatchPreamble(params: PreambleParams): string {
     workerKind: params.workerKind ?? 'prompt-returning-agent'
   })
 
-  const header = `You are working inside Orca, a multi-agent IDE. You are a dispatched worker.
+  const header = `You are working inside BuildEx, a multi-agent IDE. You are a dispatched worker.
 Your coordinator's terminal handle is: ${params.coordinatorHandle}
 Your task ID is: ${params.taskId}
 
