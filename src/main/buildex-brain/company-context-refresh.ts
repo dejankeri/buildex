@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import type { BrainLocation, BrainResolution } from '../../shared/buildex-brain-types'
 import { readPackCatalog } from '../buildex-packs/pack-catalog'
 import { envKeyForPack, hasPackCredential } from '../buildex-packs/pack-credentials'
 import { scanCompanyBrain } from './company-brain-service'
@@ -53,11 +54,13 @@ export function installedApps(repoPath: string, deps: ContextRefreshDeps): Insta
  */
 export async function refreshCompanyContext(
   repoPath: string,
+  location: BrainLocation,
   deps: ContextRefreshDeps
 ): Promise<void> {
   try {
-    const scan = await scanCompanyBrain(repoPath, Date.now())
-    syncCompanyContext(repoPath, scan, installedApps(repoPath, deps))
+    const resolution: BrainResolution = { status: 'ready', location }
+    const scan = await scanCompanyBrain(repoPath, location, resolution, Date.now())
+    syncCompanyContext(repoPath, scan, installedApps(repoPath, deps), location)
   } catch {
     // Nothing to do about it here, and nothing worth taking a surface down for.
   }

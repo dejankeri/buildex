@@ -19,6 +19,7 @@ export default function StorePage(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [gateRuleCount, setGateRuleCount] = useState<number | null>(null)
+  const [sharedBrain, setSharedBrain] = useState(false)
 
   // The gate belongs next to the Store: installing a capability and deciding
   // which of its actions wait for a person are the same question asked twice.
@@ -31,6 +32,25 @@ export default function StorePage(): React.JSX.Element {
     void window.api.buildexGate.sync({ repoPath }).then((result) => {
       if (!cancelled) {
         setGateRuleCount(result.preset.ask.length + result.preset.deny.length)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [repoPath])
+
+  // Why: installing into a shared brain turns a pack's MCP config on for every
+  // repo that points at it, not just this one — worth saying before the operator
+  // discovers it from a diff in a repo they never touched.
+  useEffect(() => {
+    let cancelled = false
+    if (!repoPath) {
+      setSharedBrain(false)
+      return
+    }
+    void window.api.buildexBrain.resolve({ repoPath }).then((resolution) => {
+      if (!cancelled) {
+        setSharedBrain(resolution?.status === 'ready' && resolution.location.mode === 'external')
       }
     })
     return () => {
@@ -135,6 +155,15 @@ export default function StorePage(): React.JSX.Element {
           {translate(
             'buildex.store.page.noRepo',
             'Open a project to install packs — they are written into its repo.'
+          )}
+        </div>
+      ) : null}
+
+      {repoPath && sharedBrain ? (
+        <div className="shrink-0 border-b border-border px-4 py-2 text-[12px] text-muted-foreground">
+          {translate(
+            'buildex.store.sharedBrain',
+            'This company shares one brain, so installing an app here gives every repo that uses it the same skills.'
           )}
         </div>
       ) : null}

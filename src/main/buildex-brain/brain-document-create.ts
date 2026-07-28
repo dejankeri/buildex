@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import type { BrainCreateDocumentResult } from '../../shared/buildex-brain-types'
-import { BRAIN_ROOT } from './company-brain-scan'
+import type { BrainCreateDocumentResult, BrainLocation } from '../../shared/buildex-brain-types'
 import { BRAIN_SECTIONS } from './brain-scaffold'
 
 // Creating a brain document from the panel.
@@ -25,7 +24,7 @@ export function toDocumentFileName(title: string): string | null {
 }
 
 export function createBrainDocument(
-  repoPath: string,
+  location: BrainLocation,
   folder: string,
   title: string
 ): BrainCreateDocumentResult {
@@ -39,9 +38,7 @@ export function createBrainDocument(
     return { ok: false, error: 'Give the document a name' }
   }
 
-  const directory = folder
-    ? path.join(repoPath, BRAIN_ROOT, folder)
-    : path.join(repoPath, BRAIN_ROOT)
+  const directory = folder ? path.join(location.root, folder) : location.root
   const absolutePath = path.join(directory, fileName)
   if (existsSync(absolutePath)) {
     return { ok: false, error: `Already exists: ${fileName}` }

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import type { BrainLocation } from '../../shared/buildex-brain-types'
 
 const execFileAsync = promisify(execFile)
 
@@ -10,12 +11,12 @@ const execFileAsync = promisify(execFile)
 // avoids quoting/escaping rules for paths with spaces or non-ASCII characters.
 const STATUS_ARGS = ['status', '--porcelain', '-z', '--untracked-files=all']
 
-/** Repo-relative POSIX paths of markdown files with uncommitted changes. */
-export async function listChangedDocumentIds(repoPath: string): Promise<string[]> {
+/** Brain-relative POSIX paths of markdown files with uncommitted changes. */
+export async function listChangedDocumentIds(location: BrainLocation): Promise<string[]> {
   let stdout: string
   try {
-    ;({ stdout } = await execFileAsync('git', STATUS_ARGS, {
-      cwd: repoPath,
+    ;({ stdout } = await execFileAsync('git', [...STATUS_ARGS, '--', location.pathspec], {
+      cwd: location.gitRoot,
       encoding: 'utf8',
       maxBuffer: 16 * 1024 * 1024
     }))
@@ -24,6 +25,10 @@ export async function listChangedDocumentIds(repoPath: string): Promise<string[]
     // marked changed. A brain view is more useful than an error here.
     return []
   }
+  // Why: git reports paths relative to gitRoot. Embedded mode scopes the status
+  // call to `.buildex`, so ids arrive prefixed with it and must be stripped back
+  // to brain-relative; external mode already reports brain-relative paths.
+  const prefix = location.pathspec === '.buildex' ? `${location.pathspec}/` : null
 
   const changed = new Set<string>()
   // -z output is NUL-separated `XY <path>` records. Renames emit a second NUL
@@ -44,9 +49,12 @@ export async function listChangedDocumentIds(repoPath: string): Promise<string[]
     if (status.startsWith('R') || status.startsWith('C')) {
       skipNextAsRenameSource = true
     }
-    if (filePath.toLowerCase().endsWith('.md')) {
-      changed.add(filePath)
+    if (!filePath.toLowerCase().endsWith('.md')) {
+      continue
     }
+    const documentId =
+      prefix && filePath.startsWith(prefix) ? filePath.slice(prefix.length) : filePath
+    changed.add(documentId)
   }
 
   return [...changed].sort()

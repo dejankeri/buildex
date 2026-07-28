@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readPackCatalog } from './pack-catalog'
 import { installPack } from './pack-install'
+import { hashContent } from './pack-files'
 import { refreshInstalledPacks } from './pack-refresh'
 
 // The shipped catalog is the update channel: a new BuildEx carries newer skills,
@@ -100,7 +101,30 @@ describe('refreshInstalledPacks', () => {
     writeIn(bundle, 'slack/skills/slack-search/references/limits.md', '# rate limits')
     const result = refreshInstalledPacks(repo, bundle)
 
-    expect(result.writtenPaths).toContain('.buildex/skills/slack-search/references/limits.md')
+    expect(result.writtenPaths).toContain('skills/slack-search/references/limits.md')
+  })
+
+  it('brings an old-shape receipt up to date without mistaking it for an operator edit', () => {
+    // Simulate a pack installed before receipts moved to the brain-relative shape:
+    // the file and the receipt both use the old, repo-relative `.buildex/…` key.
+    writeBundledPack('slack', '# v1')
+    writeIn(repo, '.buildex/skills/slack-search/SKILL.md', '# v1')
+    writeIn(
+      repo,
+      '.buildex/packs.json',
+      JSON.stringify({
+        packs: {
+          slack: { files: { '.buildex/skills/slack-search/SKILL.md': hashContent('# v1') } }
+        }
+      })
+    )
+
+    writeBundledPack('slack', '# v2 - better steps')
+    const result = refreshInstalledPacks(repo, bundle)
+
+    expect(result.updatedPackIds).toEqual(['slack'])
+    expect(result.keptOperatorEdits).toEqual([])
+    expect(readRepo('.buildex/skills/slack-search/SKILL.md')).toBe('# v2 - better steps')
   })
 
   it("keeps the operator's edits and reports them instead of overwriting", () => {
@@ -112,7 +136,7 @@ describe('refreshInstalledPacks', () => {
     const result = refreshInstalledPacks(repo, bundle)
 
     expect(result.updatedPackIds).toEqual([])
-    expect(result.keptOperatorEdits).toEqual(['.buildex/skills/slack-search/SKILL.md'])
+    expect(result.keptOperatorEdits).toEqual(['skills/slack-search/SKILL.md'])
     expect(readRepo('.buildex/skills/slack-search/SKILL.md')).toBe('# tuned for us')
   })
 

@@ -12,7 +12,7 @@ import path from 'node:path'
 // clobber — invariant 8, never lose an operator's work).
 
 export type PlannedFile = {
-  /** Repo-relative POSIX path. */
+  /** POSIX path relative to whatever base the caller writes it under. */
   relativePath: string
   absoluteSource: string
 }
@@ -35,8 +35,9 @@ function toPosix(value: string): string {
 
 /**
  * Every file under a pack's `skills/<skill>/` directory, sorted, addressed by
- * the repo-relative path it will occupy. Sorted so a plan is deterministic and
- * two runs over the same catalog write the same thing in the same order.
+ * the path it will occupy relative to the brain root. Sorted so a plan is
+ * deterministic and two runs over the same catalog write the same thing in the
+ * same order.
  */
 export function planSkillFiles(packSourceDir: string, skills: string[]): PlannedFile[] {
   const planned: PlannedFile[] = []
@@ -44,10 +45,9 @@ export function planSkillFiles(packSourceDir: string, skills: string[]): Planned
     const sourceDir = path.join(packSourceDir, 'skills', skill)
     for (const relative of walkFiles(sourceDir)) {
       planned.push({
-        // Why: .buildex/ is the one place BuildEx owns, so everything it writes
-        // can be excluded, inspected or deleted as a unit. The agent runtime
-        // reaches these files through a link in .claude/skills (see skill-link).
-        relativePath: `.buildex/skills/${skill}/${toPosix(relative)}`,
+        // Why: brain-root-relative, not repo-relative — a pack's skills live
+        // wherever the brain does, alongside the ones the company wrote itself.
+        relativePath: `skills/${skill}/${toPosix(relative)}`,
         absoluteSource: path.join(sourceDir, relative)
       })
     }
@@ -99,13 +99,13 @@ export type WriteDecision = {
  * what we last put there. Anything else is the operator's, and stays.
  */
 export function writePlannedFile(
-  repoPath: string,
+  baseDir: string,
   planned: PlannedFile,
   recordedHash: string | null
 ): WriteDecision {
   const source = readFileSync(planned.absoluteSource, 'utf8')
   const sourceHash = hashContent(source)
-  const destination = path.join(repoPath, ...planned.relativePath.split('/'))
+  const destination = path.join(baseDir, ...planned.relativePath.split('/'))
 
   if (existsSync(destination)) {
     const currentHash = hashFile(destination)

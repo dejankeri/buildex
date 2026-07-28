@@ -1,7 +1,9 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { BuildExPack, PackCatalog, PackSource } from '../../shared/buildex-packs-types'
+import { embeddedLocation, requireBrainLocation } from '../buildex-brain/brain-location'
 import { parsePackManifest } from './pack-manifest'
+import { skillsRoot } from './skill-link'
 
 // The capability-pack catalog. Packs ship with the app so a brand-new operator
 // has a full shelf on first launch; a company repo may also carry its own
@@ -71,16 +73,16 @@ export function resolveCatalogSources(
   return sources
 }
 
-/** A pack counts as installed once every skill it declares exists in the repo. */
+/** A pack counts as installed once every skill it declares exists in the brain. */
 export function isPackInstalled(repoPath: string, skills: string[]): boolean {
   // Same relative-path hazard as findCatalogRoots: with no repo there is nothing
   // for a pack to be installed into.
   if (!repoPath || skills.length === 0) {
     return false
   }
-  return skills.every((skill) =>
-    existsSync(path.join(repoPath, '.buildex', 'skills', skill, 'SKILL.md'))
-  )
+  const location = requireBrainLocation(repoPath) ?? embeddedLocation(repoPath)
+  const root = skillsRoot(location)
+  return skills.every((skill) => existsSync(path.join(root, skill, 'SKILL.md')))
 }
 
 function readPacksFrom(

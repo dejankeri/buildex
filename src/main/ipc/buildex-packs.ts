@@ -23,6 +23,7 @@ import {
 import { installPack } from '../buildex-packs/pack-install'
 import { refreshInstalledPacks } from '../buildex-packs/pack-refresh'
 import { uninstallPack } from '../buildex-packs/pack-uninstall'
+import { embeddedLocation, requireBrainLocation } from '../buildex-brain/brain-location'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { bundledCatalogRoot, initializeCompanyRepo } from '../buildex-repo-init'
 
@@ -77,7 +78,8 @@ export function registerBuildExPackHandlers(): void {
       if (result.ok) {
         // Why: the agent has to be told the app exists and which skills came with
         // it, or an install is invisible until the next time the Brain is opened.
-        void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
+        const location = requireBrainLocation(repoPath) ?? embeddedLocation(repoPath)
+        void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       }
       return result
     }
@@ -144,7 +146,8 @@ export function registerBuildExPackHandlers(): void {
       if (result.ok) {
         // Same in reverse: an agent still being told to reach for a removed app
         // would keep trying tools that are no longer there.
-        void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
+        const location = requireBrainLocation(repoPath) ?? embeddedLocation(repoPath)
+        void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       }
       return result
     }

@@ -1,4 +1,5 @@
 import type { PackRefreshResult } from '../../shared/buildex-packs-types'
+import { embeddedLocation, requireBrainLocation } from '../buildex-brain/brain-location'
 import { readPackCatalog } from './pack-catalog'
 import { applyPack } from './pack-install'
 import { readPackState, writePackState } from './pack-state'
@@ -15,7 +16,8 @@ export function refreshInstalledPacks(
   repoPath: string,
   bundledRoot: string | null = null
 ): PackRefreshResult {
-  const state = readPackState(repoPath)
+  const location = requireBrainLocation(repoPath) ?? embeddedLocation(repoPath)
+  const state = readPackState(location)
   const installedIds = Object.keys(state.packs)
   if (installedIds.length === 0) {
     return { updatedPackIds: [], writtenPaths: [], keptOperatorEdits: [] }
@@ -36,7 +38,7 @@ export function refreshInstalledPacks(
     }
     let applied: { writtenPaths: string[]; keptOperatorEdits: string[] }
     try {
-      applied = applyPack(repoPath, pack, state)
+      applied = applyPack(repoPath, location, pack, state)
     } catch {
       continue
     }
@@ -49,7 +51,7 @@ export function refreshInstalledPacks(
 
   if (writtenPaths.length > 0 || keptOperatorEdits.length > 0) {
     try {
-      writePackState(repoPath, state)
+      writePackState(location, state)
     } catch {
       // Same reasoning as install: the files are the result, the receipt is not.
     }

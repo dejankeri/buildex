@@ -2,10 +2,12 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { embeddedLocation } from '../buildex-brain/brain-location'
 import { readPackCatalog } from './pack-catalog'
-import { installPack } from './pack-install'
+import { applyPack, installPack } from './pack-install'
 import { parsePackManifest } from './pack-manifest'
 import { readPackState } from './pack-state'
+import type { PackState } from './pack-state'
 
 let repo = ''
 
@@ -111,10 +113,11 @@ describe('installPack', () => {
 
     expect(result.ok).toBe(true)
     expect(result.writtenPaths).toEqual([
-      '.buildex/skills/linear-issue/SKILL.md',
-      '.buildex/skills/linear-search/SKILL.md',
-      '.buildex/skills/linear-search/references/api.md'
+      'skills/linear-issue/SKILL.md',
+      'skills/linear-search/SKILL.md',
+      'skills/linear-search/references/api.md'
     ])
+    // Brain-relative receipts, but embedded mode still writes the same physical file.
     expect(readFileSync(path.join(repo, '.buildex/skills/linear-search/SKILL.md'), 'utf8')).toBe(
       '# search'
     )
@@ -140,7 +143,7 @@ describe('installPack', () => {
     const result = installPack(repo, 'linear')
 
     expect(result.writtenPaths).toEqual([])
-    expect(result.keptOperatorEdits).toEqual(['.buildex/skills/linear-search/SKILL.md'])
+    expect(result.keptOperatorEdits).toEqual(['skills/linear-search/SKILL.md'])
     expect(readFileSync(path.join(repo, '.buildex/skills/linear-search/SKILL.md'), 'utf8')).toBe(
       '# my own words'
     )
@@ -154,7 +157,7 @@ describe('installPack', () => {
 
     expect(existsSync(path.join(repo, '.buildex/packs.json'))).toBe(true)
     expect(
-      readPackState(repo).packs.linear.files['.buildex/skills/linear-search/SKILL.md']
+      readPackState(embeddedLocation(repo)).packs.linear.files['skills/linear-search/SKILL.md']
     ).toMatch(/^[a-f0-9]{64}$/)
   })
 
@@ -163,5 +166,34 @@ describe('installPack', () => {
 
     expect(result).toMatchObject({ ok: false, writtenPaths: [] })
     expect(result.error).toContain('nope')
+  })
+})
+
+describe('applyPack against an external brain', () => {
+  it('writes pack skill files under the brain root, not the repo — this is the point', () => {
+    const brain = mkdtempSync(path.join(tmpdir(), 'buildex-packs-external-'))
+    try {
+      const external = { root: brain, gitRoot: brain, pathspec: '.', mode: 'external' as const }
+      writePack('catalog', 'linear', { skills: ['linear-search'] })
+      write('catalog/linear/skills/linear-search/SKILL.md', '# search')
+      const pack = readPackCatalog(repo).packs.find((candidate) => candidate.id === 'linear')
+      const state: PackState = { packs: {} }
+      if (!pack) {
+        throw new Error('fixture pack not found')
+      }
+
+      const result = applyPack(repo, external, pack, state)
+
+      expect(result.writtenPaths).toEqual(['skills/linear-search/SKILL.md'])
+      expect(readFileSync(path.join(brain, 'skills', 'linear-search', 'SKILL.md'), 'utf8')).toBe(
+        '# search'
+      )
+      // Nothing lands in the repo's own .buildex — the brain lives elsewhere.
+      expect(existsSync(path.join(repo, '.buildex', 'skills', 'linear-search'))).toBe(false)
+      // The agent-facing link in the repo still points at the external brain.
+      expect(existsSync(path.join(repo, '.claude', 'skills', 'linear-search'))).toBe(true)
+    } finally {
+      rmSync(brain, { recursive: true, force: true })
+    }
   })
 })

@@ -2,9 +2,14 @@ import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, rmSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { embeddedLocation } from './brain-location'
 import { createBrainSkill, listBrainSkills } from './brain-skills'
 
 let repo = ''
+
+function location() {
+  return embeddedLocation(repo)
+}
 
 function write(relativePath: string, contents: string): void {
   const absolute = path.join(repo, relativePath)
@@ -31,7 +36,7 @@ describe('listBrainSkills', () => {
       })
     )
 
-    const skills = listBrainSkills(repo)
+    const skills = listBrainSkills(repo, location())
 
     expect(skills.find((s) => s.name === 'slack-search')?.source).toBe('pack')
     expect(skills.find((s) => s.name === 'onboard-client')?.source).toBe('company')
@@ -43,7 +48,7 @@ describe('listBrainSkills', () => {
       '---\nname: weekly-review\ndescription: Use when closing out the week.\n---\n\n# Weekly review\n'
     )
 
-    const skill = listBrainSkills(repo)[0]
+    const skill = listBrainSkills(repo, location())[0]
 
     expect(skill.title).toBe('Weekly review')
     expect(skill.description).toBe('Use when closing out the week.')
@@ -53,23 +58,23 @@ describe('listBrainSkills', () => {
     write('.buildex/skills/orphaned/SKILL.md', '# Orphaned\n')
 
     // No .claude/skills link — the skill exists but is invisible to the agent.
-    expect(listBrainSkills(repo)[0].linked).toBe(false)
+    expect(listBrainSkills(repo, location())[0].linked).toBe(false)
   })
 
   it('ignores a directory with no SKILL.md', () => {
     mkdirSync(path.join(repo, '.buildex/skills/not-a-skill'), { recursive: true })
 
-    expect(listBrainSkills(repo)).toEqual([])
+    expect(listBrainSkills(repo, location())).toEqual([])
   })
 
   it('is empty rather than failing when there are no skills', () => {
-    expect(listBrainSkills(repo)).toEqual([])
+    expect(listBrainSkills(repo, location())).toEqual([])
   })
 })
 
 describe('createBrainSkill', () => {
   it('scaffolds a usable skill and links it for the agent', () => {
-    const result = createBrainSkill(repo, 'Onboard a new client')
+    const result = createBrainSkill(repo, location(), 'Onboard a new client')
 
     expect(result).toMatchObject({ ok: true, name: 'onboard-a-new-client' })
     const body = readFileSync(
@@ -82,12 +87,32 @@ describe('createBrainSkill', () => {
   })
 
   it('refuses a name that could not be a directory', () => {
-    expect(createBrainSkill(repo, '///').ok).toBe(false)
+    expect(createBrainSkill(repo, location(), '///').ok).toBe(false)
   })
 
   it('never overwrites an existing skill', () => {
-    createBrainSkill(repo, 'Weekly review')
+    createBrainSkill(repo, location(), 'Weekly review')
 
-    expect(createBrainSkill(repo, 'Weekly review').error).toContain('Already exists')
+    expect(createBrainSkill(repo, location(), 'Weekly review').error).toContain('Already exists')
+  })
+
+  it('links a skill from an external brain with an absolute target', () => {
+    const brain = mkdtempSync(path.join(tmpdir(), 'buildex-skills-external-'))
+    try {
+      const external = { root: brain, gitRoot: brain, pathspec: '.', mode: 'external' as const }
+
+      const result = createBrainSkill(repo, external, 'Answer support email')
+
+      expect(result.ok).toBe(true)
+      expect(existsSync(path.join(brain, 'skills', 'answer-support-email', 'SKILL.md'))).toBe(true)
+      // The agent only ever sees a skill through the link in its own repo.
+      expect(existsSync(path.join(repo, '.claude', 'skills', 'answer-support-email'))).toBe(true)
+      // And the skill lists as this company's, from the brain it actually lives in.
+      expect(listBrainSkills(repo, external).map((skill) => skill.name)).toContain(
+        'answer-support-email'
+      )
+    } finally {
+      rmSync(brain, { recursive: true, force: true })
+    }
   })
 })

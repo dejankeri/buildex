@@ -1,6 +1,14 @@
+import { existsSync } from 'node:fs'
 import path from 'node:path'
-import type { BrainDocument, BrainFolder, BrainScan } from '../../shared/buildex-brain-types'
+import type {
+  BrainDocument,
+  BrainFolder,
+  BrainLocation,
+  BrainResolution,
+  BrainScan
+} from '../../shared/buildex-brain-types'
 import { listChangedDocumentIds } from './company-brain-changed-docs'
+import { embeddedLocation } from './brain-location'
 import { resolveDocumentLinks } from './company-brain-links'
 import {
   countHeadings,
@@ -24,8 +32,13 @@ function documentFolder(id: string): string {
   return dir === '.' ? '' : dir
 }
 
-export async function scanCompanyBrain(repoPath: string, now: number): Promise<BrainScan> {
-  const ids = listBrainDocumentPaths(repoPath)
+export async function scanCompanyBrain(
+  repoPath: string,
+  location: BrainLocation,
+  resolution: BrainResolution,
+  now: number
+): Promise<BrainScan> {
+  const ids = listBrainDocumentPaths(location)
   const knownIds = new Set(ids)
 
   // Why: last-write-wins on a duplicate basename would be order-dependent. ids
@@ -42,7 +55,7 @@ export async function scanCompanyBrain(repoPath: string, now: number): Promise<B
   const texts = new Map<string, string>()
   const linksTo = new Map<string, string[]>()
   for (const id of ids) {
-    const text = readDocumentText(repoPath, id)
+    const text = readDocumentText(location, id)
     texts.set(id, text)
     linksTo.set(id, resolveDocumentLinks({ text, documentId: id, knownIds, byName }))
   }
@@ -56,7 +69,7 @@ export async function scanCompanyBrain(repoPath: string, now: number): Promise<B
     }
   }
 
-  const changed = new Set(await listChangedDocumentIds(repoPath))
+  const changed = new Set(await listChangedDocumentIds(location))
 
   const documents: BrainDocument[] = ids.map((id) => {
     const text = texts.get(id) ?? ''
@@ -89,7 +102,12 @@ export async function scanCompanyBrain(repoPath: string, now: number): Promise<B
 
   return {
     repoPath,
-    initialized: isBrainInitialized(repoPath),
+    initialized: isBrainInitialized(location),
+    resolution,
+    // Why: independent of which location this resolved to — the renderer
+    // cannot stat the filesystem itself, and needs this to choose migrate
+    // (something embedded to move) over bind (nothing to move) at setup time.
+    embeddedBrainPresent: existsSync(embeddedLocation(repoPath).root),
     documents,
     folders,
     orphanIds,

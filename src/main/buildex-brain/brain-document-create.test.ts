@@ -3,8 +3,13 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createBrainDocument, toDocumentFileName } from './brain-document-create'
+import { embeddedLocation } from './brain-location'
 
 let repo = ''
+
+function location() {
+  return embeddedLocation(repo)
+}
 
 beforeEach(() => {
   repo = mkdtempSync(path.join(tmpdir(), 'buildex-newdoc-'))
@@ -34,7 +39,7 @@ describe('toDocumentFileName', () => {
 
 describe('createBrainDocument', () => {
   it('writes the document and reports its brain id', () => {
-    const result = createBrainDocument(repo, 'strategy', 'Q3 pricing')
+    const result = createBrainDocument(location(), 'strategy', 'Q3 pricing')
 
     expect(result).toMatchObject({ ok: true, documentId: 'strategy/q3-pricing.md' })
     expect(readFileSync(path.join(repo, '.buildex/strategy/q3-pricing.md'), 'utf8')).toBe(
@@ -43,21 +48,21 @@ describe('createBrainDocument', () => {
   })
 
   it('rejects a section that is not one of ours', () => {
-    const result = createBrainDocument(repo, '../../..', 'Escape')
+    const result = createBrainDocument(location(), '../../..', 'Escape')
 
     expect(result.ok).toBe(false)
     expect(existsSync(path.join(repo, '.buildex'))).toBe(false)
   })
 
   it('never overwrites an existing document', () => {
-    createBrainDocument(repo, 'strategy', 'Pricing')
-    const second = createBrainDocument(repo, 'strategy', 'Pricing')
+    createBrainDocument(location(), 'strategy', 'Pricing')
+    const second = createBrainDocument(location(), 'strategy', 'Pricing')
 
     expect(second.ok).toBe(false)
     expect(second.error).toContain('Already exists')
   })
 
   it('accepts the brain root', () => {
-    expect(createBrainDocument(repo, '', 'Readme').documentId).toBe('readme.md')
+    expect(createBrainDocument(location(), '', 'Readme').documentId).toBe('readme.md')
   })
 })

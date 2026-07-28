@@ -4,6 +4,7 @@ import type {
   AgentContextFile,
   AgentReachableItem,
   AgentView,
+  BrainLocation,
   BrainScan
 } from '../../shared/buildex-brain-types'
 import { listBrainSkills } from './brain-skills'
@@ -121,18 +122,32 @@ function collectMemory(repoPath: string): AgentContextFile[] {
   return files
 }
 
+/**
+ * Where to show a brain-relative path in the picker: still `.buildex/…` when
+ * embedded, since that is literally where it is in this repo; the real
+ * absolute path when external, since the id alone resolves to nothing here.
+ */
+function displayPath(location: BrainLocation, relativeToRoot: string): string {
+  return location.mode === 'embedded'
+    ? `.buildex/${relativeToRoot}`
+    : path.join(location.root, relativeToRoot)
+}
+
 function collectReachable(repoPath: string, scan: BrainScan): AgentReachableItem[] {
   const items: AgentReachableItem[] = []
+  const location = scan.resolution?.status === 'ready' ? scan.resolution.location : null
 
   // Only the linked ones: a skill the agent cannot see is not something it can
-  // reach, however plainly it sits in `.buildex/skills/`.
-  for (const skill of listBrainSkills(repoPath).filter((entry) => entry.linked)) {
-    items.push({
-      kind: 'skill',
-      name: skill.name,
-      detail: skill.description || skill.title,
-      path: `.buildex/skills/${skill.name}/SKILL.md`
-    })
+  // reach, however plainly it sits in the brain's `skills/`.
+  if (location) {
+    for (const skill of listBrainSkills(repoPath, location).filter((entry) => entry.linked)) {
+      items.push({
+        kind: 'skill',
+        name: skill.name,
+        detail: skill.description || skill.title,
+        path: displayPath(location, `skills/${skill.name}/SKILL.md`)
+      })
+    }
   }
 
   for (const [name, entry] of readMcpServers(repoPath)) {
@@ -144,7 +159,7 @@ function collectReachable(repoPath: string, scan: BrainScan): AgentReachableItem
       kind: 'document',
       name: document.id,
       detail: document.folder || 'root',
-      path: `.buildex/${document.id}`
+      path: location ? displayPath(location, document.id) : `.buildex/${document.id}`
     })
   }
 

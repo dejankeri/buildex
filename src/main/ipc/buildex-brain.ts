@@ -1,36 +1,50 @@
+import { existsSync } from 'node:fs'
 import { ipcMain } from 'electron'
 import type {
   AgentView,
   AgentViewRequest,
-  BrainRemovalPlan,
-  BrainRemovalRequest,
-  BrainRemovalResult,
-  BrainSetupRequest,
-  BrainSetupResult,
-  BrainSkillsRequest,
-  BrainSkillsResult,
-  BrainSkillCreateRequest,
-  BrainSkillCreateResult,
-  BrainHistoryRequest,
-  BrainHistoryResult,
-  BrainSaveRequest,
-  BrainSaveResult,
   BrainCreateDocumentRequest,
   BrainCreateDocumentResult,
-  BrainSectionsResult,
+  BrainHistoryRequest,
+  BrainHistoryResult,
+  BrainResolution,
+  BrainSaveRequest,
+  BrainSaveResult,
   BrainScan,
-  BrainScanRequest
+  BrainScanRequest,
+  BrainSectionsResult,
+  BrainSetupRequest,
+  BrainSetupResult,
+  BrainSkillCreateRequest,
+  BrainSkillCreateResult,
+  BrainSkillsRequest,
+  BrainSkillsResult
 } from '../../shared/buildex-brain-types'
 import { EMPTY_AGENT_VIEW, EMPTY_BRAIN_SCAN } from '../../shared/buildex-brain-types'
 import { scanCompanyBrain } from '../buildex-brain/company-brain-service'
 import { BRAIN_SECTIONS, scaffoldCompanyBrain } from '../buildex-brain/brain-scaffold'
 import { buildAgentView } from '../buildex-brain/agent-view'
-import { planBrainRemoval, removeBrain } from '../buildex-brain/brain-remove'
 import { createBrainDocument } from '../buildex-brain/brain-document-create'
+import {
+  embeddedLocation,
+  requireBrainLocation,
+  resolveBrainLocation
+} from '../buildex-brain/brain-location'
 import { readBrainHistory, saveBrain } from '../buildex-brain/brain-history'
 import { createBrainSkill, listBrainSkills } from '../buildex-brain/brain-skills'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { bundledCatalogRoot, initializeCompanyRepo } from '../buildex-repo-init'
+import { registerBuildExBrainPlacementHandlers } from './buildex-brain-placement'
+
+// Reading and rendering the brain — what's in it, not where it is. Where a
+// repo's brain lives, and changing that, is buildex-brain-placement.ts;
+// registered from here so callers still reach the whole surface through one
+// entry point.
+//
+// Reachable when repoPath resolved but the brain itself did not — a pointer
+// naming an unfetched remote, or a binding whose path is gone. Distinct from a
+// truly missing repoPath, which each handler checks first.
+const BRAIN_UNRESOLVED = "This repo's brain could not be resolved"
 
 export function registerBuildExBrainHandlers(): void {
   ipcMain.handle(
@@ -44,7 +58,8 @@ export function registerBuildExBrainHandlers(): void {
     'buildex-brain:skills',
     (_event, request?: BrainSkillsRequest): BrainSkillsResult => {
       const repoPath = request?.repoPath?.trim()
-      return { skills: repoPath ? listBrainSkills(repoPath) : [] }
+      const location = repoPath ? requireBrainLocation(repoPath) : null
+      return { skills: repoPath && location ? listBrainSkills(repoPath, location) : [] }
     }
   )
 
@@ -56,7 +71,11 @@ export function registerBuildExBrainHandlers(): void {
       if (!repoPath || !title) {
         return { ok: false, error: 'Missing repoPath or title' }
       }
-      return createBrainSkill(repoPath, title)
+      const location = requireBrainLocation(repoPath)
+      if (!location) {
+        return { ok: false, error: BRAIN_UNRESOLVED }
+      }
+      return createBrainSkill(repoPath, location, title)
     }
   )
 
@@ -64,23 +83,25 @@ export function registerBuildExBrainHandlers(): void {
     'buildex-brain:history',
     async (_event, request?: BrainHistoryRequest): Promise<BrainHistoryResult> => {
       const repoPath = request?.repoPath?.trim()
-      if (!repoPath) {
+      const location = repoPath ? requireBrainLocation(repoPath) : null
+      if (!location) {
         return { saves: [], unavailable: true, unsavedPaths: [] }
       }
-      return readBrainHistory(repoPath, request?.limit)
+      return readBrainHistory(location, request?.limit)
     }
   )
 
   // Why: this is the one BuildEx action that writes company history. It is
-  // scoped to `.buildex/` end to end — see brain-history.ts.
+  // scoped to the brain's own pathspec end to end — see brain-history.ts.
   ipcMain.handle(
     'buildex-brain:save',
     async (_event, request?: BrainSaveRequest): Promise<BrainSaveResult> => {
       const repoPath = request?.repoPath?.trim()
-      if (!repoPath) {
-        return { ok: false, savedPaths: [], error: 'Missing repoPath' }
+      const location = repoPath ? requireBrainLocation(repoPath) : null
+      if (!location) {
+        return { ok: false, savedPaths: [], error: BRAIN_UNRESOLVED }
       }
-      return saveBrain(repoPath, request?.message ?? '')
+      return saveBrain(location, request?.message ?? '')
     }
   )
 
@@ -92,12 +113,16 @@ export function registerBuildExBrainHandlers(): void {
       if (!repoPath || !title) {
         return { ok: false, error: 'Missing repoPath or title' }
       }
-      const result = createBrainDocument(repoPath, request?.folder ?? '', title)
+      const location = requireBrainLocation(repoPath)
+      if (!location) {
+        return { ok: false, error: BRAIN_UNRESOLVED }
+      }
+      const result = createBrainDocument(location, request?.folder ?? '', title)
       if (result.ok) {
         // Why: a new document the agent does not know about is the most common
         // way the context goes stale. Not awaited — the operator is waiting to
         // start writing, not for bookkeeping.
-        void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
+        void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       }
       return result
     }
@@ -113,11 +138,26 @@ export function registerBuildExBrainHandlers(): void {
       // Why: the Brain is often the first BuildEx surface a run opens, so this is
       // the earliest reliable moment to put the gate and the packs in order.
       initializeCompanyRepo(repoPath)
-      const scan = await scanCompanyBrain(repoPath, Date.now())
-      // Why: opening the Brain is the moment to catch up on anything that changed
-      // outside the app — a document pulled from a teammate, a file written by
-      // the agent itself. Not awaited: the screen should not wait for it.
-      void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
+      const resolution = resolveBrainLocation(repoPath)
+      if (resolution.status !== 'ready') {
+        // Why: independent of how the brain currently resolves — the renderer
+        // cannot stat the filesystem itself, and needs to know whether there is
+        // an embedded brain worth moving before it can choose migrate over bind.
+        return {
+          ...EMPTY_BRAIN_SCAN,
+          repoPath,
+          resolution,
+          embeddedBrainPresent: existsSync(embeddedLocation(repoPath).root)
+        }
+      }
+      const { location } = resolution
+      const scan = await scanCompanyBrain(repoPath, location, resolution, Date.now())
+      // Why: opening the Brain is the moment to catch up on anything the agent
+      // itself wrote. Not awaited — the screen renders from local state now.
+      // The brain's own fetch is `buildex-brain:pull`, which the Brain page
+      // calls on open: its answer includes whether the brain has diverged, and
+      // there is nowhere to report that from here.
+      void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       return scan
     }
   )
@@ -134,9 +174,13 @@ export function registerBuildExBrainHandlers(): void {
     if (folders.length === 0) {
       return { ok: false, created: [], error: 'Choose at least one section' }
     }
+    const location = requireBrainLocation(repoPath)
+    if (!location) {
+      return { ok: false, created: [], error: BRAIN_UNRESOLVED }
+    }
     try {
-      const result = scaffoldCompanyBrain(repoPath, { folders, summary: request?.summary })
-      void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
+      const result = scaffoldCompanyBrain(location, { folders, summary: request?.summary })
+      void refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
       return { ok: true, created: result.created }
     } catch (error) {
       return {
@@ -154,37 +198,18 @@ export function registerBuildExBrainHandlers(): void {
       if (!repoPath) {
         return EMPTY_AGENT_VIEW
       }
+      const location = requireBrainLocation(repoPath)
+      if (!location) {
+        return EMPTY_AGENT_VIEW
+      }
       // Why: the context file is rewritten first, so the dialog shows what the
       // next session will actually get rather than what the last one got.
-      await refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
-      return buildAgentView(repoPath, await scanCompanyBrain(repoPath, Date.now()))
+      await refreshCompanyContext(repoPath, location, { bundledCatalogRoot: bundledCatalogRoot() })
+      const resolution: BrainResolution = { status: 'ready', location }
+      const scan = await scanCompanyBrain(repoPath, location, resolution, Date.now())
+      return buildAgentView(repoPath, scan)
     }
   )
 
-  ipcMain.handle(
-    'buildex-brain:removalPlan',
-    async (_event, request?: BrainRemovalRequest): Promise<BrainRemovalPlan> => {
-      const repoPath = request?.repoPath?.trim()
-      if (!repoPath) {
-        return { documentCount: 0, unsavedPaths: [], canCommit: false, willBackUp: false }
-      }
-      return planBrainRemoval(repoPath)
-    }
-  )
-
-  ipcMain.handle(
-    'buildex-brain:remove',
-    async (_event, request?: BrainRemovalRequest): Promise<BrainRemovalResult> => {
-      const repoPath = request?.repoPath?.trim()
-      if (!repoPath) {
-        return { ok: false, committed: false, error: 'Missing repoPath' }
-      }
-      const result = await removeBrain(repoPath, Date.now())
-      if (result.ok) {
-        // The agent's context still names every document that was just removed.
-        void refreshCompanyContext(repoPath, { bundledCatalogRoot: bundledCatalogRoot() })
-      }
-      return result
-    }
-  )
+  registerBuildExBrainPlacementHandlers()
 }

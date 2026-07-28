@@ -13906,7 +13906,8 @@
         "mcpManual": "Sign in with /mcp in a Claude session.",
         "mcpHint": "Opens a session and runs /mcp, where the provider signs you in.",
         "signIn": "Sign in"
-      }
+      },
+      "sharedBrain": "This company shares one brain, so installing an app here gives every repo that uses it the same skills."
     },
     "brain": {
       "history": {
@@ -13916,7 +13917,10 @@
         "pending": "{{value0}} changed since the last save: {{value1}}",
         "namePlaceholder": "What changed? e.g. \"Q3 pricing and the Northwind call\"",
         "save": "Save",
-        "scope": "Saves the .buildex folder only. Nothing else in this project is touched."
+        "scope": "Saves the .buildex folder only. Nothing else in this project is touched.",
+        "notShared": "Saved here, not shared yet — the brain repo did not accept the push.",
+        "retryShare": "Try again",
+        "localOnly": "Saved. This brain has no remote yet, so it stays on this machine until it has one."
       },
       "page": {
         "sections": "Sections",
@@ -13935,7 +13939,9 @@
         "reveal": "Open the brain folder",
         "remove": "Remove the company brain",
         "removedWithBackup": "Brain removed. A copy of what was not yet saved is in {{value0}}",
-        "removed": "Brain removed, and the removal was saved to history."
+        "removed": "Brain removed, and the removal was saved to history.",
+        "diverged": "This brain and the shared one have both changed. BuildEx will not merge a company’s decisions — open the brain repo and reconcile them there.",
+        "disconnect": "Disconnect this repo from the brain"
       },
       "sections": {
         "empty": "Nothing here yet",
@@ -13983,7 +13989,10 @@
         "backedUp": "{{value0}} files are not in history yet, so a copy goes to ~/.buildex-backups first.",
         "keeps": "Nothing outside .buildex is touched — your code and its history stay exactly as they are.",
         "cancel": "Keep it",
-        "confirm": "Remove the brain"
+        "confirm": "Remove the brain",
+        "disconnectTitle": "Disconnect this repo from the company brain?",
+        "disconnectBody": "The brain and its history stay exactly where they are, at {{value0}}. Other repos using it are unaffected — this only disconnects this repo from it.",
+        "disconnectConfirm": "Disconnect"
       },
       "setup": {
         "title": "Set up your company brain",
@@ -13993,7 +14002,29 @@
         "summaryHint": "This becomes the first line of strategy/overview.md. Leave it blank and the document asks you instead.",
         "sectionsLabel": "Sections to start with",
         "create": "Create the brain",
-        "reassurance": "You can add, rename or remove any of these later."
+        "reassurance": "You can add, rename or remove any of these later.",
+        "placementLabel": "Where should it live?",
+        "placementEmbedded": "In this repo",
+        "placementEmbeddedHint": "Lives in .buildex and travels with this repo alone.",
+        "placementExternal": "In a separate brain repo",
+        "placementExternalHint": "Shared with every repo that points at it.",
+        "brainPathLabel": "Path to the brain repo",
+        "brainPathPlaceholder": "/home/dev/.buildex/brains/acme",
+        "writePointer": "Record this choice in the repo so teammates find it",
+        "remoteLabel": "The brain repo's remote",
+        "remotePlaceholder": "git@github.com:acme/brain.git"
+      },
+      "placement": {
+        "needsCloneTitle": "This company's brain lives in its own repo",
+        "missingTitle": "The brain folder is not there any more",
+        "notARepoTitle": "That folder is not a git repo",
+        "needsCloneBody": "Clone it and this repo picks up the decisions, rules and skills the company has already written.",
+        "missingBody": "Nothing was deleted from here — this repo points at a folder that has moved or gone. Put it back where it was, or disconnect this repo from it.",
+        "notARepoBody": "Without git there is no history and nothing to share, so the brain cannot be used from here.",
+        "pathLabel": "Where to clone it",
+        "clone": "Clone the brain",
+        "disconnect": "Disconnect this repo",
+        "cloneFailed": "Could not clone the brain"
       }
     },
     "sidebar": {

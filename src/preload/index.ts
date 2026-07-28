@@ -90,9 +90,21 @@ import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skill
 import type {
   AgentView,
   AgentViewRequest,
+  BrainBindRequest,
+  BrainBindResult,
+  BrainCloneRequest,
+  BrainCloneResult,
+  BrainMigrateRequest,
+  BrainMigrationResult,
+  BrainPullRequest,
+  BrainPullResult,
+  BrainPushRequest,
+  BrainPushResult,
   BrainRemovalPlan,
   BrainRemovalRequest,
   BrainRemovalResult,
+  BrainResolution,
+  BrainResolveRequest,
   BrainScan,
   BrainScanRequest,
   BrainSetupRequest,
@@ -2310,7 +2322,21 @@ const api = {
     removalPlan: (request: BrainRemovalRequest): Promise<BrainRemovalPlan> =>
       ipcRenderer.invoke('buildex-brain:removalPlan', request),
     remove: (request: BrainRemovalRequest): Promise<BrainRemovalResult> =>
-      ipcRenderer.invoke('buildex-brain:remove', request)
+      ipcRenderer.invoke('buildex-brain:remove', request),
+    resolve: (request: BrainResolveRequest): Promise<BrainResolution | null> =>
+      ipcRenderer.invoke('buildex-brain:resolve', request),
+    clone: (request: BrainCloneRequest): Promise<BrainCloneResult> =>
+      ipcRenderer.invoke('buildex-brain:clone', request),
+    migrate: (request: BrainMigrateRequest): Promise<BrainMigrationResult> =>
+      ipcRenderer.invoke('buildex-brain:migrate', request),
+    bind: (request: BrainBindRequest): Promise<BrainBindResult> =>
+      ipcRenderer.invoke('buildex-brain:bind', request),
+    disconnect: (request: BrainRemovalRequest): Promise<BrainRemovalResult> =>
+      ipcRenderer.invoke('buildex-brain:disconnect', request),
+    pull: (request: BrainPullRequest): Promise<BrainPullResult> =>
+      ipcRenderer.invoke('buildex-brain:pull', request),
+    push: (request: BrainPushRequest): Promise<BrainPushResult> =>
+      ipcRenderer.invoke('buildex-brain:push', request)
   },
 
   buildexBrainSections: {

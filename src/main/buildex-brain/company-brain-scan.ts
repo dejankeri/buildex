@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
+import type { BrainLocation } from '../../shared/buildex-brain-types'
 
 // Filesystem walk for the company brain. Sorted at every level so two scans of
 // an unchanged tree produce identical output — the determinism the trust
@@ -47,7 +48,15 @@ export function isGeneratedBrainFile(relativeId: string): boolean {
 // and that must not count as "this company has a brain" — otherwise an operator
 // who installs Slack before writing anything never gets offered setup, and ends
 // up with a brain that is nothing but somebody else's skills.
-const MACHINE_BRAIN_ENTRIES = new Set(['skills', 'packs.json'])
+const MACHINE_BRAIN_ENTRIES = new Set([
+  'skills',
+  'packs.json',
+  'brain.json',
+  // Policy, not knowledge — and the same mistake `gate-applied.json` already
+  // cost us: its presence alone made a repo read as having a brain, so setup
+  // was never offered there.
+  'gate-preset.json'
+])
 
 /**
  * True once this repo holds a company brain.
@@ -55,13 +64,12 @@ const MACHINE_BRAIN_ENTRIES = new Set(['skills', 'packs.json'])
  * Deliberately not `existsSync('.buildex')`: the folder alone proves only that
  * BuildEx has run here. What counts is whether anything in it is the company's.
  */
-export function isBrainInitialized(repoPath: string): boolean {
-  const brainRoot = path.join(repoPath, BRAIN_ROOT)
-  if (!existsSync(brainRoot)) {
+export function isBrainInitialized(location: BrainLocation): boolean {
+  if (!existsSync(location.root)) {
     return false
   }
   try {
-    return readdirSync(brainRoot).some(
+    return readdirSync(location.root).some(
       (entry) => !entry.startsWith('.') && !MACHINE_BRAIN_ENTRIES.has(entry)
     )
   } catch {
@@ -75,10 +83,10 @@ function toPosix(value: string): string {
   return value.split(path.sep).join('/')
 }
 
-/** Repo-relative POSIX paths of every brain document, sorted. */
-export function listBrainDocumentPaths(repoPath: string): string[] {
+/** Brain-relative POSIX paths of every brain document, sorted. */
+export function listBrainDocumentPaths(location: BrainLocation): string[] {
   const found: string[] = []
-  const brainRoot = path.join(repoPath, BRAIN_ROOT)
+  const brainRoot = location.root
 
   const walk = (absoluteDir: string): void => {
     let entries: string[]
@@ -124,9 +132,9 @@ export function listBrainDocumentPaths(repoPath: string): string[] {
   return found.sort()
 }
 
-export function readDocumentText(repoPath: string, documentId: string): string {
+export function readDocumentText(location: BrainLocation, documentId: string): string {
   try {
-    return readFileSync(path.join(repoPath, BRAIN_ROOT, documentId), 'utf8')
+    return readFileSync(path.join(location.root, documentId), 'utf8')
   } catch {
     return ''
   }

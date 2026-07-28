@@ -1,18 +1,19 @@
 import { existsSync, readdirSync, rmSync, rmdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import type { PackUninstallResult } from '../../shared/buildex-packs-types'
+import { embeddedLocation, requireBrainLocation } from '../buildex-brain/brain-location'
 import { hashFile } from './pack-files'
 import { readPackCatalog } from './pack-catalog'
 import { syncPackMcpConfig } from './pack-mcp-config'
-import { readPackState, writePackState } from './pack-state'
-import { unlinkSkillFromAgentDir } from './skill-link'
+import { readPackState, resolveReceiptPath, writePackState } from './pack-state'
+import { skillsRoot, unlinkSkillFromAgentDir } from './skill-link'
 
 // Removing a pack takes back exactly what BuildEx put in, and nothing else.
 //
-// The receipt in .buildex/packs.json records the hash of every file we wrote. A
-// file that still matches is ours to remove; a file the operator has edited is
-// theirs, and it stays — uninstalling a pack must never be a way to lose work
-// somebody wrote (invariant 8).
+// The receipt in packs.json, at the brain root, records the hash of every file
+// we wrote. A file that still matches is ours to remove; a file the operator
+// has edited is theirs, and it stays — uninstalling a pack must never be a way
+// to lose work somebody wrote (invariant 8).
 //
 // The credential is a separate decision and is left to the caller: an operator
 // removing a pack to reinstall it should not have to find their API key again.
@@ -38,7 +39,8 @@ export function uninstallPack(
   packId: string,
   bundledRoot: string | null = null
 ): PackUninstallResult {
-  const state = readPackState(repoPath)
+  const location = requireBrainLocation(repoPath) ?? embeddedLocation(repoPath)
+  const state = readPackState(location)
   const record = state.packs[packId]
   if (!record) {
     return { ok: false, removedPaths: [], keptOperatorEdits: [], error: `Not installed: ${packId}` }
@@ -48,7 +50,7 @@ export function uninstallPack(
   const keptOperatorEdits: string[] = []
 
   for (const [relativePath, recordedHash] of Object.entries(record.files)) {
-    const absolute = path.join(repoPath, ...relativePath.split('/'))
+    const absolute = resolveReceiptPath(repoPath, location, relativePath)
     if (!existsSync(absolute)) {
       continue
     }
@@ -70,7 +72,7 @@ export function uninstallPack(
   const directories = [
     ...new Set(
       Object.keys(record.files).map((relativePath) =>
-        path.join(repoPath, ...relativePath.split('/').slice(0, -1))
+        path.dirname(resolveReceiptPath(repoPath, location, relativePath))
       )
     )
   ].sort((a, b) => b.length - a.length)
@@ -82,12 +84,12 @@ export function uninstallPack(
   const pack = catalog.packs.find((candidate) => candidate.id === packId)
   for (const skill of pack?.skills ?? []) {
     unlinkSkillFromAgentDir(repoPath, skill)
-    removeIfEmpty(path.join(repoPath, '.buildex', 'skills', skill))
+    removeIfEmpty(path.join(skillsRoot(location), skill))
   }
 
   delete state.packs[packId]
   try {
-    writePackState(repoPath, state)
+    writePackState(location, state)
   } catch {
     // The files are the uninstall; a stale receipt fails safe.
   }

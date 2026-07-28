@@ -1,15 +1,18 @@
+import type { BrainLocation } from '../../shared/buildex-brain-types'
 import type { BuildExPack, PackInstallResult } from '../../shared/buildex-packs-types'
+import { embeddedLocation, requireBrainLocation } from '../buildex-brain/brain-location'
 import { readPackCatalog } from './pack-catalog'
 import { planSkillFiles, writePlannedFile } from './pack-files'
-import { readPackState, recordedHash, writePackState } from './pack-state'
+import { readPackState, recordedHash, recordReceiptFile, writePackState } from './pack-state'
 import type { PackState } from './pack-state'
 import { syncPackMcpConfig } from './pack-mcp-config'
 import { ensureBuildExGitExclude } from './repo-git-exclude'
 import { linkSkillIntoAgentDir } from './skill-link'
 
 // Installing a pack copies its real skill files out of the catalog into the
-// company repo. They are ordinary files from that point on: `git status` after
-// an install shows exactly what the company gained, and reverting is a checkout.
+// brain, wherever that is — the company repo in embedded mode, its own repo
+// otherwise. They are ordinary files from that point on: `git status` there
+// shows exactly what the company gained, and reverting is a checkout.
 
 export type ApplyPackResult = {
   writtenPaths: string[]
@@ -17,13 +20,18 @@ export type ApplyPackResult = {
 }
 
 /**
- * Copy one pack's files into the repo and update the receipt in `state`.
+ * Copy one pack's files into the brain and update the receipt in `state`.
  *
  * Shared by install and refresh, which differ only in when they run: install is
  * an operator asking for a pack, refresh is a newer app carrying newer skills.
  * Both must leave an edited file alone, so both go through the same rule.
  */
-export function applyPack(repoPath: string, pack: BuildExPack, state: PackState): ApplyPackResult {
+export function applyPack(
+  repoPath: string,
+  location: BrainLocation,
+  pack: BuildExPack,
+  state: PackState
+): ApplyPackResult {
   const planned = planSkillFiles(pack.sourceDir, pack.skills)
   const files: Record<string, string> = { ...state.packs[pack.id]?.files }
   const writtenPaths: string[] = []
@@ -31,7 +39,7 @@ export function applyPack(repoPath: string, pack: BuildExPack, state: PackState)
 
   for (const file of planned) {
     const decision = writePlannedFile(
-      repoPath,
+      location.root,
       file,
       recordedHash(state, pack.id, file.relativePath)
     )
@@ -39,7 +47,9 @@ export function applyPack(repoPath: string, pack: BuildExPack, state: PackState)
       keptOperatorEdits.push(file.relativePath)
       continue
     }
-    files[file.relativePath] = decision.hash
+    // Also drops the pre-migration `.buildex/`-prefixed key for this same file,
+    // so the receipt never carries two rows for one physical file.
+    recordReceiptFile(files, file.relativePath, decision.hash)
     if (decision.outcome === 'written') {
       writtenPaths.push(file.relativePath)
     }
@@ -47,11 +57,11 @@ export function applyPack(repoPath: string, pack: BuildExPack, state: PackState)
 
   state.packs[pack.id] = { files }
 
-  // Why: files under .buildex/skills are invisible to the agent — it only
+  // Why: files under the brain's skills/ are invisible to the agent — it only
   // discovers skills under .claude/skills. Without this link an install looks
   // like it worked and the pack does nothing.
   for (const skill of pack.skills) {
-    if (linkSkillIntoAgentDir(repoPath, skill) === 'needs-copy') {
+    if (linkSkillIntoAgentDir(repoPath, location, skill) === 'needs-copy') {
       copyLinkFallback(repoPath, pack, skill, files, writtenPaths)
     }
   }
@@ -74,13 +84,15 @@ function copyLinkFallback(
   for (const file of planSkillFiles(pack.sourceDir, [skill])) {
     const mirrored = {
       ...file,
-      relativePath: file.relativePath.replace('.buildex/skills/', '.claude/skills/')
+      // Fallback copies are always repo-relative — .claude/ only ever lives in the repo.
+      // relativePath is POSIX by contract (it's `.split('/')`d later), so no path.join here.
+      relativePath: file.relativePath.replace(/^skills\//, '.claude/skills/')
     }
     const decision = writePlannedFile(repoPath, mirrored, files[mirrored.relativePath] ?? null)
     if (decision.outcome === 'kept-operator-edit') {
       continue
     }
-    files[mirrored.relativePath] = decision.hash
+    recordReceiptFile(files, mirrored.relativePath, decision.hash)
     if (decision.outcome === 'written') {
       writtenPaths.push(mirrored.relativePath)
     }
@@ -114,10 +126,11 @@ export function installPack(
   // anything lands, so it never shows up in the operator's `git status`.
   ensureBuildExGitExclude(repoPath)
 
-  const state = readPackState(repoPath)
+  const location = requireBrainLocation(repoPath) ?? embeddedLocation(repoPath)
+  const state = readPackState(location)
   let applied: ApplyPackResult
   try {
-    applied = applyPack(repoPath, pack, state)
+    applied = applyPack(repoPath, location, pack, state)
   } catch (error) {
     return {
       ok: false,
@@ -137,7 +150,7 @@ export function installPack(
   }
 
   try {
-    writePackState(repoPath, state)
+    writePackState(location, state)
   } catch {
     // Why: the files are the install. A receipt we could not write costs us the
     // ability to detect operator edits later, which fails safe (we keep theirs),

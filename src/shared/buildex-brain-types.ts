@@ -32,6 +32,15 @@ export type BrainScan = {
    * showing nine empty sections nobody asked for.
    */
   initialized: boolean
+  /** How this repo's brain was resolved. Null only when there is no repo. */
+  resolution: BrainResolution | null
+  /**
+   * True when `<repo>/.buildex` exists on disk, regardless of which location this
+   * resolved to. The renderer cannot stat the filesystem itself, so this is how
+   * it tells an embedded brain worth moving apart from a repo with nothing to
+   * move — the difference between choosing `migrate` and choosing `bind`.
+   */
+  embeddedBrainPresent: boolean
   documents: BrainDocument[]
   folders: BrainFolder[]
   /** Documents nothing links to and which link nowhere — the brain's dead ends. */
@@ -47,6 +56,8 @@ export type BrainScanRequest = {
 export const EMPTY_BRAIN_SCAN: BrainScan = {
   repoPath: '',
   initialized: false,
+  resolution: null,
+  embeddedBrainPresent: false,
   documents: [],
   folders: [],
   orphanIds: [],
@@ -132,6 +143,16 @@ export type BrainSaveResult = {
   ok: boolean
   /** Brain-relative paths committed, sorted. */
   savedPaths: string[]
+  /** True when the save also reached the brain's remote. External mode only. */
+  pushed?: boolean
+  /**
+   * There was nowhere to push: the brain repo has no remote yet, which is a
+   * supported way to keep a brain and never a failure. Distinct from
+   * {@link pushError} so the renderer never has to read one to tell them apart.
+   */
+  localOnly?: boolean
+  /** The push was attempted against a remote and failed. */
+  pushError?: string
   error?: string
 }
 
@@ -188,7 +209,7 @@ export type AgentReachableItem = {
   name: string
   /** What the agent knows about it without opening it. */
   detail: string
-  /** Repo-relative POSIX path, when it is a file. */
+  /** Where to open it: repo-relative POSIX when it's in the repo, absolute when it's an external brain document. */
   path?: string
 }
 
@@ -232,5 +253,83 @@ export type BrainRemovalResult = {
   backupPath?: string
   /** True when the removal itself was committed. */
   committed: boolean
+  error?: string
+}
+
+export type BrainMode = 'embedded' | 'external'
+
+/** Where a repo's brain is, resolved. The value that replaces `repoPath + '.buildex'`. */
+export type BrainLocation = {
+  /** Absolute path to the brain folder. */
+  root: string
+  /** Absolute path to the git repo versioning it; equals `root` in external mode. */
+  gitRoot: string
+  /** Pathspec scoping git commands to the brain: `.buildex` embedded, `.` external. */
+  pathspec: string
+  mode: BrainMode
+  /** The brain repo's remote, when it has one. External only. */
+  remote?: string
+}
+
+export type BrainResolution =
+  | { status: 'ready'; location: BrainLocation }
+  /** A pointer names a brain this machine has not cloned yet. */
+  | { status: 'needs-clone'; remote: string; suggestedPath: string }
+  | { status: 'broken'; reason: 'missing' | 'not-a-repo'; path: string }
+
+export type BrainResolveRequest = { repoPath: string }
+
+export type BrainCloneRequest = { repoPath: string; remote: string; targetPath: string }
+
+export type BrainCloneResult = { ok: boolean; path?: string; error?: string }
+
+export type BrainMigrateRequest = {
+  repoPath: string
+  brainPath: string
+  remote?: string
+  writePointer: boolean
+}
+
+export type BrainMigrationResult = {
+  ok: boolean
+  backupPath?: string
+  /** Brain-relative paths now in the brain repo, sorted. */
+  movedPaths: string[]
+  error?: string
+}
+
+/**
+ * Point a repo at a brain that already exists, with nothing to move — the
+ * pristine-repo path `migrate` cannot serve, since `migrate` requires an
+ * embedded brain on disk to copy from.
+ */
+export type BrainBindRequest = {
+  repoPath: string
+  brainPath: string
+  remote?: string
+  writePointer: boolean
+}
+
+export type BrainBindResult = {
+  ok: boolean
+  error?: string
+}
+
+export type BrainPushRequest = { repoPath: string }
+
+/** Sharing a save that was already committed here. External mode only. */
+export type BrainPushResult = {
+  pushed: boolean
+  /** No remote to push to — nothing failed, and a retry cannot help. */
+  localOnly?: boolean
+  /** The push was attempted and failed. */
+  error?: string
+}
+
+export type BrainPullRequest = { repoPath: string }
+
+export type BrainPullResult = {
+  pulled: boolean
+  diverged: boolean
   error?: string
 }
