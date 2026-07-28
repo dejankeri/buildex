@@ -133,3 +133,5 @@ tools/benchmarks/results/terminal-pipeline-*.json
 
 # Brainstorming specs and plans; working notes, not shipped docs
 /docs/superpowers/
+.gstack/
+.buildex-marketing/
