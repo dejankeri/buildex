@@ -71,7 +71,7 @@ BUILDEX-PATCHES.md
 
 | File | Change |
 |---|---|
-| `package.json` | `version` follows BuildEx's own line (`0.1.7`), not Orca's. **Expect a conflict here on every rebase** — always keep ours |
+| `package.json` | `version` follows BuildEx's own line (`0.1.8`), not Orca's. **Expect a conflict here on every rebase** — always keep ours |
 | `package.json` | `build:mac:release` calls `verify-buildex-macos-release-env.mjs`, not upstream's |
 | `config/electron-builder.config.cjs` | `dmg.artifactName` → `buildex-macos-${arch}.${ext}`; `mac.extendInfo` permission strings say BuildEx |
 | `config/scripts/verify-packaged-daemon-entry.cjs` | boot-check `spawnSync` timeout 10s → 120s. Only the arm64 slice runs this check, and it is packaged while the multi-GB x64 DMG is still being written — 10s lost that race and failed a healthy build. The gate itself is unchanged |
