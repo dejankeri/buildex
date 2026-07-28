@@ -34,7 +34,10 @@ function verifyPackagedDaemonEntryBoots(resourcesDir, options = {}) {
   const execPath = options.execPath || process.execPath
   const entryPath = assertPackagedDaemonEntryExists(resourcesDir)
 
-  const result = spawnSync(execPath, [entryPath], { encoding: 'utf8', timeout: 10_000 })
+  // Why 120s for a ~0.1s boot: electron-builder packages the arm64 slice while it
+  // is still writing the multi-GB x64 DMG, and a 10s budget lost that race on a
+  // release machine. The timeout only has to catch a true hang, so give it room.
+  const result = spawnSync(execPath, [entryPath], { encoding: 'utf8', timeout: 120_000 })
   if (result.error) {
     throw new Error(
       `[verify-packaged-daemon-entry] could not launch daemon-entry.js: ${result.error.message}`
