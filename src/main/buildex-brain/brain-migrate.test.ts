@@ -129,6 +129,29 @@ describe('migrateBrainToExternal', () => {
     rmSync(result.backupPath ?? '', { recursive: true, force: true })
   })
 
+  it('says where the files went when the repo cannot be pointed at them', async () => {
+    // A bindings file that cannot be written: its parent is a regular file.
+    writeFileSync(path.join(dir, 'blocked'), 'not a directory\n', 'utf8')
+
+    const result = await migrateBrainToExternal(
+      {
+        repoPath: repo,
+        brainPath: brain,
+        writePointer: false,
+        bindingsFile: path.join(dir, 'blocked', 'brains.json')
+      },
+      1_700_000_000_000
+    )
+
+    // The source is already gone by this point, so the one thing the operator
+    // must not be left guessing at is where their brain is now.
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain(brain)
+    expect(result.backupPath).toBeTruthy()
+    expect(existsSync(path.join(brain, 'decisions', 'pricing.md'))).toBe(true)
+    rmSync(result.backupPath ?? '', { recursive: true, force: true })
+  })
+
   it('leaves the agent holding links that resolve into the new brain root', async () => {
     mkdirSync(path.join(repo, '.buildex', 'skills', 'slack-search'), { recursive: true })
     writeFileSync(path.join(repo, '.buildex', 'skills', 'slack-search', 'SKILL.md'), '# S\n')
@@ -153,6 +176,37 @@ describe('migrateBrainToExternal', () => {
       const link = path.join(repo, '.claude', 'skills', name)
       expect(realpathSync(link)).toBe(realpathSync(path.join(brain, 'skills', name)))
     }
+    rmSync(result.backupPath ?? '', { recursive: true, force: true })
+  })
+
+  it('moves what the brain owns and leaves what it does not', async () => {
+    // The company's agent permission policy and its own pack catalog: read from
+    // the code repo in both modes, so taking them changes what the agent may do.
+    writeFileSync(path.join(repo, '.buildex', 'gate-preset.json'), '{"deny":["Bash"]}\n', 'utf8')
+    mkdirSync(path.join(repo, '.buildex', 'catalog', 'slack'), { recursive: true })
+    writeFileSync(path.join(repo, '.buildex', 'catalog', 'slack', 'pack.json'), '{}\n', 'utf8')
+    writeFileSync(path.join(repo, '.buildex', 'packs.json'), '{"packs":{}}\n', 'utf8')
+    mkdirSync(path.join(repo, '.buildex', 'skills', 'slack-search'), { recursive: true })
+    writeFileSync(path.join(repo, '.buildex', 'skills', 'slack-search', 'SKILL.md'), '# S\n')
+
+    const result = await migrateBrainToExternal(
+      { repoPath: repo, brainPath: brain, writePointer: false, bindingsFile },
+      1_700_000_000_000
+    )
+
+    expect(result.ok).toBe(true)
+    expect(existsSync(path.join(brain, 'packs.json'))).toBe(true)
+    expect(existsSync(path.join(brain, 'skills', 'slack-search', 'SKILL.md'))).toBe(true)
+    expect(existsSync(path.join(brain, 'gate-preset.json'))).toBe(false)
+    expect(existsSync(path.join(brain, 'catalog'))).toBe(false)
+
+    // Still where the code repo reads them from, and still what git holds.
+    expect(readFileSync(path.join(repo, '.buildex', 'gate-preset.json'), 'utf8')).toBe(
+      '{"deny":["Bash"]}\n'
+    )
+    expect(existsSync(path.join(repo, '.buildex', 'catalog', 'slack', 'pack.json'))).toBe(true)
+    expect(existsSync(path.join(repo, '.buildex', 'skills'))).toBe(false)
+    expect(existsSync(path.join(repo, '.buildex', 'decisions'))).toBe(false)
     rmSync(result.backupPath ?? '', { recursive: true, force: true })
   })
 })

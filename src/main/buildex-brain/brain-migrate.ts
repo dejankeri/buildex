@@ -1,7 +1,9 @@
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, rmdirSync, rmSync } from 'node:fs'
+import type { Dirent } from 'node:fs'
 import path from 'node:path'
-import type { BrainMigrationResult } from '../../shared/buildex-brain-types'
+import type { BrainLocation, BrainMigrationResult } from '../../shared/buildex-brain-types'
 import { gitExecFileAsync } from '../git/runner'
+import { PACK_STATE_FILE_NAME } from '../buildex-packs/pack-state'
 import { relinkBrainSkills } from '../buildex-packs/skill-link'
 import { BACKUP_ROOT, backupStamp } from './brain-remove'
 import { bindRepoToBrain, rememberClone } from './brain-bindings'
@@ -59,12 +61,13 @@ export async function migrateBrainToExternal(
     }
   }
 
+  const owned = brainOwnedEntries(source)
   try {
-    // Everything except the pointer, which belongs to the code repo.
-    cpSync(source.root, target.root, {
-      recursive: true,
-      filter: (from) => path.basename(from) !== 'brain.json'
-    })
+    for (const relative of owned) {
+      const to = path.join(target.root, ...relative.split('/'))
+      mkdirSync(path.dirname(to), { recursive: true })
+      cpSync(path.join(source.root, ...relative.split('/')), to, { recursive: true })
+    }
     // commitBrain signals failure by return value, not by throwing — an unset
     // git identity or an empty diff must stop this before the source is touched.
     const committed = await commitBrain(target, MIGRATION_MESSAGE)
@@ -75,15 +78,19 @@ export async function migrateBrainToExternal(
     return { ok: false, backupPath, movedPaths: [], error: message(error) }
   }
 
+  const pathspecs = owned.map((relative) => `${source.pathspec}/${relative}`)
   try {
-    await gitExecFileAsync(['rm', '-r', '-f', '--quiet', '--', source.pathspec], {
+    await gitExecFileAsync(['rm', '-r', '-f', '--quiet', '--', ...pathspecs], {
       cwd: request.repoPath
     })
   } catch {
     // Untracked, or no git here: the plain removal below still applies.
   }
   try {
-    rmSync(source.root, { recursive: true, force: true })
+    for (const relative of owned) {
+      rmSync(path.join(source.root, ...relative.split('/')), { recursive: true, force: true })
+    }
+    removeEmptyDirectories(source.root)
   } catch (error) {
     return { ok: false, backupPath, movedPaths, error: message(error) }
   }
@@ -129,6 +136,51 @@ export async function migrateBrainToExternal(
   relinkBrainSkills(request.repoPath, target)
 
   return { ok: true, backupPath, movedPaths }
+}
+
+/**
+ * What the brain owns, brain-relative: its documents, `skills/` and `packs.json`.
+ *
+ * Deliberately not "everything in `.buildex/`". The folder is also where the
+ * company's gate preset and its own pack catalog live, and those are read from
+ * the code repo in both modes — moving them would silently swap the agent's
+ * permission policy for the shipped default.
+ */
+function brainOwnedEntries(source: BrainLocation): string[] {
+  const owned = listBrainDocumentPaths(source)
+  for (const entry of ['skills', PACK_STATE_FILE_NAME]) {
+    if (existsSync(path.join(source.root, entry))) {
+      owned.push(entry)
+    }
+  }
+  return owned
+}
+
+/**
+ * Tidy the folders the moved documents lived in, deepest first. `root` itself
+ * stays: in external mode `.buildex/` is where the pointer goes.
+ */
+function removeEmptyDirectories(root: string): void {
+  let entries: Dirent[]
+  try {
+    entries = readdirSync(root, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue
+    }
+    const child = path.join(root, entry.name)
+    removeEmptyDirectories(child)
+    try {
+      // rmdir, not a recursive delete: if the emptiness check were ever wrong,
+      // this refuses where rm -r would take the contents with it.
+      rmdirSync(child)
+    } catch {
+      // Not empty, or gone already.
+    }
+  }
 }
 
 function message(error: unknown): string {
