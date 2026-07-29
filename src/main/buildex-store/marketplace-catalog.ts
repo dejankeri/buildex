@@ -1,5 +1,6 @@
 import path from 'node:path'
 import type {
+  CompanyMarketplace,
   StoreCatalog,
   StoreEntry,
   StoreMarketplace,
@@ -79,6 +80,34 @@ export const KNOWN_MARKETPLACES: KnownMarketplace[] = [
   }
 ]
 
+/** The ids a company marketplace may not take, because a bundled one holds them. */
+export const RESERVED_MARKETPLACE_IDS: readonly string[] = KNOWN_MARKETPLACES.map(
+  (marketplace) => marketplace.id
+)
+
+/**
+ * The bundled marketplaces plus whatever this company added.
+ *
+ * A company entry whose id collides with a bundled one is dropped rather than
+ * allowed to win: the id is the key the agent records installs under, so a
+ * shadowed bundled marketplace would report the wrong plugin as installed. The
+ * add path rejects the collision up front; this is the guard for a file that was
+ * hand-edited or pulled from a teammate.
+ */
+export function allMarketplaces(company: readonly CompanyMarketplace[]): StoreMarketplace[] {
+  const taken = new Set(RESERVED_MARKETPLACE_IDS.map((id) => id.toLowerCase()))
+  const added: StoreMarketplace[] = []
+  for (const marketplace of company) {
+    const key = marketplace.id.toLowerCase()
+    if (taken.has(key)) {
+      continue
+    }
+    taken.add(key)
+    added.push({ ...marketplace, origin: 'company' })
+  }
+  return [...KNOWN_MARKETPLACES, ...added]
+}
+
 /** How an install is keyed, matching what the agent writes down. */
 export function installKey(pluginName: string, marketplaceId: string): string {
   return `${pluginName}@${marketplaceId}`
@@ -91,6 +120,8 @@ export type StoreCatalogInput = {
   installed: ReadonlySet<string>
   /** What this company expects installed, from the brain. */
   roster?: StoreRoster | null
+  /** Where company marketplaces are written, or null when there is no brain. */
+  marketplacesPath?: string | null
   /** Set when the workspace's agent has no plugin system BuildEx can drive. */
   unsupportedAgent?: string | null
 }
@@ -164,6 +195,7 @@ export function readStoreCatalog(input: StoreCatalogInput): StoreCatalog {
   return {
     entries,
     marketplaces,
+    marketplacesPath: input.marketplacesPath ?? null,
     roster: input.roster ?? null,
     // Freshness is a fact about the cache, not about the shelf, so the caller
     // that read the cache fills these in.

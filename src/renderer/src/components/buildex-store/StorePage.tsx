@@ -1,5 +1,15 @@
 import React, { useMemo, useRef, useState } from 'react'
-import { Briefcase, Code2, Loader2, RefreshCw, Search, ShieldCheck, Store, X } from 'lucide-react'
+import {
+  Briefcase,
+  Code2,
+  Library,
+  Loader2,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Store,
+  X
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
@@ -10,12 +20,14 @@ import type {
   StoreRequirement,
   StoreSegment
 } from '../../../../shared/buildex-store-types'
+import StoreMarketplacesDialog from './StoreMarketplacesDialog'
 import StoreNotices from './StoreNotices'
 import StoreRosterBanner from './StoreRosterBanner'
 import StoreShelf from './StoreShelf'
 import UngatedInstallDialog from './UngatedInstallDialog'
 import { splitStoreEntriesBySegment, storeEntryKey } from './store-entry-search'
 import { resolveRosterStatus } from './store-roster-status'
+import { useCompanyMarketplaces } from './use-company-marketplaces'
 import { useRosterBulkInstall } from './use-roster-bulk-install'
 import { useStoreCatalog } from './use-store-catalog'
 import { useStoreWorkspaceNotices } from './use-store-workspace-notices'
@@ -52,7 +64,9 @@ export default function StorePage(): React.JSX.Element {
   const [actionError, setActionError] = useState<string | null>(null)
   const [pendingUngated, setPendingUngated] = useState<StoreEntry | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [marketplacesOpen, setMarketplacesOpen] = useState(false)
   const bulk = useRosterBulkInstall(repoPath, refresh)
+  const marketplaces = useCompanyMarketplaces(repoPath, refresh)
 
   const shelves = useMemo(
     () => splitStoreEntriesBySegment(catalog.entries, query),
@@ -153,6 +167,21 @@ export default function StorePage(): React.JSX.Element {
             })}
           </span>
         ) : null}
+        {/* Why here: which marketplaces this company reads is the question behind
+            everything on the shelf, so it belongs next to the shelf and not in a
+            settings page two levels away. */}
+        <button
+          type="button"
+          aria-label={translate('buildex.store.marketplaces.open', 'Marketplaces')}
+          title={translate(
+            'buildex.store.marketplaces.openHint',
+            'Choose where this company’s apps come from.'
+          )}
+          onClick={() => setMarketplacesOpen(true)}
+          className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent"
+        >
+          <Library size={12} />
+        </button>
         {/* Why: indexes are fetched, not bundled, so the operator needs a way to
             go and get them now rather than waiting for the cache to age out. */}
         <button
@@ -265,6 +294,23 @@ export default function StorePage(): React.JSX.Element {
           </TabsContent>
         ))}
       </Tabs>
+
+      <StoreMarketplacesDialog
+        open={marketplacesOpen}
+        onOpenChange={(next) => {
+          setMarketplacesOpen(next)
+          if (!next) {
+            marketplaces.clearError()
+          }
+        }}
+        marketplaces={catalog.marketplaces}
+        marketplacesPath={catalog.marketplacesPath}
+        repoPath={repoPath}
+        onAdd={marketplaces.add}
+        onRemove={marketplaces.remove}
+        busy={marketplaces.busy}
+        error={marketplaces.error}
+      />
 
       <UngatedInstallDialog
         entry={pendingUngated}

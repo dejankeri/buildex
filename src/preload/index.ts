@@ -134,6 +134,9 @@ import type {
   StoreCredentialSaveRequest,
   StoreInstallRequest,
   StoreInstallResult,
+  StoreMarketplaceAddRequest,
+  StoreMarketplaceRemoveRequest,
+  StoreMarketplaceResult,
   StoreRefreshResult,
   StoreRosterResult,
   StoreRosterSetRequest
@@ -2371,7 +2374,11 @@ const api = {
     clearCredential: (request: StoreCredentialClearRequest): Promise<StoreCredentialResult> =>
       ipcRenderer.invoke('buildex-store:clearCredential', request),
     setRosterEntry: (request: StoreRosterSetRequest): Promise<StoreRosterResult> =>
-      ipcRenderer.invoke('buildex-store:setRosterEntry', request)
+      ipcRenderer.invoke('buildex-store:setRosterEntry', request),
+    addMarketplace: (request: StoreMarketplaceAddRequest): Promise<StoreMarketplaceResult> =>
+      ipcRenderer.invoke('buildex-store:addMarketplace', request),
+    removeMarketplace: (request: StoreMarketplaceRemoveRequest): Promise<StoreMarketplaceResult> =>
+      ipcRenderer.invoke('buildex-store:removeMarketplace', request)
   },
 
   buildexGate: {
