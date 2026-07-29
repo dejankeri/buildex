@@ -35,6 +35,15 @@
 > source (see [Run it](#run-it)). Read [the caveat](#running-alongside-orca) before running this
 > next to your daily Orca.
 
+<p align="center">
+  <img src="docs/assets/console-session.png" width="900"
+       alt="The BuildEx console: navigation and open sessions on the left, an agent session in the middle answering a question about retainer renewals with a table of clients, dates, values and owners, and the workspace's files on the right." />
+</p>
+
+<p align="center">
+  <em>Ask in plain English. The answer comes back from your own files, and the outward step waits for you.</em>
+</p>
+
 ---
 
 ## What it is
@@ -57,6 +66,39 @@ Built for the operator who runs the company, not the engineer.
 | **Store & Apps** | 11 capability packs ship inside the app (Slack, Stripe, Linear, Notion, HubSpot, Asana, Calendly, Canva, Intercom, HeyGen, Protocol), so a fresh repo has a full shelf on first run. Installing writes skill scaffolds into the repo and never overwrites an existing skill. A repo's own catalog overrides a shipped pack by id. |
 | **Agent context** | Writes `.claude/company-context.md` and an `@`-import into `.claude/CLAUDE.md`, so the next session starts knowing the company. Refreshed automatically whenever the map can have changed — there is no button, because a context someone has to remember to refresh is a context that is usually wrong. |
 | **The gate** | An allow/ask/deny preset written into the repo's `.claude/settings.json`, so the agent's own runtime enforces it. A company can override it in `.buildex/gate-preset.json`; a broken override falls back to the shipped preset rather than to no gates. |
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/brain-setup.png"
+           alt="Setting up a company brain: choosing whether it lives in this repo or a separate brain repo, a one-line description of the company, and which sections to start with." />
+      <p><strong>Setting one up is a choice.</strong> Pick where the brain lives — in this repo, or one of
+      its own that every repo can share — and which sections you want. Nothing is written until you press
+      the button.</p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/company-brain.png"
+           alt="The Company Brain: nine sections - strategy, decisions, rules, clients, product, people, finance, content and reviews - each holding a document, with nine documents saved and none unsaved." />
+      <p><strong>Then it fills up.</strong> Nine sections of plain markdown in a repo you own, each with a
+      coverage bar — and every save is a commit you can walk back.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/store-shelf.png"
+           alt="The Store: capability packs including Asana, Calendly, HeyGen, HubSpot, Linear, Protocol and Stripe, with 52 business apps and 231 developer apps available." />
+      <p><strong>A full shelf on first run.</strong> The Store reads the marketplaces your agent already
+      knows about, so what you see is what it can actually reach. Each pack says what it will ask you
+      before it acts.</p>
+    </td>
+    <td width="50%" valign="top">
+      <p><em>The company in these screenshots is invented — a fictional design studio, so no real company
+      data is on display. Everything else is the app as it ships. They are captured from a real launch by
+      <code>tests/e2e/buildex-marketing-capture.spec.ts</code>; regenerate them with
+      <code>BUILDEX_CAPTURE=1</code>.</em></p>
+    </td>
+  </tr>
+</table>
 
 Two things the design insists on: **setting up a brain is a choice** — a repo with no brain is offered
 setup rather than given one, and nothing is written until you pick your sections and press the button.
