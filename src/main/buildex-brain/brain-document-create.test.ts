@@ -1,4 +1,4 @@
-import { mkdtempSync, existsSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, existsSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -64,5 +64,47 @@ describe('createBrainDocument', () => {
 
   it('accepts the brain root', () => {
     expect(createBrainDocument(location(), '', 'Readme').documentId).toBe('readme.md')
+  })
+
+  it('creates a declared section that setup never made', () => {
+    // The operator can decline a section at setup and still press Add on it
+    // later; the folder comes into being with its first document.
+    expect(createBrainDocument(location(), 'finance', 'Runway').documentId).toBe(
+      'finance/runway.md'
+    )
+  })
+
+  it('accepts a nested folder that exists, which is what an entity needs', () => {
+    mkdirSync(path.join(repo, '.buildex/clients/acme'), { recursive: true })
+
+    expect(createBrainDocument(location(), 'clients/acme', 'Renewal').documentId).toBe(
+      'clients/acme/renewal.md'
+    )
+  })
+
+  it('refuses a nested folder nobody has made', () => {
+    const result = createBrainDocument(location(), 'clients/ghost', 'Renewal')
+
+    expect(result.ok).toBe(false)
+    expect(existsSync(path.join(repo, '.buildex/clients/ghost'))).toBe(false)
+  })
+
+  it('refuses every spelling of a walk out of the brain', () => {
+    mkdirSync(path.join(repo, '.buildex/clients'), { recursive: true })
+
+    for (const folder of ['..', '../escape', 'clients/../../escape', '/etc']) {
+      expect(createBrainDocument(location(), folder, 'Escape').ok).toBe(false)
+    }
+    expect(existsSync(path.join(repo, 'escape.md'))).toBe(false)
+  })
+
+  it('refuses a path that names a file rather than a folder', () => {
+    mkdirSync(path.join(repo, '.buildex/strategy'), { recursive: true })
+    createBrainDocument(location(), 'strategy', 'Overview')
+
+    const result = createBrainDocument(location(), 'strategy/overview.md', 'Nested')
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('Not a folder')
   })
 })

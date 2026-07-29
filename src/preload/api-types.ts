@@ -371,6 +371,8 @@ import type {
 import type {
   BrainCreateDocumentRequest,
   BrainCreateDocumentResult,
+  BrainCreateEntityRequest,
+  BrainCreateEntityResult,
   BrainHistoryRequest,
   BrainHistoryResult,
   BrainSaveRequest,
@@ -2390,6 +2392,7 @@ export type PreloadApi = {
   buildexBrainSections: {
     list: () => Promise<BrainSectionsResult>
     createDocument: (request: BrainCreateDocumentRequest) => Promise<BrainCreateDocumentResult>
+    createEntity: (request: BrainCreateEntityRequest) => Promise<BrainCreateEntityResult>
     history: (request: BrainHistoryRequest) => Promise<BrainHistoryResult>
     save: (request: BrainSaveRequest) => Promise<BrainSaveResult>
     skills: (request: BrainSkillsRequest) => Promise<BrainSkillsResult>

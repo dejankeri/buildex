@@ -5,6 +5,8 @@ import type {
   AgentViewRequest,
   BrainCreateDocumentRequest,
   BrainCreateDocumentResult,
+  BrainCreateEntityRequest,
+  BrainCreateEntityResult,
   BrainHistoryRequest,
   BrainHistoryResult,
   BrainResolution,
@@ -25,10 +27,12 @@ import { scanCompanyBrain } from '../buildex-brain/company-brain-service'
 import { BRAIN_SECTIONS, scaffoldCompanyBrain } from '../buildex-brain/brain-scaffold'
 import { buildAgentView } from '../buildex-brain/agent-view'
 import { createBrainDocument } from '../buildex-brain/brain-document-create'
+import { createBrainEntity } from '../buildex-brain/brain-entity-create'
 import { embeddedLocation } from '../buildex-brain/brain-location'
 import { requireBrainLocation, resolveBrainLocation } from './authorized-brain-location'
 import { readBrainHistory, saveBrain } from '../buildex-brain/brain-history'
 import { createBrainSkill, listBrainSkills } from '../buildex-brain/brain-skills'
+import { relinkBrainSkills } from '../buildex-brain/skill-link'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { initializeCompanyRepo } from '../buildex-repo-init'
 import { readInstalledAppSummaries } from '../buildex-store/store-catalog-source'
@@ -126,6 +130,28 @@ export function registerBuildExBrainHandlers(): void {
     }
   )
 
+  // Why: an entity is a folder plus the main file that marks it. Making one by
+  // hand means knowing that convention; this is what means nobody has to.
+  ipcMain.handle(
+    'buildex-brain:createEntity',
+    (_event, request?: BrainCreateEntityRequest): BrainCreateEntityResult => {
+      const repoPath = request?.repoPath?.trim()
+      const title = request?.title?.trim()
+      if (!repoPath || !title) {
+        return { ok: false, error: 'Missing repoPath or title' }
+      }
+      const location = requireBrainLocation(repoPath)
+      if (!location) {
+        return { ok: false, error: BRAIN_UNRESOLVED }
+      }
+      const result = createBrainEntity(location, request?.parentFolder ?? '', title)
+      if (result.ok) {
+        void refreshCompanyContext(repoPath, location, readInstalledAppSummaries())
+      }
+      return result
+    }
+  )
+
   ipcMain.handle(
     'buildex-brain:scan',
     async (_event, request?: BrainScanRequest): Promise<BrainScan> => {
@@ -149,6 +175,10 @@ export function registerBuildExBrainHandlers(): void {
         }
       }
       const { location } = resolution
+      // Why: heals a checkout whose `.claude/skills/` links were never built —
+      // every worktree created before this ran, and any the operator made by
+      // hand. Idempotent: an existing link is recognised, not rewritten.
+      relinkBrainSkills(repoPath, location)
       const scan = await scanCompanyBrain(repoPath, location, resolution, Date.now())
       // Why: opening the Brain is the moment to catch up on anything the agent
       // itself wrote. Not awaited — the screen renders from local state now.

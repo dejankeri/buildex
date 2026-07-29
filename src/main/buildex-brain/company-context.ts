@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import type { BrainLocation, BrainScan } from '../../shared/buildex-brain-types'
+import type { BrainLocation, BrainNode, BrainScan } from '../../shared/buildex-brain-types'
 
 // Auto-feeds the company brain to the coding agent.
 //
@@ -93,6 +93,34 @@ function renderApps(apps: InstalledAppSummary[], location: BrainLocation): strin
 }
 
 /**
+ * The brain's shape, as lines the agent can act on.
+ *
+ * An entity is named and summarised; the documents inside it are not listed.
+ * That is what keeps this bounded as a company grows — a hundred clients is a
+ * hundred lines the agent can read, rather than four hundred filenames it
+ * cannot. An agent that needs what is inside one opens the folder.
+ */
+function renderTree(nodes: BrainNode[], depth = 0): string[] {
+  const lines: string[] = []
+  const indent = '  '.repeat(depth)
+  for (const node of nodes) {
+    if (node.kind === 'entity') {
+      const summary = node.main?.summary
+      lines.push(`${indent}- **${node.title}** \`${node.path}/\`${summary ? ` — ${summary}` : ''}`)
+      continue
+    }
+    const names = node.documents.map((document) => document.name)
+    lines.push(
+      `${indent}- **${node.path === '' ? 'root' : node.path}**${
+        names.length > 0 ? ` — ${names.join(', ')}` : ''
+      }`
+    )
+    lines.push(...renderTree(node.children, depth + 1))
+  }
+  return lines
+}
+
+/**
  * Render the agent-facing context. Deterministic: identical scan in, identical
  * bytes out, so re-syncing an unchanged brain produces no diff.
  */
@@ -125,18 +153,8 @@ export function renderCompanyContext(
 
   lines.push(...renderApps(apps, location))
 
-  const byFolder = new Map<string, string[]>()
-  for (const doc of scan.documents) {
-    const bucket = byFolder.get(doc.folder) ?? []
-    bucket.push(doc.name)
-    byFolder.set(doc.folder, bucket)
-  }
-
   lines.push(`## Documents (${scan.documents.length})`, '')
-  for (const folder of [...byFolder.keys()].sort((a, b) => a.localeCompare(b))) {
-    const names = (byFolder.get(folder) ?? []).slice().sort((a, b) => a.localeCompare(b))
-    lines.push(`- **${folder === '' ? 'root' : folder}** — ${names.join(', ')}`)
-  }
+  lines.push(...renderTree(scan.tree))
   lines.push('')
 
   // Why: the most-linked documents are the ones the company actually organises

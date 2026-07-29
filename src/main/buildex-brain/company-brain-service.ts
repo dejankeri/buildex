@@ -14,9 +14,12 @@ import {
   countHeadings,
   countWords,
   isBrainInitialized,
+  listBrainAttachments,
   listBrainDocumentPaths,
   readDocumentText
 } from './company-brain-scan'
+import { buildBrainTree, firstHeading } from './brain-tree'
+import { BRAIN_SECTIONS } from './brain-scaffold'
 
 // Assembles the company brain: documents, the link graph between them, and
 // which are unsaved. Deterministic — every collection is sorted, so re-scanning
@@ -77,6 +80,9 @@ export async function scanCompanyBrain(
     return {
       id,
       name: documentName(id),
+      // Why: the heading is what somebody wrote; the name is what the filesystem
+      // allows. They differ most where it matters — a dated decision slug.
+      title: firstHeading(text) ?? documentName(id),
       folder: documentFolder(id),
       linksTo: outbound,
       linkedFrom: [...(linkedFrom.get(id) ?? [])].sort(),
@@ -94,6 +100,15 @@ export async function scanCompanyBrain(
     .map(([folderPath, documentCount]) => ({ path: folderPath, documentCount }))
     .sort((a, b) => a.path.localeCompare(b.path))
 
+  // Why: `texts` is already read for the link graph, so the tree costs no extra
+  // file reads — it only needs the main file of each entity, which is in there.
+  const tree = buildBrainTree({
+    documents,
+    attachments: listBrainAttachments(location),
+    sections: BRAIN_SECTIONS.map(({ folder, title, purpose }) => ({ folder, title, purpose })),
+    readText: (id) => texts.get(id) ?? ''
+  })
+
   const orphanIds = documents
     .filter((doc) => doc.linksTo.length === 0 && doc.linkedFrom.length === 0)
     .map((doc) => doc.id)
@@ -110,6 +125,7 @@ export async function scanCompanyBrain(
     embeddedBrainPresent: existsSync(embeddedLocation(repoPath).root),
     documents,
     folders,
+    tree,
     orphanIds,
     totalLinks,
     scannedAt: now

@@ -1,93 +1,121 @@
-import React, { useMemo, useState } from 'react'
-import { FileText, Plus } from 'lucide-react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
-import type { BrainScan, BrainSectionInfo } from '../../../../shared/buildex-brain-types'
+import { useAppStore } from '@/store'
+import type { BrainNode, BrainScan, BrainSectionInfo } from '../../../../shared/buildex-brain-types'
+import BrainEntityPage from './BrainEntityPage'
+import BrainSectionBlock, { type BrainAddKind } from './BrainSectionBlock'
+import { filterBrainTree } from './brain-tree-filter'
 
-// Sections: browse the brain by area, and add to it.
+// Browsing the brain, and adding to it.
 //
-// Coverage bars are the point of this view. A company with eleven decisions and
-// nothing under People has a gap worth seeing, and a bar shows that faster than
-// any number does.
+// Sections stack full width rather than sitting in a card grid, because a grid
+// gave a company's nine areas and its twenty clients the same weight and the
+// same size. The rail is how a long page stays navigable; collapse is how it
+// stays short.
 
-const COVERAGE_STEPS = 4
-
-function coverage(documentCount: number): number {
-  // Why: not a percentage of anything — there is no "right" number of documents
-  // for a section. It is a coarse "empty / thin / filling / solid".
-  if (documentCount === 0) {
-    return 0
-  }
-  if (documentCount <= 2) {
-    return 1
-  }
-  if (documentCount <= 5) {
-    return 2
-  }
-  if (documentCount <= 10) {
-    return 3
-  }
-  return 4
-}
+const CREATE_FAILED = (): string =>
+  translate('buildex.brain.sections.createFailed', 'Could not create it')
 
 export default function BrainSections({
   scan,
   sections,
   repoPath,
+  brainRoot,
   onOpenDocument,
   onCreated
 }: {
   scan: BrainScan
   sections: BrainSectionInfo[]
   repoPath: string | null
+  brainRoot: string | null
   onOpenDocument: (documentId: string) => void
   onCreated: () => void | Promise<void>
 }): React.JSX.Element {
-  const [creatingIn, setCreatingIn] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [openEntity, setOpenEntity] = useState<string | null>(null)
+  const [creatingIn, setCreatingIn] = useState<{ folder: string; kind: BrainAddKind } | null>(null)
   const [title, setTitle] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [current, setCurrent] = useState<string | null>(null)
 
-  const byFolder = useMemo(() => {
-    const map = new Map<string, BrainScan['documents']>()
-    for (const document of scan.documents) {
-      const bucket = map.get(document.folder) ?? []
-      bucket.push(document)
-      map.set(document.folder, bucket)
+  const collapsed = useAppStore((state) => state.collapsedBrainSections)
+  const toggleCollapsed = useAppStore((state) => state.toggleCollapsedBrainSection)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const sectionRefs = useRef(new Map<string, HTMLDivElement>())
+
+  const purposes = useMemo(
+    () => new Map(sections.map((section) => [section.folder, section.purpose])),
+    [sections]
+  )
+  const tree = useMemo(() => filterBrainTree(scan.tree, query), [scan.tree, query])
+  const entity = useMemo(
+    () => (openEntity ? findNode(scan.tree, openEntity) : null),
+    [openEntity, scan.tree]
+  )
+
+  // Why: an entity opened and then renamed or deleted outside BuildEx would
+  // otherwise leave this screen showing nothing at all.
+  useEffect(() => {
+    if (openEntity && !entity) {
+      setOpenEntity(null)
     }
-    return map
-  }, [scan.documents])
+  }, [entity, openEntity])
 
-  // Declared sections first, in their declared order, then anything the company
-  // added that BuildEx does not know about — never hide a folder someone made.
-  const rows = useMemo(() => {
-    const declared = sections.map((section) => ({
-      folder: section.folder,
-      title: section.title,
-      purpose: section.purpose
-    }))
-    const known = new Set(declared.map((entry) => entry.folder))
-    const extra = [...byFolder.keys()]
-      .filter((folder) => !known.has(folder))
-      .sort((a, b) => a.localeCompare(b))
-      .map((folder) => ({ folder, title: folder || 'Root', purpose: '' }))
-    return [...declared, ...extra]
-  }, [byFolder, sections])
+  const isCollapsed = useCallback(
+    (folder: string): boolean =>
+      // Filtering is a search: honouring collapse would hide the very thing
+      // somebody just typed the name of.
+      query.trim() === '' && collapsed.has(`${repoPath ?? ''}::${folder}`),
+    [collapsed, query, repoPath]
+  )
 
-  const create = async (folder: string): Promise<void> => {
+  const openAttachment = useCallback(
+    (attachmentId: string): void => {
+      if (!brainRoot) {
+        return
+      }
+      void window.api.shell.openPath(`${brainRoot.replace(/[/\\]$/, '')}/${attachmentId}`)
+    },
+    [brainRoot]
+  )
+
+  const create = async (): Promise<void> => {
     const name = title.trim()
-    if (!repoPath || !name) {
+    if (!repoPath || !creatingIn || !name) {
       setCreatingIn(null)
       return
     }
+    const { folder, kind } = creatingIn
+    setCreatingIn(null)
+    setTitle('')
+
+    if (kind === 'entity') {
+      const result = await window.api.buildexBrainSections.createEntity({
+        repoPath,
+        parentFolder: folder,
+        title: name
+      })
+      if (!result.ok) {
+        setError(result.error ?? CREATE_FAILED())
+        return
+      }
+      setError(null)
+      await onCreated()
+      // Straight into the entity that was just made: the next thing anyone wants
+      // is to put something in it.
+      setOpenEntity(result.entityPath ?? null)
+      return
+    }
+
     const result = await window.api.buildexBrainSections.createDocument({
       repoPath,
       folder,
       title: name
     })
-    setCreatingIn(null)
-    setTitle('')
     if (!result.ok) {
-      setError(result.error ?? 'Could not create the document')
+      setError(result.error ?? CREATE_FAILED())
       return
     }
     setError(null)
@@ -97,100 +125,179 @@ export default function BrainSections({
     }
   }
 
+  if (entity) {
+    return (
+      <BrainEntityPage
+        node={entity}
+        breadcrumb={breadcrumbFor(scan.tree, entity.path)}
+        onBack={() => setOpenEntity(null)}
+        onOpenDocument={onOpenDocument}
+        onOpenAttachment={openAttachment}
+      />
+    )
+  }
+
   return (
-    <div className="scrollbar-sleek min-h-0 flex-1 overflow-y-auto p-4">
-      {error ? <p className="mb-3 text-[12px] text-destructive">{error}</p> : null}
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
-        {rows.map((row) => {
-          const documents = (byFolder.get(row.folder) ?? [])
-            .slice()
-            .sort((a, b) => a.name.localeCompare(b.name))
-          const filled = coverage(documents.length)
-          return (
-            <section
-              key={row.folder || 'root'}
-              className="flex flex-col gap-2 rounded-xl border border-border bg-card p-3 shadow-xs"
-            >
-              <header className="flex items-baseline gap-2">
-                <h2 className="text-[13px] font-semibold">{row.title}</h2>
-                <span className="text-[11px] tabular-nums text-muted-foreground">
-                  {documents.length}
+    <div className="flex min-h-0 flex-1">
+      <nav className="scrollbar-sleek flex w-44 shrink-0 flex-col gap-2 overflow-y-auto border-r border-border p-3">
+        <label className="relative flex items-center">
+          <Search size={12} className="absolute left-2 text-muted-foreground/50" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={translate('buildex.brain.sections.filter', 'Filter')}
+            className="h-7 w-full rounded-md border border-input bg-background pl-7 pr-2 text-[12px] outline-none focus:ring-[3px] focus:ring-ring/50"
+          />
+        </label>
+
+        <ul className="flex flex-col">
+          {tree.map((node) => (
+            <li key={node.path || 'root'}>
+              <button
+                type="button"
+                onClick={() => {
+                  sectionRefs.current.get(node.path)?.scrollIntoView({ block: 'start' })
+                }}
+                aria-current={current === node.path ? 'true' : undefined}
+                className={cn(
+                  'flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[12px] hover:bg-accent',
+                  current === node.path
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground'
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate">{node.title}</span>
+                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/60">
+                  {node.entityCount > 0 ? node.entityCount : node.documentCount}
                 </span>
-                <span className="ml-auto flex gap-0.5" aria-hidden>
-                  {Array.from({ length: COVERAGE_STEPS }, (_unused, index) => (
-                    <span
-                      key={index}
-                      className={cn(
-                        'h-1.5 w-3 rounded-[2px]',
-                        index < filled ? 'bg-primary/70' : 'bg-muted-foreground/15'
-                      )}
-                    />
-                  ))}
-                </span>
-              </header>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </nav>
 
-              {row.purpose ? (
-                <p className="text-[11px] leading-snug text-muted-foreground/80">{row.purpose}</p>
-              ) : null}
+      <div
+        ref={scrollRef}
+        onScroll={() => setCurrent(topmostSection(scrollRef.current, sectionRefs.current))}
+        className="scrollbar-sleek min-h-0 flex-1 overflow-y-auto px-5"
+      >
+        {error ? <p className="pt-3 text-[12px] text-destructive">{error}</p> : null}
 
-              <ul className="flex flex-col">
-                {documents.map((document) => (
-                  <li key={document.id}>
-                    <button
-                      type="button"
-                      onClick={() => onOpenDocument(document.id)}
-                      className="flex w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-[12px] hover:bg-accent"
-                    >
-                      <FileText size={11} className="shrink-0 text-muted-foreground/50" />
-                      <span className="min-w-0 flex-1 truncate">{document.name}</span>
-                      {document.changed ? (
-                        <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
-                {documents.length === 0 ? (
-                  <li className="px-1 py-0.5 text-[12px] text-muted-foreground/50">
-                    {translate('buildex.brain.sections.empty', 'Nothing here yet')}
-                  </li>
-                ) : null}
-              </ul>
+        {tree.length === 0 ? (
+          <p className="pt-6 text-[12px] text-muted-foreground/60">
+            {translate('buildex.brain.sections.noMatches', 'Nothing matches that')}
+          </p>
+        ) : null}
 
-              {creatingIn === row.folder ? (
-                <input
-                  autoFocus
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  onBlur={() => setCreatingIn(null)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      void create(row.folder)
-                    }
-                    if (event.key === 'Escape') {
-                      setCreatingIn(null)
-                    }
-                  }}
-                  placeholder={translate('buildex.brain.sections.nameIt', 'Name it, then Enter')}
-                  className="h-7 w-full rounded-md border border-input bg-background px-2 text-[12px] outline-none focus:ring-[3px] focus:ring-ring/50"
-                />
-              ) : (
-                <button
-                  type="button"
-                  disabled={!repoPath}
-                  onClick={() => {
-                    setTitle('')
-                    setCreatingIn(row.folder)
-                  }}
-                  className="inline-flex h-6 items-center gap-1 self-start rounded-md px-1 text-[11px] text-muted-foreground hover:bg-accent disabled:opacity-40"
-                >
-                  <Plus size={11} />
-                  {translate('buildex.brain.sections.add', 'Add')}
-                </button>
-              )}
-            </section>
-          )
-        })}
+        {tree.map((node) => (
+          <div
+            key={node.path || 'root'}
+            ref={(element) => {
+              if (element) {
+                sectionRefs.current.set(node.path, element)
+              } else {
+                sectionRefs.current.delete(node.path)
+              }
+            }}
+            className="border-b border-border last:border-b-0"
+          >
+            <BrainSectionBlock
+              node={node}
+              purpose={purposes.get(node.path)}
+              collapsed={isCollapsed(node.path)}
+              onToggleCollapsed={(folder) => toggleCollapsed(`${repoPath ?? ''}::${folder}`)}
+              onOpenDocument={onOpenDocument}
+              onOpenEntity={setOpenEntity}
+              onOpenAttachment={openAttachment}
+              onAdd={(folder, kind) => {
+                setTitle('')
+                setCreatingIn({ folder, kind })
+              }}
+            />
+
+            {creatingIn?.folder === node.path ? (
+              <input
+                autoFocus
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                onBlur={() => setCreatingIn(null)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    void create()
+                  }
+                  if (event.key === 'Escape') {
+                    setCreatingIn(null)
+                  }
+                }}
+                placeholder={
+                  creatingIn.kind === 'entity'
+                    ? translate('buildex.brain.sections.nameEntity', 'Name it, then Enter')
+                    : translate('buildex.brain.sections.nameIt', 'Name it, then Enter')
+                }
+                className="mb-4 h-7 w-full max-w-sm rounded-md border border-input bg-background px-2 text-[12px] outline-none focus:ring-[3px] focus:ring-ring/50"
+              />
+            ) : null}
+          </div>
+        ))}
       </div>
     </div>
   )
+}
+
+function findNode(nodes: BrainNode[], path: string): BrainNode | null {
+  for (const node of nodes) {
+    if (node.path === path) {
+      return node
+    }
+    const nested = findNode(node.children, path)
+    if (nested) {
+      return nested
+    }
+  }
+  return null
+}
+
+/** Titles of everything above `path`, outermost first, ending in the entity. */
+function breadcrumbFor(nodes: BrainNode[], path: string): string[] {
+  const walk = (node: BrainNode, trail: string[]): string[] | null => {
+    const next = [...trail, node.title]
+    if (node.path === path) {
+      return next
+    }
+    for (const child of node.children) {
+      const found = walk(child, next)
+      if (found) {
+        return found
+      }
+    }
+    return null
+  }
+  for (const node of nodes) {
+    const found = walk(node, [])
+    if (found) {
+      return found
+    }
+  }
+  return []
+}
+
+/** Which section the reader is actually looking at, for the rail's highlight. */
+function topmostSection(
+  container: HTMLDivElement | null,
+  refs: Map<string, HTMLDivElement>
+): string | null {
+  if (!container) {
+    return null
+  }
+  const top = container.getBoundingClientRect().top
+  let best: { path: string; distance: number } | null = null
+  for (const [path, element] of refs) {
+    const distance = element.getBoundingClientRect().top - top
+    // Why: the last section whose top has passed the fold. A section still below
+    // it is not what anyone is reading.
+    if (distance <= 8 && (!best || distance > best.distance)) {
+      best = { path, distance }
+    }
+  }
+  return best?.path ?? [...refs.keys()][0] ?? null
 }

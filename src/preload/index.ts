@@ -113,6 +113,8 @@ import type {
 import type {
   BrainCreateDocumentRequest,
   BrainCreateDocumentResult,
+  BrainCreateEntityRequest,
+  BrainCreateEntityResult,
   BrainHistoryRequest,
   BrainHistoryResult,
   BrainSaveRequest,
@@ -2343,6 +2345,8 @@ const api = {
     list: (): Promise<BrainSectionsResult> => ipcRenderer.invoke('buildex-brain:sections'),
     createDocument: (request: BrainCreateDocumentRequest): Promise<BrainCreateDocumentResult> =>
       ipcRenderer.invoke('buildex-brain:createDocument', request),
+    createEntity: (request: BrainCreateEntityRequest): Promise<BrainCreateEntityResult> =>
+      ipcRenderer.invoke('buildex-brain:createEntity', request),
     history: (request: BrainHistoryRequest): Promise<BrainHistoryResult> =>
       ipcRenderer.invoke('buildex-brain:history', request),
     save: (request: BrainSaveRequest): Promise<BrainSaveResult> =>

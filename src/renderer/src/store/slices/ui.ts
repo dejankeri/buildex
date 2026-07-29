@@ -898,6 +898,9 @@ export type UISlice = {
   setFilterRepoIds: (ids: string[]) => void
   collapsedGroups: Set<string>
   toggleCollapsedGroup: (key: string) => void
+  /** Keyed `<repoPath>::<sectionFolder>` so two repos never share a choice. */
+  collapsedBrainSections: Set<string>
+  toggleCollapsedBrainSection: (key: string) => void
   worktreeCardProperties: WorktreeCardProperty[]
   _worktreeCardModeDefaulted: boolean
   setWorktreeCardMode: (mode: WorktreeCardMode) => void
@@ -2132,6 +2135,19 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       return { collapsedGroups: next }
     }),
 
+  collapsedBrainSections: new Set<string>(),
+  toggleCollapsedBrainSection: (key) =>
+    set((s) => {
+      const next = new Set(s.collapsedBrainSections)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      window.api.ui.set({ collapsedBrainSections: [...next] }).catch(console.error)
+      return { collapsedBrainSections: next }
+    }),
+
   worktreeCardProperties: [...DEFAULT_WORKTREE_CARD_PROPERTIES],
   _worktreeCardModeDefaulted: true,
   setWorktreeCardMode: (mode) => {
@@ -2488,6 +2504,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
             ? persistedFilterRepoIds
             : persistedFilterRepoIds.filter((repoId) => validRepoIds.has(repoId)),
         collapsedGroups: new Set(ui.collapsedGroups ?? []),
+        collapsedBrainSections: new Set(ui.collapsedBrainSections ?? []),
         uiZoomLevel: ui.uiZoomLevel ?? 0,
         editorFontZoomLevel: ui.editorFontZoomLevel ?? 0,
         worktreeCardProperties: normalizeWorktreeCardProperties(ui.worktreeCardProperties),

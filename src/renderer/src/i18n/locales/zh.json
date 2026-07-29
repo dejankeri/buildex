@@ -14004,7 +14004,17 @@
       "sections": {
         "empty": "Nothing here yet",
         "nameIt": "Name it, then Enter",
-        "add": "Add"
+        "add": "Add",
+        "newEntity": "New entity",
+        "newDocument": "New document",
+        "entityCount": "{{value0}} entities",
+        "documentCount": "{{value0}} documents",
+        "createFailed": "Could not create it",
+        "filter": "Filter",
+        "noMatches": "Nothing matches that",
+        "nameEntity": "Name it, then Enter",
+        "entityCountOne": "1 entity",
+        "documentCountOne": "1 document"
       },
       "skills": {
         "intro": "Skills live in .buildex/skills and travel with the repo — push, and your team has them.",
@@ -14083,6 +14093,17 @@
         "clone": "Clone the brain",
         "disconnect": "Disconnect this repo",
         "cloneFailed": "Could not clone the brain"
+      },
+      "entity": {
+        "unsaved": "Unsaved",
+        "noSummary": "No summary yet",
+        "edit": "Edit",
+        "documents": "Documents",
+        "attachments": "Attachments",
+        "attachmentsHint": "Opened outside BuildEx. Their contents are never read, and never reach the agent."
+      },
+      "attachment": {
+        "open": "Open outside BuildEx"
       }
     },
     "sidebar": {

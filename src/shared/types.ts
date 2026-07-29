@@ -3276,6 +3276,8 @@ export type PersistedUIState = {
   showDotfilesByWorktree?: Record<string, boolean>
   filterRepoIds: string[]
   collapsedGroups: string[]
+  /** Collapsed Brain sections, keyed `<repoPath>::<sectionFolder>`. */
+  collapsedBrainSections?: string[]
   uiZoomLevel: number
   editorFontZoomLevel: number
   worktreeCardProperties: WorktreeCardProperty[]

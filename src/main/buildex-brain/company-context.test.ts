@@ -65,6 +65,57 @@ describe('renderCompanyContext', () => {
     expect(rendered).toContain('**notes** — side')
     expect(rendered.indexOf('`hub.md`')).toBeLessThan(rendered.indexOf('`a.md`'))
   })
+
+  it('titles a document by its heading, and falls back to the filename', async () => {
+    // At size this is the difference between a readable decisions folder and a
+    // wall of `2026-01-14-deprecate-the-v1-api-with-a-twelve-month-window`.
+    write(
+      'decisions/2026-01-14-deprecate-the-v1-api.md',
+      '# Deprecate the v1 API\n\nWith notice.\n'
+    )
+    write('decisions/untitled.md', 'No heading in this one.\n')
+
+    const scanned = await scan()
+
+    expect(scanned.documents.find((entry) => entry.name.startsWith('2026-01-14'))?.title).toBe(
+      'Deprecate the v1 API'
+    )
+    expect(scanned.documents.find((entry) => entry.name === 'untitled')?.title).toBe('untitled')
+  })
+
+  it('names an entity and its summary instead of listing what is inside it', async () => {
+    write('clients/acme/index.md', '# Acme Corp\n\nRenewal is Q3.\n')
+    write('clients/acme/pricing.md', '# Pricing')
+    write('clients/acme/calls/2026-03-11.md', '# Call')
+
+    const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+
+    expect(rendered).toContain('**Acme Corp** `clients/acme/` — Renewal is Q3.')
+    expect(rendered).not.toContain('pricing')
+    expect(rendered).not.toContain('2026-03-11')
+  })
+
+  it('stays bounded as clients multiply: one line each, not one per file', async () => {
+    // The shape this replaced emitted a bullet per folder path, so every client
+    // added three or four lines of near-identical noise to every agent prompt.
+    const addClients = (from: number, to: number): void => {
+      for (let index = from; index < to; index += 1) {
+        write(`clients/client-${index}/index.md`, `# Client ${index}\n\nA summary.\n`)
+        write(`clients/client-${index}/notes.md`, '# Notes')
+        write(`clients/client-${index}/calls/first.md`, '# Call')
+      }
+    }
+    const clientLines = (rendered: string): number =>
+      rendered.split('\n').filter((line) => line.includes('clients/client-')).length
+
+    addClients(0, 2)
+    const two = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+    addClients(2, 6)
+    const six = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+
+    expect(clientLines(two)).toBe(2)
+    expect(clientLines(six)).toBe(6)
+  })
 })
 
 describe('syncCompanyContext', () => {
@@ -248,6 +299,7 @@ describe('renderCompanyContext brain location', () => {
         {
           id: 'decisions/pricing.md',
           name: 'pricing',
+          title: 'Pricing',
           folder: 'decisions',
           linksTo: [],
           linkedFrom: [],

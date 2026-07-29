@@ -244,6 +244,7 @@ export default function BrainPage(): React.JSX.Element {
               scan={scan}
               sections={sections}
               repoPath={repoPath}
+              brainRoot={brainRoot}
               onOpenDocument={openDocument}
               onCreated={refresh}
             />

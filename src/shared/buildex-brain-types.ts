@@ -7,6 +7,15 @@ export type BrainDocument = {
   id: string
   /** Filename without extension, used as the wikilink target. */
   name: string
+  /**
+   * What to call it on screen: the first `# H1`, falling back to `name`.
+   *
+   * Not cosmetic at size — a decisions folder is a wall of
+   * `2026-01-14-deprecate-the-v1-api-with-a-twelve-month-window`, and fifteen of
+   * those truncated to a chip width are unreadable. The heading is the sentence
+   * somebody actually wrote.
+   */
+  title: string
   /** Containing directory, `''` at the repo root. */
   folder: string
   /** Documents this one links to, by id. */
@@ -22,6 +31,46 @@ export type BrainDocument = {
 export type BrainFolder = {
   path: string
   documentCount: number
+}
+
+/** A file in the brain that is not markdown — a contract, a forecast, a logo. */
+export type BrainAttachment = {
+  /** Brain-relative POSIX path. */
+  id: string
+  /** Real filename, extension included: an attachment is known by its own name. */
+  name: string
+  sizeBytes: number
+}
+
+/**
+ * What a folder is.
+ *
+ * A top-level folder is always a `section` — those are the company's areas, and
+ * a stray `clients/index.md` must not demote Clients into a client. Below that,
+ * a folder holding a main file is the shape of one thing (a client, a person)
+ * and reads as an `entity`; anything else is a `subsection`.
+ */
+export type BrainNodeKind = 'section' | 'subsection' | 'entity'
+
+export type BrainNode = {
+  /** Brain-relative folder path; `''` is the brain root. */
+  path: string
+  title: string
+  kind: BrainNodeKind
+  /** Entities only: the folder's main file, and the line that stands for it. */
+  main?: { documentId: string; summary: string }
+  /** Direct `.md` children. Excludes the main file when this is an entity. */
+  documents: BrainDocument[]
+  /** Direct non-`.md` children. */
+  attachments: BrainAttachment[]
+  /** Nested folders, same shape. */
+  children: BrainNode[]
+  /** Every `.md` at or below this node, main files included. */
+  documentCount: number
+  /** Entities at or below this node. Zero for a section of plain documents. */
+  entityCount: number
+  /** True when anything at or below this node is uncommitted. */
+  changed: boolean
 }
 
 export type BrainScan = {
@@ -43,6 +92,12 @@ export type BrainScan = {
   embeddedBrainPresent: boolean
   documents: BrainDocument[]
   folders: BrainFolder[]
+  /**
+   * The same documents as a tree, plus the attachments the flat list never had.
+   * Top-level sections in declared order, then undeclared folders alphabetically,
+   * then the root pseudo-section last and only when it holds documents.
+   */
+  tree: BrainNode[]
   /** Documents nothing links to and which link nowhere — the brain's dead ends. */
   orphanIds: string[]
   totalLinks: number
@@ -60,6 +115,7 @@ export const EMPTY_BRAIN_SCAN: BrainScan = {
   embeddedBrainPresent: false,
   documents: [],
   folders: [],
+  tree: [],
   orphanIds: [],
   totalLinks: 0,
   scannedAt: 0
@@ -104,6 +160,24 @@ export type BrainCreateDocumentResult = {
   /** Brain-relative id of the new document, e.g. `strategy/pricing.md`. */
   documentId?: string
   /** Absolute path, so the renderer can open it in the editor. */
+  absolutePath?: string
+  error?: string
+}
+
+export type BrainCreateEntityRequest = {
+  repoPath: string
+  /** Folder the entity is created under, e.g. `clients`. */
+  parentFolder: string
+  /** What the operator typed; becomes the folder name and the main file's H1. */
+  title: string
+}
+
+export type BrainCreateEntityResult = {
+  ok: boolean
+  /** Brain-relative folder of the new entity, e.g. `clients/acme`. */
+  entityPath?: string
+  /** Brain-relative id of its main file, e.g. `clients/acme/index.md`. */
+  documentId?: string
   absolutePath?: string
   error?: string
 }

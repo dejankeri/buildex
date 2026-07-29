@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync, type Stats } from 'node:fs'
 import path from 'node:path'
-import type { BrainLocation } from '../../shared/buildex-brain-types'
+import type { BrainAttachment, BrainLocation } from '../../shared/buildex-brain-types'
 
 // Filesystem walk for the company brain. Sorted at every level so two scans of
 // an unchanged tree produce identical output — the determinism the trust
@@ -130,6 +130,57 @@ export function listBrainDocumentPaths(location: BrainLocation): string[] {
 
   walk(brainRoot)
   return found.sort()
+}
+
+/**
+ * Every non-markdown file in the brain, sorted by path.
+ *
+ * The contract a client folder holds, the forecast beside it, the logo. These
+ * were dropped on the floor by the document walk, which made them invisible in
+ * the app while sitting in plain view in the folder. Name, size and path only —
+ * no content is ever read, so nothing here can reach the editor or the agent.
+ */
+export function listBrainAttachments(location: BrainLocation): BrainAttachment[] {
+  const found: BrainAttachment[] = []
+  const brainRoot = location.root
+
+  const walk = (absoluteDir: string): void => {
+    let entries: string[]
+    try {
+      entries = readdirSync(absoluteDir).sort()
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (entry.startsWith('.') || IGNORED_DIRECTORIES.has(entry)) {
+        continue
+      }
+      const absolute = path.join(absoluteDir, entry)
+      let stats: Stats
+      try {
+        stats = statSync(absolute)
+      } catch {
+        continue
+      }
+      if (stats.isDirectory()) {
+        walk(absolute)
+        continue
+      }
+      if (entry.toLowerCase().endsWith('.md')) {
+        continue
+      }
+      const id = toPosix(path.relative(brainRoot, absolute))
+      // Why: `skills/` is the agent's verbs, not company material, and a pack
+      // ships images and data beside its SKILL.md. Same exclusion the document
+      // walk makes, for the same reason.
+      if (!isSkillManifest(id)) {
+        found.push({ id, name: entry, sizeBytes: stats.size })
+      }
+    }
+  }
+
+  walk(brainRoot)
+  return found.sort((a, b) => a.id.localeCompare(b.id))
 }
 
 export function readDocumentText(location: BrainLocation, documentId: string): string {
