@@ -1,12 +1,18 @@
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { app } from 'electron'
-import type { StoreCatalog, StoreRoster } from '../../shared/buildex-store-types'
+import type {
+  CompanyMarketplace,
+  StoreCatalog,
+  StoreRoster
+} from '../../shared/buildex-store-types'
+import type { BrainLocation } from '../../shared/buildex-brain-types'
 import type { InstalledAppSummary } from '../buildex-brain/company-context'
+import { readCompanyMarketplaces } from './company-marketplaces'
 import { readInstalledPlugins } from './claude-plugin-install'
 import { readInstalledPluginInventory } from './installed-plugin-inventory'
 import {
-  KNOWN_MARKETPLACES,
+  allMarketplaces,
   overlaysRootFrom,
   readStoreCatalog,
   type StoreMarketplaceSource
@@ -37,19 +43,29 @@ export type AppStoreCatalogOptions = {
   userDataPath?: string
   /** What the company expects installed. Only the Store's IPC has a repo to read it from. */
   roster?: StoreRoster | null
+  /**
+   * Marketplaces this company added, from the brain. Same reasoning as the
+   * roster: this module does not know how to find a brain, so the caller that
+   * has a repo resolves them and hands them in.
+   */
+  companyMarketplaces?: readonly CompanyMarketplace[]
+  /** Where those marketplaces are written, for the "commit this" hint. */
+  marketplacesPath?: string | null
   unsupportedAgent?: string | null
   now?: number
 }
 
-function cachedSources(userDataPath: string): {
+function cachedSources(
+  userDataPath: string,
+  company: readonly CompanyMarketplace[]
+): {
   sources: StoreMarketplaceSource[]
   cached: (CachedMarketplaceIndex | null)[]
 } {
-  const cached = KNOWN_MARKETPLACES.map((marketplace) =>
-    readCachedIndex(userDataPath, marketplace.id)
-  )
+  const marketplaces = allMarketplaces(company)
+  const cached = marketplaces.map((marketplace) => readCachedIndex(userDataPath, marketplace.id))
   return {
-    sources: KNOWN_MARKETPLACES.map((marketplace, index) => ({
+    sources: marketplaces.map((marketplace, index) => ({
       ...marketplace,
       indexBody: cached[index]?.body ?? null
     })),
@@ -67,13 +83,14 @@ function cachedSources(userDataPath: string): {
 export function readAppStoreCatalog(options: AppStoreCatalogOptions = {}): StoreCatalog {
   const userDataPath = options.userDataPath ?? app.getPath('userData')
   const now = options.now ?? Date.now()
-  const { sources, cached } = cachedSources(userDataPath)
+  const { sources, cached } = cachedSources(userDataPath, options.companyMarketplaces ?? [])
   const fetchedAt = oldestFetchedAt(cached)
   const catalog = readStoreCatalog({
     marketplaces: sources,
     overlays: readStoreOverlays(overlaysRootFrom(resourceRoot())),
     installed: readInstalledPlugins(homedir()),
     roster: options.roster ?? null,
+    marketplacesPath: options.marketplacesPath ?? null,
     unsupportedAgent: options.unsupportedAgent ?? null
   })
   return {
@@ -95,7 +112,11 @@ export async function refreshAppStoreCatalog(
 ): Promise<{ catalog: StoreCatalog; errors: string[] }> {
   const userDataPath = options.userDataPath ?? app.getPath('userData')
   const now = options.now ?? Date.now()
-  const outcomes = await refreshMarketplaceIndexes(userDataPath, KNOWN_MARKETPLACES, now)
+  const outcomes = await refreshMarketplaceIndexes(
+    userDataPath,
+    allMarketplaces(options.companyMarketplaces ?? []),
+    now
+  )
   const errors = outcomes
     .filter((outcome) => !outcome.ok)
     .map((outcome) => `${outcome.marketplaceId}: ${outcome.error ?? 'failed'}`)
@@ -105,7 +126,15 @@ export async function refreshAppStoreCatalog(
 /**
  * What the company context should say is installed, for the brain surfaces that
  * refresh it without the Store being involved.
+ *
+ * The location is optional but wanted: without it, a plugin installed from a
+ * marketplace this company added is not on the shelf to be recognised, and the
+ * context would describe it as nothing at all.
  */
-export function readInstalledAppSummaries(): InstalledAppSummary[] {
-  return readInstalledPluginInventory(homedir(), readAppStoreCatalog().entries)
+export function readInstalledAppSummaries(location?: BrainLocation | null): InstalledAppSummary[] {
+  const companyMarketplaces = location ? readCompanyMarketplaces(location).entries : []
+  return readInstalledPluginInventory(
+    homedir(),
+    readAppStoreCatalog({ companyMarketplaces }).entries
+  )
 }

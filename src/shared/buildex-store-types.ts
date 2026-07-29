@@ -136,6 +136,51 @@ export type StoreProvision = {
 }
 
 /**
+ * A marketplace this company added, as written in the brain.
+ *
+ * The same shape as a bundled one minus `origin`, which is not stored — anything
+ * read out of this file is a company marketplace by definition, and a file that
+ * could claim `origin: 'bundled'` would let a hand-edit make a company entry
+ * unremovable.
+ */
+export type CompanyMarketplace = {
+  id: string
+  label: string
+  /** `owner/repo`, or an https URL to a marketplace.json the company hosts. */
+  repo: string
+  defaultSegment: StoreSegment
+}
+
+/** The company's marketplaces, as read from the brain. */
+export type CompanyMarketplaceList = {
+  entries: CompanyMarketplace[]
+  /** Repo-relative POSIX path of the file, for the "commit this" hint. */
+  path: string
+}
+
+/**
+ * No id: it is read from the marketplace's own manifest, because the id has to
+ * be the name the agent records installs under, not one an operator typed.
+ */
+export type StoreMarketplaceAddRequest = {
+  repoPath: string
+  label: string
+  repo: string
+  defaultSegment: StoreSegment
+}
+
+export type StoreMarketplaceRemoveRequest = {
+  repoPath: string
+  id: string
+}
+
+export type StoreMarketplaceResult = {
+  ok: boolean
+  marketplaces: CompanyMarketplaceList | null
+  error?: string
+}
+
+/**
  * How strongly the company expects an app to be installed.
  *
  * This is the one part of an install that IS shared. The plugins themselves are
@@ -197,6 +242,12 @@ export type StoreEntry = {
 export type StoreCatalog = {
   entries: StoreEntry[]
   marketplaces: StoreMarketplace[]
+  /**
+   * Where the company's marketplaces are written, or null when this repo has no
+   * brain to hold them. Null is what tells the Store to say "set up a brain
+   * first" instead of offering an add that has nowhere to land.
+   */
+  marketplacesPath: string | null
   /** The company's roster, or null when this repo has no brain to read one from. */
   roster: StoreRoster | null
   /**
@@ -219,6 +270,7 @@ export type StoreCatalog = {
 export const EMPTY_STORE_CATALOG: StoreCatalog = {
   entries: [],
   marketplaces: [],
+  marketplacesPath: null,
   roster: null,
   indexFetchedAt: null,
   indexStale: true,

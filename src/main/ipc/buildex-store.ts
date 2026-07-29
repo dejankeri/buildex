@@ -1,6 +1,7 @@
 import { homedir } from 'node:os'
 import { app, ipcMain } from 'electron'
 import type {
+  CompanyMarketplace,
   StoreCatalog,
   StoreCatalogRequest,
   StoreCredentialClearRequest,
@@ -16,6 +17,8 @@ import type {
 } from '../../shared/buildex-store-types'
 import { EMPTY_STORE_CATALOG } from '../../shared/buildex-store-types'
 import { readStoreRoster, setRosterEntry } from '../buildex-store/store-roster'
+import { readCompanyMarketplaces } from '../buildex-store/company-marketplaces'
+import { registerStoreMarketplaceHandlers } from './buildex-store-marketplaces'
 import { readAppStoreCatalog, refreshAppStoreCatalog } from '../buildex-store/store-catalog-source'
 import { installClaudePlugin, uninstallClaudePlugin } from '../buildex-store/claude-plugin-install'
 import { resolveClaudeBinary, runClaudeCommand } from '../buildex-store/claude-cli-runner'
@@ -54,23 +57,34 @@ function claudeDeps(): {
 }
 
 /**
- * The company's roster, or null when this repo has no brain to hold one.
+ * What this repo's brain says about apps: the roster, and the marketplaces the
+ * company added. Null location when the repo has no brain to hold either.
  *
  * Read per call rather than cached: a teammate pulling a commit that adds an app
- * should see it the next time they open the Store, not after a restart.
+ * or a marketplace should see it the next time they open the Store, not after a
+ * restart.
  */
-function readRoster(repoPath: string | undefined): StoreRoster | null {
-  if (!repoPath) {
-    return null
+function readBrainSources(repoPath: string | undefined): {
+  roster: StoreRoster | null
+  companyMarketplaces: CompanyMarketplace[]
+  marketplacesPath: string | null
+} {
+  const location = repoPath ? requireBrainLocation(repoPath) : null
+  if (!location) {
+    return { roster: null, companyMarketplaces: [], marketplacesPath: null }
   }
-  const location = requireBrainLocation(repoPath)
-  return location ? readStoreRoster(location) : null
+  const marketplaces = readCompanyMarketplaces(location)
+  return {
+    roster: readStoreRoster(location),
+    companyMarketplaces: marketplaces.entries,
+    marketplacesPath: marketplaces.path
+  }
 }
 
 /** The shelf, with what this machine and this company know about each entry. */
 function assembleCatalog(request?: StoreCatalogRequest): StoreCatalog {
   return readAppStoreCatalog({
-    roster: readRoster(request?.repoPath?.trim()),
+    ...readBrainSources(request?.repoPath?.trim()),
     unsupportedAgent: unsupportedInstallAgent(request?.agent)
   })
 }
@@ -109,6 +123,8 @@ function findEntry(
 }
 
 export function registerBuildExStoreHandlers(): void {
+  registerStoreMarketplaceHandlers()
+
   ipcMain.handle('buildex-store:catalog', (_event, request?: StoreCatalogRequest): StoreCatalog => {
     const repoPath = request?.repoPath?.trim()
     // Why: with no project open there is nowhere for the gate to land, but the
@@ -132,7 +148,7 @@ export function registerBuildExStoreHandlers(): void {
     async (_event, request?: StoreCatalogRequest): Promise<StoreRefreshResult> => {
       try {
         return await refreshAppStoreCatalog({
-          roster: readRoster(request?.repoPath?.trim()),
+          ...readBrainSources(request?.repoPath?.trim()),
           unsupportedAgent: unsupportedInstallAgent(request?.agent)
         })
       } catch (error) {

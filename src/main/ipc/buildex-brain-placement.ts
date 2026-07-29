@@ -70,7 +70,7 @@ export function registerBuildExBrainPlacementHandlers(): void {
       const result = await removeBrain(repoPath, location, Date.now())
       if (result.ok) {
         // The agent's context still names every document that was just removed.
-        void refreshCompanyContext(repoPath, location, readInstalledAppSummaries())
+        void refreshCompanyContext(repoPath, location, readInstalledAppSummaries(location))
       }
       return result
     }
@@ -98,7 +98,7 @@ export function registerBuildExBrainPlacementHandlers(): void {
         const location =
           requireBrainLocation(repoPath) ??
           authorizeBrainLocation(externalLocation(targetPath, remote))
-        void refreshCompanyContext(repoPath, location, readInstalledAppSummaries())
+        void refreshCompanyContext(repoPath, location, readInstalledAppSummaries(location))
       }
       return result
     }
@@ -127,7 +127,7 @@ export function registerBuildExBrainPlacementHandlers(): void {
         const location =
           requireBrainLocation(repoPath) ??
           authorizeBrainLocation(externalLocation(brainPath, request?.remote))
-        void refreshCompanyContext(repoPath, location, readInstalledAppSummaries())
+        void refreshCompanyContext(repoPath, location, readInstalledAppSummaries(location))
       }
       return result
     }
@@ -154,7 +154,7 @@ export function registerBuildExBrainPlacementHandlers(): void {
       const location =
         requireBrainLocation(repoPath) ??
         authorizeBrainLocation(externalLocation(brainPath, request?.remote))
-      void refreshCompanyContext(repoPath, location, readInstalledAppSummaries())
+      void refreshCompanyContext(repoPath, location, readInstalledAppSummaries(location))
     }
     return result
   })
@@ -171,7 +171,7 @@ export function registerBuildExBrainPlacementHandlers(): void {
         // Disconnecting changes what this repo's brain even is, so resolve
         // again rather than reuse the location disconnect just invalidated.
         const location = requireBrainLocation(repoPath) ?? embeddedLocation(repoPath)
-        void refreshCompanyContext(repoPath, location, readInstalledAppSummaries())
+        void refreshCompanyContext(repoPath, location, readInstalledAppSummaries(location))
       }
       return result
     }

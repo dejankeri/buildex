@@ -13965,6 +13965,27 @@
         "failures": "Could not install: {{value0}}",
         "unavailable": "{{value0}} on the list is not in any marketplace this workspace reads.",
         "sharedVia": "This list lives in {{value0}} and travels with a clone. The apps themselves stay per-machine."
+      },
+      "marketplaces": {
+        "open": "Marketplaces",
+        "openHint": "Choose where this company’s apps come from.",
+        "title": "Marketplaces",
+        "body": "Where this company’s apps come from. Ones you add live in the brain, so a teammate gets them by cloning.",
+        "bundled": "Built in",
+        "bundledHint": "Ships with BuildEx and cannot be removed.",
+        "remove": "Remove {{value0}}",
+        "removeHint": "Takes it off the shelf. Apps you already installed from it stay installed.",
+        "repoLabel": "Marketplace",
+        "repoHint": "owner/repo, or an https URL to a marketplace.json your company hosts.",
+        "nameLabel": "Name",
+        "namePlaceholder": "Acme apps",
+        "shelfLabel": "Shelf",
+        "noBrain": "Set up a company brain first — marketplaces live in it.",
+        "noRepo": "Open a project to add a marketplace.",
+        "committed": "Written to {{value0}} — commit it to share these with your team.",
+        "close": "Done",
+        "add": "Add marketplace",
+        "repoPlaceholder": "acme/claude-plugins"
       }
     },
     "brain": {

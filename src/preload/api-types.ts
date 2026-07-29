@@ -390,6 +390,9 @@ import type {
   StoreCredentialSaveRequest,
   StoreInstallRequest,
   StoreInstallResult,
+  StoreMarketplaceAddRequest,
+  StoreMarketplaceRemoveRequest,
+  StoreMarketplaceResult,
   StoreRefreshResult,
   StoreRosterResult,
   StoreRosterSetRequest
@@ -2403,6 +2406,8 @@ export type PreloadApi = {
     saveCredential: (request: StoreCredentialSaveRequest) => Promise<StoreCredentialResult>
     clearCredential: (request: StoreCredentialClearRequest) => Promise<StoreCredentialResult>
     setRosterEntry: (request: StoreRosterSetRequest) => Promise<StoreRosterResult>
+    addMarketplace: (request: StoreMarketplaceAddRequest) => Promise<StoreMarketplaceResult>
+    removeMarketplace: (request: StoreMarketplaceRemoveRequest) => Promise<StoreMarketplaceResult>
   }
   buildexGate: {
     sync: (request: GateSettingsRequest) => Promise<GateSettingsResult>

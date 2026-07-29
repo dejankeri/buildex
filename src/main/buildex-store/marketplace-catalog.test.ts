@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { StoreOverlay, StoreSegment } from '../../shared/buildex-store-types'
 import {
+  allMarketplaces,
   installKey,
   KNOWN_MARKETPLACES,
   readStoreCatalog,
@@ -267,5 +268,41 @@ describe('KNOWN_MARKETPLACES', () => {
     expect(KNOWN_MARKETPLACES.find((entry) => entry.id === 'buildex-packs')?.defaultSegment).toBe(
       'business'
     )
+  })
+})
+
+describe('allMarketplaces', () => {
+  const acme = {
+    id: 'acme-internal',
+    label: 'Acme internal',
+    repo: 'acme/plugins',
+    defaultSegment: 'software' as StoreSegment
+  }
+
+  it('is the bundled three when a company has added none', () => {
+    expect(allMarketplaces([])).toEqual(KNOWN_MARKETPLACES)
+  })
+
+  it('adds a company marketplace after the bundled ones, marked as theirs', () => {
+    const all = allMarketplaces([acme])
+
+    expect(all).toHaveLength(KNOWN_MARKETPLACES.length + 1)
+    expect(all.at(-1)).toEqual({ ...acme, origin: 'company' })
+  })
+
+  it('drops a company entry that would shadow a bundled marketplace', () => {
+    // The add path rejects this; this is the guard for a hand-edited file or one
+    // pulled from a teammate. A shadowed id would report the wrong plugin as
+    // installed, because the id is the key the agent writes installs under.
+    const all = allMarketplaces([{ ...acme, id: 'protocol' }])
+
+    expect(all).toEqual(KNOWN_MARKETPLACES)
+  })
+
+  it('keeps the first of two company entries sharing an id', () => {
+    const all = allMarketplaces([acme, { ...acme, repo: 'other/plugins' }])
+
+    expect(all.filter((entry) => entry.id === acme.id)).toHaveLength(1)
+    expect(all.at(-1)?.repo).toBe('acme/plugins')
   })
 })
