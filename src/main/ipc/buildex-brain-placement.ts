@@ -138,26 +138,29 @@ export function registerBuildExBrainPlacementHandlers(): void {
   // path ("we want a brain repo of our own from day one"). This is what that
   // path actually calls: point the repo at a brain that already exists, and
   // touch nothing else.
-  ipcMain.handle('buildex-brain:bind', (_event, request?: BrainBindRequest): BrainBindResult => {
-    const repoPath = request?.repoPath?.trim()
-    const brainPath = request?.brainPath?.trim()
-    if (!repoPath || !brainPath) {
-      return { ok: false, error: 'Missing repoPath or brainPath' }
+  ipcMain.handle(
+    'buildex-brain:bind',
+    async (_event, request?: BrainBindRequest): Promise<BrainBindResult> => {
+      const repoPath = request?.repoPath?.trim()
+      const brainPath = request?.brainPath?.trim()
+      if (!repoPath || !brainPath) {
+        return { ok: false, error: 'Missing repoPath or brainPath' }
+      }
+      const result = await bindExistingBrain({
+        repoPath,
+        brainPath,
+        ...(request?.remote ? { remote: request.remote } : {}),
+        writePointer: Boolean(request?.writePointer)
+      })
+      if (result.ok) {
+        const location =
+          requireBrainLocation(repoPath) ??
+          authorizeBrainLocation(externalLocation(brainPath, request?.remote))
+        void refreshCompanyContext(repoPath, location, readInstalledAppSummaries())
+      }
+      return result
     }
-    const result = bindExistingBrain({
-      repoPath,
-      brainPath,
-      ...(request?.remote ? { remote: request.remote } : {}),
-      writePointer: Boolean(request?.writePointer)
-    })
-    if (result.ok) {
-      const location =
-        requireBrainLocation(repoPath) ??
-        authorizeBrainLocation(externalLocation(brainPath, request?.remote))
-      void refreshCompanyContext(repoPath, location, readInstalledAppSummaries())
-    }
-    return result
-  })
+  )
 
   ipcMain.handle(
     'buildex-brain:disconnect',

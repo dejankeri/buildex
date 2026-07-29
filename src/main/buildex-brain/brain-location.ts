@@ -7,9 +7,11 @@ import type {
   BrainLocation,
   BrainResolution
 } from '../../shared/buildex-brain-types'
+import { gitExecFileAsync } from '../git/runner'
 import { relinkBrainSkills } from './skill-link'
 import { bindRepoToBrain, readBrainBindings, rememberClone } from './brain-bindings'
 import { BRAIN_ROOT } from './company-brain-scan'
+import { primaryCheckoutPath } from './worktree-primary-checkout'
 
 // Where this repo's brain is. The only module that answers that question.
 //
@@ -111,8 +113,14 @@ export function resolveBrainLocation(
   options: BrainResolveOptions = {}
 ): BrainResolution {
   const bindings = readBrainBindings(options.bindingsFile)
+  // A worktree is the same repo at another path: a binding keyed to the path the
+  // brain was set up in does not name it, and a pointer that was never committed
+  // is not in its checkout. Falling back to the primary checkout is what makes an
+  // external brain visible from every worktree, which is the whole expectation of
+  // a company that keeps its brain outside the code repo.
+  const primary = primaryCheckoutPath(repoPath)
 
-  const remote = readBrainPointer(repoPath)
+  const remote = readBrainPointer(repoPath) ?? (primary ? readBrainPointer(primary) : null)
   if (remote) {
     const clone = bindings.clonesByRemote[remote]
     if (!clone) {
@@ -121,11 +129,16 @@ export function resolveBrainLocation(
     return checkExternal(clone, remote)
   }
 
-  const bound = bindings.brainByRepo[repoPath] ?? bindings.defaultBrainPath
+  const bound =
+    bindings.brainByRepo[repoPath] ??
+    (primary ? bindings.brainByRepo[primary] : undefined) ??
+    bindings.defaultBrainPath
   if (bound) {
     return checkExternal(bound)
   }
 
+  // Embedded stays this checkout's own: `.buildex/` is branch content, and a
+  // worktree editing another checkout's copy would write to the wrong branch.
   return { status: 'ready', location: embeddedLocation(repoPath) }
 }
 
@@ -148,9 +161,9 @@ export function requireBrainLocation(
  * remembered clone when the operator asked for one and gave a remote, a
  * machine-local binding otherwise.
  */
-export function bindExistingBrain(
+export async function bindExistingBrain(
   request: BrainBindRequest & { bindingsFile?: string }
-): BrainBindResult {
+): Promise<BrainBindResult> {
   const { repoPath, brainPath, remote, writePointer, bindingsFile } = request
   if (!existsSync(brainPath)) {
     return { ok: false, error: `${brainPath} does not exist` }
@@ -161,6 +174,15 @@ export function bindExistingBrain(
   if (writePointer && remote) {
     writeBrainPointer(repoPath, remote)
     rememberClone(remote, brainPath, bindingsFile)
+    try {
+      // Staged, not committed — the operator asked for a pointer, and a pointer
+      // is only the company's choice once it is in the repo's history. Same
+      // contract as migrate: the commit is theirs to make.
+      await gitExecFileAsync(['add', '--', BRAIN_POINTER_RELATIVE_PATH], { cwd: repoPath })
+    } catch {
+      // No git here, or nothing to stage. The pointer is on disk either way and
+      // still resolves on this machine.
+    }
   } else {
     bindRepoToBrain(repoPath, brainPath, bindingsFile)
   }

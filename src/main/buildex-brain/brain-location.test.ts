@@ -28,6 +28,18 @@ function makeGitRepo(at: string): void {
   mkdirSync(path.join(at, '.git'), { recursive: true })
 }
 
+/** A linked worktree of `of`, laid out the way `git worktree add` leaves one. */
+function makeWorktree(of: string, at: string, name: string): string {
+  mkdirSync(at, { recursive: true })
+  mkdirSync(path.join(of, '.git', 'worktrees', name), { recursive: true })
+  writeFileSync(
+    path.join(at, '.git'),
+    `gitdir: ${path.join(of, '.git', 'worktrees', name)}\n`,
+    'utf8'
+  )
+  return at
+}
+
 beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'buildex-location-'))
   repo = path.join(dir, 'api')
@@ -138,6 +150,84 @@ describe('resolveBrainLocation', () => {
     })
   })
 
+  it('reaches the binding of the primary checkout from a worktree', () => {
+    makeGitRepo(repo)
+    makeGitRepo(brain)
+    bindRepoToBrain(repo, brain, bindingsFile)
+    const worktree = makeWorktree(repo, path.join(dir, 'api-feature'), 'api-feature')
+
+    // The binding names the path the operator set the brain up in. A worktree is
+    // the same repo at another path, and without this the brain is simply gone
+    // there — the complaint that produced this test.
+    expect(resolveBrainLocation(worktree, { bindingsFile })).toEqual({
+      status: 'ready',
+      location: { root: brain, gitRoot: brain, pathspec: '.', mode: 'external' }
+    })
+  })
+
+  it('reads the pointer of the primary checkout when this worktree lacks one', () => {
+    makeGitRepo(repo)
+    makeGitRepo(brain)
+    writeBrainPointer(repo, 'git@github.com:acme/brain.git')
+    rememberClone('git@github.com:acme/brain.git', brain, bindingsFile)
+    const worktree = makeWorktree(repo, path.join(dir, 'api-feature'), 'api-feature')
+
+    // An uncommitted pointer is in no other checkout, and a committed one is
+    // missing from any worktree on a branch that predates it.
+    expect(resolveBrainLocation(worktree, { bindingsFile })).toEqual({
+      status: 'ready',
+      location: {
+        root: brain,
+        gitRoot: brain,
+        pathspec: '.',
+        mode: 'external',
+        remote: 'git@github.com:acme/brain.git'
+      }
+    })
+  })
+
+  it("keeps an embedded brain the worktree's own", () => {
+    makeGitRepo(repo)
+    const worktree = makeWorktree(repo, path.join(dir, 'api-feature'), 'api-feature')
+
+    // `.buildex/` is branch content: a worktree writing the primary checkout's
+    // copy would put the company's documents on the wrong branch.
+    expect(resolveBrainLocation(worktree, { bindingsFile })).toEqual({
+      status: 'ready',
+      location: {
+        root: path.join(worktree, '.buildex'),
+        gitRoot: worktree,
+        pathspec: '.buildex',
+        mode: 'embedded'
+      }
+    })
+  })
+
+  it("lets a worktree's own pointer win over the primary checkout's", () => {
+    makeGitRepo(repo)
+    makeGitRepo(brain)
+    const other = path.join(dir, 'other-brain')
+    makeGitRepo(other)
+    writeBrainPointer(repo, 'git@github.com:acme/old.git')
+    rememberClone('git@github.com:acme/old.git', other, bindingsFile)
+    const worktree = makeWorktree(repo, path.join(dir, 'api-feature'), 'api-feature')
+    writeBrainPointer(worktree, 'git@github.com:acme/brain.git')
+    rememberClone('git@github.com:acme/brain.git', brain, bindingsFile)
+
+    // The fallback is for a worktree with no answer of its own; a branch that
+    // moved the brain must still be read on its own terms.
+    expect(resolveBrainLocation(worktree, { bindingsFile })).toEqual({
+      status: 'ready',
+      location: {
+        root: brain,
+        gitRoot: brain,
+        pathspec: '.',
+        mode: 'external',
+        remote: 'git@github.com:acme/brain.git'
+      }
+    })
+  })
+
   it('ignores a pointer file that is not ours', () => {
     mkdirSync(path.join(repo, '.buildex'), { recursive: true })
     writeFileSync(path.join(repo, '.buildex', 'brain.json'), '{"nope":true}', 'utf8')
@@ -183,10 +273,10 @@ describe('suggestedClonePath', () => {
 })
 
 describe('bindExistingBrain', () => {
-  it('records a machine-local binding when the operator declined a pointer', () => {
+  it('records a machine-local binding when the operator declined a pointer', async () => {
     makeGitRepo(brain)
 
-    const result = bindExistingBrain({
+    const result = await bindExistingBrain({
       repoPath: repo,
       brainPath: brain,
       writePointer: false,
@@ -198,10 +288,10 @@ describe('bindExistingBrain', () => {
     expect(readBrainPointer(repo)).toBeNull()
   })
 
-  it('writes a tracked pointer and remembers the clone when a remote is given', () => {
+  it('writes a tracked pointer and remembers the clone when a remote is given', async () => {
     makeGitRepo(brain)
 
-    const result = bindExistingBrain({
+    const result = await bindExistingBrain({
       repoPath: repo,
       brainPath: brain,
       remote: 'git@github.com:acme/brain.git',
@@ -216,10 +306,10 @@ describe('bindExistingBrain', () => {
     )
   })
 
-  it('falls back to a machine-local binding when a pointer was asked for but no remote is known', () => {
+  it('falls back to a machine-local binding when a pointer was asked for but no remote is known', async () => {
     makeGitRepo(brain)
 
-    const result = bindExistingBrain({
+    const result = await bindExistingBrain({
       repoPath: repo,
       brainPath: brain,
       writePointer: true,
@@ -231,8 +321,8 @@ describe('bindExistingBrain', () => {
     expect(readBrainBindings(bindingsFile).brainByRepo[repo]).toBe(brain)
   })
 
-  it('refuses a brain path that does not exist', () => {
-    const result = bindExistingBrain({
+  it('refuses a brain path that does not exist', async () => {
+    const result = await bindExistingBrain({
       repoPath: repo,
       brainPath: path.join(dir, 'nowhere'),
       writePointer: false,
@@ -244,10 +334,10 @@ describe('bindExistingBrain', () => {
     expect(readBrainBindings(bindingsFile).brainByRepo[repo]).toBeUndefined()
   })
 
-  it('refuses a brain path that is not a git repo', () => {
+  it('refuses a brain path that is not a git repo', async () => {
     mkdirSync(brain, { recursive: true })
 
-    const result = bindExistingBrain({
+    const result = await bindExistingBrain({
       repoPath: repo,
       brainPath: brain,
       writePointer: false,
@@ -261,12 +351,12 @@ describe('bindExistingBrain', () => {
 })
 
 describe('bindExistingBrain and the brain it binds to', () => {
-  it('gives this repo the skills the brain already holds', () => {
+  it('gives this repo the skills the brain already holds', async () => {
     makeGitRepo(brain)
     mkdirSync(path.join(brain, 'skills', 'slack-search'), { recursive: true })
     writeFileSync(path.join(brain, 'skills', 'slack-search', 'SKILL.md'), '# Slack\n', 'utf8')
 
-    bindExistingBrain({ repoPath: repo, brainPath: brain, writePointer: false, bindingsFile })
+    await bindExistingBrain({ repoPath: repo, brainPath: brain, writePointer: false, bindingsFile })
 
     // The design's whole point: install an app once and every repo bound to
     // that brain gets it. Without this the repo has no skills until something
@@ -282,11 +372,11 @@ describe('the pristine-repo external setup path', () => {
   // "in a separate brain repo" on day one, before this repo has ever had an
   // embedded `.buildex/`. `migrateBrainToExternal` has nothing to move here —
   // `bindExistingBrain` is the operation this path actually needs.
-  it('binds the repo and scaffolds sections into the external brain, never <repo>/.buildex', () => {
+  it('binds the repo and scaffolds sections into the external brain, never <repo>/.buildex', async () => {
     makeGitRepo(brain)
     expect(existsSync(path.join(repo, '.buildex'))).toBe(false)
 
-    const bound = bindExistingBrain({
+    const bound = await bindExistingBrain({
       repoPath: repo,
       brainPath: brain,
       writePointer: false,
