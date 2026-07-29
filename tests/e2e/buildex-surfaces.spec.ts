@@ -72,7 +72,9 @@ test('company brain maps the active repo', async ({ orcaPage, testRepoPath }) =>
 
   // The brain is `.buildex/`, not the repo — a project's own README is code, not
   // company knowledge. Sections is the landing tab, so no navigation first.
-  await expect(orcaPage.getByText('handbook', { exact: true })).toBeVisible()
+  // A document reads by its `# H1`, not its filename — `handbook.md` shows as
+  // "Handbook", which is what keeps a folder of dated slugs legible.
+  await expect(orcaPage.getByText('Handbook', { exact: true })).toBeVisible()
   await expect(orcaPage.getByText('documents', { exact: true })).toBeVisible()
 
   await orcaPage.screenshot({ path: proofPath('brain-tab.png') })
