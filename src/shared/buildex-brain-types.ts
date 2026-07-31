@@ -242,6 +242,13 @@ export type BrainSaveDiffResult = {
   truncated: boolean
   /** Git could not produce this diff — no repo, or a hash it does not know. */
   unavailable: boolean
+  /**
+   * Git's file list and its patch did not line up, so every file carries its
+   * path and status and none carries lines. Said out loud because an empty file
+   * row is otherwise indistinguishable from a pure rename, which legitimately
+   * has no lines.
+   */
+  linesUnavailable: boolean
 }
 
 export type BrainSaveRequest = {

@@ -134,7 +134,8 @@ describe('opening a save', () => {
         }
       ],
       truncated: false,
-      unavailable: false
+      unavailable: false,
+      linesUnavailable: false
     })
 
     expect(saveDiff).toHaveBeenCalledWith({ repoPath: '/repo', hash: 'a'.repeat(40) })
@@ -154,7 +155,8 @@ describe('opening a save', () => {
         }
       ],
       truncated: false,
-      unavailable: false
+      unavailable: false,
+      linesUnavailable: false
     })
 
     await waitFor(() =>
@@ -167,7 +169,8 @@ describe('opening a save', () => {
     await open({
       files: [{ path: 'logo.png', status: 'added', binary: true, truncated: false, lines: [] }],
       truncated: false,
-      unavailable: false
+      unavailable: false,
+      linesUnavailable: false
     })
 
     await waitFor(() =>
@@ -176,7 +179,7 @@ describe('opening a save', () => {
   })
 
   it('says a save changed nothing here instead of showing a blank panel', async () => {
-    await open({ files: [], truncated: false, unavailable: false })
+    await open({ files: [], truncated: false, unavailable: false, linesUnavailable: false })
 
     await waitFor(() =>
       expect(screen.getByText(/changed nothing in the brain/i)).toBeInTheDocument()
@@ -184,7 +187,7 @@ describe('opening a save', () => {
   })
 
   it('closes again on a second click', async () => {
-    await open({ files: [], truncated: false, unavailable: false })
+    await open({ files: [], truncated: false, unavailable: false, linesUnavailable: false })
     await waitFor(() =>
       expect(screen.getByText(/changed nothing in the brain/i)).toBeInTheDocument()
     )
@@ -194,9 +197,41 @@ describe('opening a save', () => {
     expect(screen.queryByText(/changed nothing in the brain/i)).not.toBeInTheDocument()
   })
 
+  it('says the names stand alone when git could not line the patch up', async () => {
+    // Otherwise every row reads as a pure rename, the one status that
+    // legitimately has no lines.
+    await open({
+      files: [
+        { path: 'decisions/log.md', status: 'modified', binary: false, truncated: false, lines: [] }
+      ],
+      truncated: false,
+      unavailable: false,
+      linesUnavailable: true
+    })
+
+    await waitFor(() => expect(screen.getByText(/only the names are shown/i)).toBeInTheDocument())
+  })
+
+  it('says a failed read failed instead of spinning forever', async () => {
+    saveDiff.mockRejectedValue(new Error('ipc went away'))
+    render(
+      <BrainHistory history={SAVED} repoPath="/repo" onSaved={vi.fn()} onOpenDocument={vi.fn()} />
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /overnight run/i }))
+
+    await waitFor(() => expect(screen.getByText(/could not be read from git/i)).toBeInTheDocument())
+    expect(screen.queryByText(/reading this save/i)).not.toBeInTheDocument()
+  })
+
   it('leaves the changed-path links opening the document, not the diff', async () => {
     const onOpenDocument = vi.fn()
-    saveDiff.mockResolvedValue({ files: [], truncated: false, unavailable: false })
+    saveDiff.mockResolvedValue({
+      files: [],
+      truncated: false,
+      unavailable: false,
+      linesUnavailable: false
+    })
     render(
       <BrainHistory
         history={SAVED}

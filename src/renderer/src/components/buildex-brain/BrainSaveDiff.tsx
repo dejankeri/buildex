@@ -84,11 +84,20 @@ export default function BrainSaveDiff({
     }
     let cancelled = false
     setDiff(null)
-    void window.api.buildexBrainSections.saveDiff({ repoPath, hash }).then((result) => {
-      if (!cancelled) {
-        setDiff(result)
-      }
-    })
+    void window.api.buildexBrainSections
+      .saveDiff({ repoPath, hash })
+      .then((result) => {
+        if (!cancelled) {
+          setDiff(result)
+        }
+      })
+      // An IPC that rejects would otherwise leave a spinner running forever,
+      // which reads as a hang rather than as the failure it is.
+      .catch(() => {
+        if (!cancelled) {
+          setDiff({ files: [], truncated: false, unavailable: true, linesUnavailable: false })
+        }
+      })
     return () => {
       cancelled = true
     }
@@ -127,6 +136,16 @@ export default function BrainSaveDiff({
   }
   return (
     <div className="flex flex-col gap-3 py-2">
+      {/* Why: without this every row below reads as a pure rename, which is the
+          one status that legitimately has no lines. */}
+      {diff.linesUnavailable ? (
+        <p className="text-[11px] text-muted-foreground/70">
+          {translate(
+            'buildex.brain.diff.linesUnavailable',
+            'Git listed these files but its diff did not line up with them, so only the names are shown.'
+          )}
+        </p>
+      ) : null}
       {diff.files.map((file) => (
         <DiffFile key={`${file.previousPath ?? ''}:${file.path}`} file={file} />
       ))}

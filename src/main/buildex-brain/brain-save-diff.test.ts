@@ -184,6 +184,48 @@ describe('readBrainSaveDiff', () => {
     expect(diff.files[0].lines.length).toBeLessThanOrEqual(300)
   })
 
+  it('is not derailed by a signature line an operator asked git to print', async (ctx) => {
+    // `log.showSignature` puts a verification line ahead of the diff — inside
+    // the -z stream, where it fuses onto the first status letter and mislabels
+    // the first file. Signing needs ssh-keygen and Git 2.34; where neither is
+    // available there is nothing to assert.
+    const key = path.join(repo, 'sign-key')
+    try {
+      execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', key])
+      git('config', 'gpg.format', 'ssh')
+      git('config', 'user.signingkey', `${key}.pub`)
+      git('config', 'commit.gpgsign', 'true')
+      git('config', 'log.showSignature', 'true')
+      write('.buildex/decisions/log.md', '# Log\n\nfirst\n')
+      git('add', '-A')
+      git('commit', '-qm', 'signed')
+    } catch {
+      ctx.skip()
+      return
+    }
+
+    const diff = await readBrainSaveDiff(embeddedLocation(repo), await headHash())
+
+    expect(diff.files).toHaveLength(1)
+    expect(diff.files[0].path).toBe('decisions/log.md')
+    // 'changed' is what a signature line fused onto the status letter produces.
+    expect(diff.files[0].status).toBe('added')
+    expect(diff.files[0].lines.filter((line) => line.kind === 'add')).toHaveLength(3)
+    expect(diff.linesUnavailable).toBe(false)
+  })
+
+  it('says so when git listed files it could not line the patch up with', async () => {
+    write('.buildex/note.md', '# Note\n')
+    git('add', '-A')
+    git('commit', '-qm', 'first')
+
+    const diff = await readBrainSaveDiff(embeddedLocation(repo), await headHash())
+
+    // The healthy case: paths and lines line up, so nothing is claimed missing.
+    expect(diff.linesUnavailable).toBe(false)
+    expect(diff.files[0].lines.length).toBeGreaterThan(0)
+  })
+
   it('strips the diff prefix so a document line reads as itself', async () => {
     write('.buildex/note.md', '# Note\n\ncontext\n')
     git('add', '-A')

@@ -105,7 +105,7 @@ export function registerBuildExBrainHandlers(): void {
       const hash = request?.hash?.trim()
       const location = repoPath ? requireBrainLocation(repoPath) : null
       if (!location || !hash) {
-        return { files: [], truncated: false, unavailable: true }
+        return { files: [], truncated: false, unavailable: true, linesUnavailable: false }
       }
       return readBrainSaveDiff(location, hash)
     }

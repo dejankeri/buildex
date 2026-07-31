@@ -25,7 +25,7 @@ import { toBrainRelative } from './brain-history'
 // this screen claims to be about.
 
 function unreadable(): BrainSaveDiffResult {
-  return { files: [], truncated: false, unavailable: true }
+  return { files: [], truncated: false, unavailable: true, linesUnavailable: false }
 }
 
 /** A commit hash and nothing else — never a revision expression, never an option. */
@@ -41,7 +41,20 @@ const MAX_BUFFER_BYTES = 8 * 1024 * 1024
 // `--format=` drops the commit header, `-M` detects renames even where
 // `diff.renames` is configured off, and `--no-ext-diff`/`--no-textconv` keep an
 // operator's global diff driver from replacing the patch with its own output.
-const SHOW_BASE = ['show', '--format=', '-M', '--no-color', '--no-ext-diff', '--no-textconv']
+//
+// `--no-show-signature` for the same reason and a sharper one: an operator who
+// signs commits and sets `log.showSignature` gets a verification line printed
+// ahead of the diff, inside the `-z` stream, where it fuses onto the first
+// status letter and silently mislabels the first file.
+const SHOW_BASE = [
+  'show',
+  '--format=',
+  '-M',
+  '--no-color',
+  '--no-ext-diff',
+  '--no-textconv',
+  '--no-show-signature'
+]
 
 function toStatus(letter: string): BrainDiffStatus {
   switch (letter[0]) {
@@ -186,5 +199,10 @@ export async function readBrainSaveDiff(
       truncated: block?.truncated ?? false
     }
   })
-  return { files, truncated: entries.length > MAX_FILES, unavailable: false }
+  return {
+    files,
+    truncated: entries.length > MAX_FILES,
+    unavailable: false,
+    linesUnavailable: !paired
+  }
 }

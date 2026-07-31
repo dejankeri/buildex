@@ -14138,7 +14138,8 @@
         "loading": "Reading this save…",
         "unavailable": "This save could not be read from git.",
         "empty": "This save changed nothing in the brain.",
-        "moreFiles": "More files changed than are shown here."
+        "moreFiles": "More files changed than are shown here.",
+        "linesUnavailable": "Git listed these files but its diff did not line up with them, so only the names are shown."
       }
     },
     "sidebar": {

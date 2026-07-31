@@ -352,7 +352,7 @@ reviewable diff instead of ~400 silent ones. Read it during each rebase.
 | `src/renderer/src/components/right-sidebar/right-sidebar-panel-content.tsx` | lazy import + 1 render line |
 | `src/renderer/src/components/sidebar/SidebarNav.tsx` | **3 lines**: import + `<BuildExNavEntries />` |
 | `src/renderer/src/App.tsx` | 2 lazy imports + 2 render lines |
-| `src/renderer/src/i18n/locales/{en,es,ja,ko,zh}.json` | 12 `buildex.*` keys, generated |
+| `src/renderer/src/i18n/locales/{en,es,ja,ko,zh}.json` | the `buildex.*` keys — **generated**, never hand-edited. Count deliberately not stated: it grows with every BuildEx surface and a number here only rots. Run `pnpm run sync:localization-catalog` and take whatever it writes |
 
 ---
 
