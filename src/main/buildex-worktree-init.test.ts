@@ -120,6 +120,8 @@ describe('prepareCompanyWorktree', () => {
 
     await expect(preparing).resolves.toBeUndefined()
     expect(askRules(worktree).length).toBeGreaterThan(0)
+    // The deadline message, not the catch — see the automation-run test below.
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('took longer than'))
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(worktree))
     warn.mockRestore()
   })
@@ -211,6 +213,9 @@ describe('prepareCompanyWorktreeForAutomationRun', () => {
     // The run proceeds, on the context that was already there.
     await expect(preparing).resolves.toBeUndefined()
     expect(read(worktree, '.claude', 'company-context.md')).toBe('last week\n')
+    // The deadline message, not the catch: a thrown timeout would still resolve
+    // here while quietly removing the bound this exists to guarantee.
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('took longer than'))
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(worktree))
     warn.mockRestore()
   })
@@ -233,6 +238,9 @@ describe('gateCompanyWorktreeOnActivation', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    // Both, not just the shelf: clearAllMocks leaves implementations in place, so a
+    // throwing one seeded by an earlier block would survive into this one.
+    mocks.readInstalledAppSummaries.mockReturnValue([])
     mocks.readCompanyStoreEntries.mockReturnValue([])
     resetCompanyRepoInitialization()
     worktree = mkdtempSync(path.join(tmpdir(), 'buildex-activated-'))

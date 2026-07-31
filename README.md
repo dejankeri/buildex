@@ -133,7 +133,9 @@ worktree as it is created, an existing **Worktree** at dispatch. Both are bounde
   for anything an RRULE preset can't say), a day/time, and a missed-run grace window for when
   Orca wasn't running at the scheduled moment.
 - **Agent** and **Session** — which CLI agent runs it, and whether each run starts fresh or
-  resumes the previous live session.
+  resumes the previous live session. A **resumed** session keeps the context it started with: the
+  agent read `.claude/` when that session began, so the refresh above still runs but lands for the
+  next *fresh* session, not this one. Start fresh for a run that must see today's brain.
 - Optionally a **precheck** command that has to pass before the run dispatches, and an *Advanced*
   toggle to run the project's normal setup on a freshly created workspace.
 
