@@ -5,6 +5,7 @@ import type {
   BrainNodeKind,
   BrainSectionInfo
 } from '../../shared/buildex-brain-types'
+import { readDocumentFrontmatter } from './brain-document-frontmatter'
 
 // The brain as the company arranged it, rather than as a flat list of paths.
 //
@@ -15,6 +16,10 @@ import type {
 // Pure. Takes the scan's lists and a way to read a document's text, returns the
 // tree. No filesystem, no git, no Electron — which is what makes the rules below
 // testable against a fixture instead of a real repo.
+//
+// An entity's line is the unit the whole design is bounded by: a hundred clients
+// must cost a hundred lines, not four hundred. So a `description:` replaces the
+// summary on that line rather than joining it.
 
 /** Longest a summary gets before it is cut at a word boundary. */
 const SUMMARY_LIMIT = 140
@@ -154,6 +159,9 @@ export function buildBrainTree(input: BuildInput): BrainNode[] {
     const kind: BrainNodeKind = depth === 0 ? 'section' : mainId ? 'entity' : 'subsection'
 
     const mainText = mainId ? input.readText(mainId) : ''
+    // Why `body`: without stripping the block, the first line a summary finds in
+    // a document with front matter is the opening `---`.
+    const { description, body } = readDocumentFrontmatter(mainText)
     const title =
       declaredTitles.get(folderPath) ??
       (mainId
@@ -166,7 +174,7 @@ export function buildBrainTree(input: BuildInput): BrainNode[] {
       path: folderPath,
       title,
       kind,
-      ...(mainId ? { main: { documentId: mainId, summary: summarize(mainText) } } : {}),
+      ...(mainId ? { main: { documentId: mainId, summary: description || summarize(body) } } : {}),
       documents: ownDocuments,
       attachments,
       children,

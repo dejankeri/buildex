@@ -20,6 +20,14 @@ export type BrainDocument = {
   title: string
   /** Containing directory, `''` at the repo root. */
   folder: string
+  /**
+   * The document's own one-line `description:` front matter, when it wrote one.
+   *
+   * Optional and absent by default: a filename is a weak recall key, but the
+   * brain is markdown an operator writes by hand, so most documents carry none
+   * and must render exactly as they did before this existed.
+   */
+  description?: string
   /** Documents this one links to, by id. */
   linksTo: string[]
   /** Documents linking here, by id. */
@@ -102,8 +110,29 @@ export type BrainScan = {
   tree: BrainNode[]
   /** Documents nothing links to and which link nowhere — the brain's dead ends. */
   orphanIds: string[]
+  /** Pages the brain asks for and does not have. Most-asked-for first. */
+  wantedPages: BrainWantedPage[]
+  /**
+   * Document ids in the order git last touched them, most recent first and
+   * capped. Empty where there is no git and where nothing has been saved yet.
+   */
+  recentDocumentIds: string[]
   totalLinks: number
   scannedAt: number
+}
+
+/**
+ * A `[[link]]` that resolves to no document.
+ *
+ * Not an error and not a broken link: it is the company's own note that
+ * something it referred to has not been written down yet — the brain's backlog,
+ * written in the course of writing something else.
+ */
+export type BrainWantedPage = {
+  /** The wikilink name, as written. */
+  name: string
+  /** Documents asking for it, by id, sorted. */
+  requestedBy: string[]
 }
 
 export type BrainScanRequest = {
@@ -119,6 +148,8 @@ export const EMPTY_BRAIN_SCAN: BrainScan = {
   folders: [],
   tree: [],
   orphanIds: [],
+  wantedPages: [],
+  recentDocumentIds: [],
   totalLinks: 0,
   scannedAt: 0
 }

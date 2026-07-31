@@ -99,6 +99,11 @@ function renderApps(apps: InstalledAppSummary[], location: BrainLocation): strin
  * That is what keeps this bounded as a company grows — a hundred clients is a
  * hundred lines the agent can read, rather than four hundred filenames it
  * cannot. An agent that needs what is inside one opens the folder.
+ *
+ * A document's `description:` rides the line its name was already on, in
+ * parentheses. It has to: the growth law here is one line per entity and one per
+ * folder, and a description that claimed a line of its own would rewrite that
+ * law into one line per file — the exact shape this render replaced.
  */
 function renderTree(nodes: BrainNode[], depth = 0): string[] {
   const lines: string[] = []
@@ -109,7 +114,9 @@ function renderTree(nodes: BrainNode[], depth = 0): string[] {
       lines.push(`${indent}- **${node.title}** \`${node.path}/\`${summary ? ` — ${summary}` : ''}`)
       continue
     }
-    const names = node.documents.map((document) => document.name)
+    const names = node.documents.map((document) =>
+      document.description ? `${document.name} (${document.description})` : document.name
+    )
     lines.push(
       `${indent}- **${node.path === '' ? 'root' : node.path}**${
         names.length > 0 ? ` — ${names.join(', ')}` : ''
@@ -118,6 +125,22 @@ function renderTree(nodes: BrainNode[], depth = 0): string[] {
     lines.push(...renderTree(node.children, depth + 1))
   }
   return lines
+}
+
+/**
+ * Caps on the three trailing lists, and the whole reason they are lists rather
+ * than sections: this file is read in full at the start of every agent session,
+ * so anything here that grew with the brain would spend the operator's context
+ * window on a table of contents.
+ */
+const RECENT_LIMIT = 10
+const WANTED_LIMIT = 10
+const REQUESTERS_PER_WANTED_PAGE = 3
+
+function renderRequesters(requestedBy: string[]): string {
+  const shown = requestedBy.slice(0, REQUESTERS_PER_WANTED_PAGE)
+  const rest = requestedBy.length - shown.length
+  return `${shown.map((id) => `\`${id}\``).join(', ')}${rest > 0 ? `, +${rest} more` : ''}`
 }
 
 /**
@@ -173,6 +196,38 @@ export function renderCompanyContext(
     lines.push('## Most connected', '')
     for (const hub of hubs) {
       lines.push(`- \`${hub.id}\` (${hub.degree} ${hub.degree === 1 ? 'link' : 'links'})`)
+    }
+    lines.push('')
+  }
+
+  // Why: link degree says what the company organises around; this says what it
+  // has been doing. Coming back to a business after three weeks, the second
+  // question is the better one — and it is a cue to open something, so it is
+  // capped rather than allowed to become a second index of the brain.
+  const recent = scan.recentDocumentIds.slice(0, RECENT_LIMIT)
+  if (recent.length > 0) {
+    lines.push('## Recently changed', '')
+    for (const id of recent) {
+      lines.push(`- \`${id}\``)
+    }
+    lines.push('')
+  }
+
+  // Why: a `[[link]]` pointing at nothing is not a broken link, it is the
+  // company saying it should know something and does not. Capped for the same
+  // reason as the list above, and each entry names at most three askers so one
+  // popular gap cannot take ten lines.
+  const wanted = scan.wantedPages.slice(0, WANTED_LIMIT)
+  if (wanted.length > 0) {
+    lines.push(
+      '## Wanted pages',
+      '',
+      'Named by a `[[link]]` in the brain and not written yet. If work turns up what',
+      'one of these should say, write it — that is what the link was for.',
+      ''
+    )
+    for (const page of wanted) {
+      lines.push(`- \`${page.name}\` — wanted by ${renderRequesters(page.requestedBy)}`)
     }
     lines.push('')
   }

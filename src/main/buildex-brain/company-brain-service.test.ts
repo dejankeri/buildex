@@ -70,6 +70,85 @@ describe('scanCompanyBrain', () => {
     expect(scan.totalLinks).toBe(0)
   })
 
+  it('collects a wikilink that resolves nowhere as a wanted page', async () => {
+    // Why: `[[acme-renewal-terms]]` written while writing something else is the
+    // company saying it should know that. Dropped, the intention was lost.
+    write('clients/acme.md', '# Acme\nSee [[acme-renewal-terms]].')
+    write('rules/operating.md', '# Operating\nAlso [[acme-renewal-terms]] and [[escalation]].')
+
+    const scan = await runScan(1)
+
+    expect(scan.wantedPages).toEqual([
+      { name: 'acme-renewal-terms', requestedBy: ['clients/acme.md', 'rules/operating.md'] },
+      { name: 'escalation', requestedBy: ['rules/operating.md'] }
+    ])
+  })
+
+  it('does not turn a wanted page into a broken outbound link', async () => {
+    // Collecting is not surfacing an error: the document still links nowhere.
+    write('a.md', '# A\n[[missing]]')
+
+    const scan = await runScan(1)
+
+    expect(scan.documents[0]?.linksTo).toEqual([])
+    expect(scan.orphanIds).toEqual(['a.md'])
+    expect(scan.totalLinks).toBe(0)
+  })
+
+  it('does not want a page named by a sentence somebody typed into a link', async () => {
+    write('a.md', `# A\n[[${'x'.repeat(200)}]]`)
+
+    const scan = await runScan(1)
+
+    expect(scan.wantedPages).toEqual([])
+  })
+
+  it('does not want a page an unresolved relative path names', async () => {
+    // A path is a claim about the filesystem, and a wrong one is a typo — not a
+    // page anybody asked to have written.
+    write('a.md', '# A\n[gone](./missing.md)')
+
+    const scan = await runScan(1)
+
+    expect(scan.wantedPages).toEqual([])
+  })
+
+  it('reads a description from front matter and leaves it off documents with none', async () => {
+    write('decisions/pricing.md', '---\ndescription: Why we price per seat.\n---\n\n# Pricing\n')
+    write('decisions/plain.md', '# Plain\n')
+
+    const scan = await runScan(1)
+
+    expect(scan.documents.find((d) => d.id === 'decisions/pricing.md')?.description).toBe(
+      'Why we price per seat.'
+    )
+    expect(scan.documents.find((d) => d.id === 'decisions/plain.md')).not.toHaveProperty(
+      'description'
+    )
+  })
+
+  it("prefers an entity's description over the line its main file opens with", async () => {
+    write(
+      'clients/acme/index.md',
+      '---\ndescription: Renews in Q3.\n---\n\n# Acme\n\nBoilerplate.\n'
+    )
+
+    const scan = await runScan(1)
+    const entity = scan.tree.find((node) => node.path === 'clients')?.children[0]
+
+    expect(entity?.main?.summary).toBe('Renews in Q3.')
+  })
+
+  it('summarises past front matter rather than reporting its opening rule', async () => {
+    // Without stripping the block, the first line a summary finds is `---`.
+    write('clients/acme/index.md', '---\nowner: dana\n---\n\n# Acme\n\nRenews in Q3.\n')
+
+    const scan = await runScan(1)
+    const entity = scan.tree.find((node) => node.path === 'clients')?.children[0]
+
+    expect(entity?.main?.summary).toBe('Renews in Q3.')
+  })
+
   it('ignores links inside code fences', async () => {
     write('a.md', '# A\n```\n[[b]]\n```\nand `[[b]]` inline')
     write('b.md', '# B')

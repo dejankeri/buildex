@@ -5,9 +5,14 @@ import path from 'node:path'
 //   [[wikilink]]            — resolved by filename, the convention across packs
 //   [label](relative.md)    — resolved relative to the containing file
 //
-// Anything resolving outside the repo, or to a file that does not exist, is
-// dropped rather than producing a dangling node — the map shows what is really
-// there, not what someone meant to write.
+// A relative link resolving outside the repo, or onto a file that does not
+// exist, is dropped rather than producing a dangling node — a path is a claim
+// about the filesystem, and a wrong one is nothing more than a typo.
+//
+// An unresolved `[[wikilink]]` is the opposite and is collected. A name is not a
+// path: writing `[[acme-renewal-terms]]` while writing something else is how an
+// operator says the company should know that and does not yet. Dropping those
+// threw away the brain's own backlog, one intention at a time.
 
 const WIKILINK_RE = /\[\[([^\]]+)\]\]/g
 const MARKDOWN_LINK_RE = /\[[^\]]*\]\(([^)]+?\.md)\)/g
@@ -50,21 +55,44 @@ export function extractRelativeLinkPaths(text: string): string[] {
 }
 
 /**
- * Resolve one document's outbound links to document ids.
- * `byName` maps a lowercased filename (no extension) to its id.
+ * Longest a name gets before it stops reading as a page somebody meant to
+ * write. `[[…]]` accepts anything up to the closing bracket, and an accidental
+ * sentence inside one used to cost nothing because the name was only ever a
+ * lookup key. Now it renders, so it needs a bound.
+ */
+const WANTED_NAME_LIMIT = 80
+
+export type DocumentLinks = {
+  /** Documents this one reaches, by id, sorted. */
+  linksTo: string[]
+  /** Wikilink names that reach nothing — pages this document wants, sorted. */
+  wanted: string[]
+}
+
+/**
+ * Resolve one document's outbound links to document ids, and collect the names
+ * that resolve to nothing. `byName` maps a lowercased filename (no extension)
+ * to its id.
  */
 export function resolveDocumentLinks(args: {
   text: string
   documentId: string
   knownIds: ReadonlySet<string>
   byName: ReadonlyMap<string, string>
-}): string[] {
+}): DocumentLinks {
   const { text, documentId, knownIds, byName } = args
   const targets = new Set<string>()
+  const wanted = new Set<string>()
 
   for (const name of extractWikilinkNames(text)) {
     const target = byName.get(name.toLowerCase())
-    if (target && target !== documentId) {
+    if (!target) {
+      if (name.length <= WANTED_NAME_LIMIT) {
+        wanted.add(name)
+      }
+      continue
+    }
+    if (target !== documentId) {
       targets.add(target)
     }
   }
@@ -83,5 +111,5 @@ export function resolveDocumentLinks(args: {
     }
   }
 
-  return [...targets].sort()
+  return { linksTo: [...targets].sort(), wanted: [...wanted].sort() }
 }

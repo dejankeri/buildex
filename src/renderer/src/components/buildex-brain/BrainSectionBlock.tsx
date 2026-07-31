@@ -8,7 +8,11 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
-import type { BrainAttachment, BrainNode } from '../../../../shared/buildex-brain-types'
+import type {
+  BrainAttachment,
+  BrainDocument,
+  BrainNode
+} from '../../../../shared/buildex-brain-types'
 import BrainEntityCard from './BrainEntityCard'
 
 // One section, and — through itself — every subsection under it.
@@ -92,25 +96,7 @@ export default function BrainSectionBlock({
             <p className="text-[11px] leading-snug text-muted-foreground/80">{purpose}</p>
           ) : null}
 
-          {node.documents.length > 0 ? (
-            <ul className="flex flex-wrap gap-x-1 gap-y-0.5">
-              {node.documents.map((document) => (
-                <li key={document.id}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenDocument(document.id)}
-                    className="flex max-w-[18rem] items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-[12px] hover:bg-accent"
-                  >
-                    <FileText size={11} className="shrink-0 text-muted-foreground/50" />
-                    <span className="min-w-0 flex-1 truncate">{document.title}</span>
-                    {document.changed ? (
-                      <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />
-                    ) : null}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <BrainDocumentRow documents={node.documents} onOpen={onOpenDocument} />
 
           <BrainAttachmentRow attachments={node.attachments} onOpen={onOpenAttachment} />
 
@@ -151,6 +137,54 @@ function SectionLabel({ node, isTop }: { node: BrainNode; isTop: boolean }): Rea
     >
       {node.title}
     </h2>
+  )
+}
+
+/**
+ * A row of documents, each as a chip.
+ *
+ * Shared with the entity page rather than copied into it: the description is the
+ * reason to click one, and a document that reads differently depending on which
+ * screen lists it is a document nobody trusts.
+ */
+export function BrainDocumentRow({
+  documents,
+  onOpen
+}: {
+  documents: BrainDocument[]
+  onOpen: (documentId: string) => void
+}): React.JSX.Element | null {
+  if (documents.length === 0) {
+    return null
+  }
+  return (
+    <ul className="flex flex-wrap gap-x-1 gap-y-0.5">
+      {documents.map((document) => (
+        <li key={document.id}>
+          <button
+            type="button"
+            onClick={() => onOpen(document.id)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-[12px] hover:bg-accent',
+              // Why: a described document earns the extra width, so the title it
+              // shares the chip with is not truncated to make room.
+              document.description ? 'max-w-[26rem]' : 'max-w-[18rem]'
+            )}
+          >
+            <FileText size={11} className="shrink-0 text-muted-foreground/50" />
+            <span className="min-w-0 flex-1 truncate">{document.title}</span>
+            {document.description ? (
+              <span className="min-w-0 truncate text-[11px] text-muted-foreground/70">
+                {document.description}
+              </span>
+            ) : null}
+            {document.changed ? (
+              <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />
+            ) : null}
+          </button>
+        </li>
+      ))}
+    </ul>
   )
 }
 

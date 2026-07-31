@@ -14053,7 +14053,8 @@
         "placeholder": "Write it the way you would explain it to someone joining tomorrow.",
         "unsaved": "Unsaved",
         "saved": "Saved",
-        "hint": "⌘S to save"
+        "hint": "⌘S to save",
+        "linkedFrom": "Linked from"
       },
       "editor": {
         "placeholder": "Write it the way you would explain it to someone joining tomorrow.",
@@ -14140,6 +14141,12 @@
         "empty": "This save changed nothing in the brain.",
         "moreFiles": "More files changed than are shown here.",
         "linesUnavailable": "Git listed these files but its diff did not line up with them, so only the names are shown."
+      },
+      "wanted": {
+        "title": "Wanted pages",
+        "hint": "Named by a link somewhere in the brain, and not written yet.",
+        "moreAskers": "+{{value0}} more",
+        "morePages": "+{{value0}} more wanted"
       }
     },
     "sidebar": {

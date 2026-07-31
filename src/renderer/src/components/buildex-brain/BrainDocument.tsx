@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, CornerUpLeft, Loader2 } from 'lucide-react'
 import { translate } from '@/i18n/i18n'
 import BrainMarkdownEditor from './BrainMarkdownEditor'
 import { joinFrontmatter, splitFrontmatter } from './brain-frontmatter'
+import type { BrainDocument as BrainDocumentNode } from '../../../../shared/buildex-brain-types'
 import type { BrainOpenFile } from './use-brain'
 
 // Writing a company document, in the Brain.
@@ -14,17 +15,29 @@ import type { BrainOpenFile } from './use-brain'
 // Nothing is ever lost (invariant 8): edits save on ⌘S, on Back, and on unmount
 // — the last through a ref, because a component that is going away cannot wait
 // for its own state to settle first.
+//
+// Backlinks sit under the editor because a document's context is who reached for
+// it: the scan has computed that since the beginning and no screen ever showed
+// it, so the one place it is worth reading was the one place it was missing.
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
+/** Module-level so the default prop is one reference, not a new array per render. */
+const NO_BACKLINKS: BrainDocumentNode[] = []
+
 export default function BrainDocument({
   file,
+  backlinks = NO_BACKLINKS,
   onClose,
-  onSaved
+  onSaved,
+  onOpenDocument
 }: {
   file: BrainOpenFile
+  /** Documents linking here, resolved from the scan. */
+  backlinks?: BrainDocumentNode[]
   onClose: () => void
   onSaved: () => void | Promise<void>
+  onOpenDocument?: (documentId: string) => void
 }): React.JSX.Element {
   /** The whole file as it was read — what "dirty" is measured against. */
   const [original, setOriginal] = useState<string | null>(null)
@@ -164,6 +177,26 @@ export default function BrainDocument({
           <BrainMarkdownEditor key={file.absolutePath} initialValue={body} onChange={edit} />
         </div>
       )}
+
+      {backlinks.length > 0 && onOpenDocument ? (
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-border px-4 py-1.5">
+          <CornerUpLeft size={11} className="shrink-0 text-muted-foreground/50" />
+          <span className="text-[11px] text-muted-foreground/70">
+            {translate('buildex.brain.document.linkedFrom', 'Linked from')}
+          </span>
+          {backlinks.map((document) => (
+            <button
+              key={document.id}
+              type="button"
+              onClick={() => onOpenDocument(document.id)}
+              title={document.id}
+              className="max-w-[16rem] truncate rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent"
+            >
+              {document.title}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -1,8 +1,8 @@
 import React from 'react'
-import { ChevronLeft, FileText, PenLine } from 'lucide-react'
+import { ChevronLeft, PenLine } from 'lucide-react'
 import { translate } from '@/i18n/i18n'
 import type { BrainNode } from '../../../../shared/buildex-brain-types'
-import { BrainAttachmentRow } from './BrainSectionBlock'
+import { BrainAttachmentRow, BrainDocumentRow } from './BrainSectionBlock'
 
 // One entity as a place of its own.
 //
@@ -67,23 +67,7 @@ export default function BrainEntityPage({
               {group.label ? (
                 <p className="text-[11px] text-muted-foreground/70">{group.label}</p>
               ) : null}
-              <ul className="flex flex-wrap gap-x-1 gap-y-0.5">
-                {group.documents.map((document) => (
-                  <li key={document.id}>
-                    <button
-                      type="button"
-                      onClick={() => onOpenDocument(document.id)}
-                      className="flex max-w-[18rem] items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[12px] hover:bg-accent"
-                    >
-                      <FileText size={11} className="shrink-0 text-muted-foreground/50" />
-                      <span className="min-w-0 flex-1 truncate">{document.title}</span>
-                      {document.changed ? (
-                        <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <BrainDocumentRow documents={group.documents} onOpen={onOpenDocument} />
             </div>
           ))}
         </section>

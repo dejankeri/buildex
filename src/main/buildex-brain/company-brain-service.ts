@@ -5,10 +5,13 @@ import type {
   BrainFolder,
   BrainLocation,
   BrainResolution,
-  BrainScan
+  BrainScan,
+  BrainWantedPage
 } from '../../shared/buildex-brain-types'
 import { listChangedDocumentIds } from './company-brain-changed-docs'
 import { embeddedLocation } from './brain-location'
+import { readDocumentFrontmatter } from './brain-document-frontmatter'
+import { listRecentlyChangedDocuments } from './brain-recent-documents'
 import { resolveDocumentLinks } from './company-brain-links'
 import {
   countHeadings,
@@ -35,6 +38,9 @@ function documentFolder(id: string): string {
   return dir === '.' ? '' : dir
 }
 
+/** A cue to open something, not an index — an index would grow with the brain. */
+const RECENT_DOCUMENT_LIMIT = 10
+
 export async function scanCompanyBrain(
   repoPath: string,
   location: BrainLocation,
@@ -56,11 +62,30 @@ export async function scanCompanyBrain(
   }
 
   const texts = new Map<string, string>()
+  const descriptions = new Map<string, string>()
   const linksTo = new Map<string, string[]>()
+  // Insertion order follows `ids`, which is sorted — so every wanted page's
+  // requesters come out in the same order on every scan.
+  const wantedBy = new Map<string, string[]>()
   for (const id of ids) {
     const text = readDocumentText(location, id)
     texts.set(id, text)
-    linksTo.set(id, resolveDocumentLinks({ text, documentId: id, knownIds, byName }))
+    // Parsed from text already in hand for the link graph: no extra file read,
+    // and nothing about how the walk orders itself changes.
+    const { description } = readDocumentFrontmatter(text)
+    if (description) {
+      descriptions.set(id, description)
+    }
+    const links = resolveDocumentLinks({ text, documentId: id, knownIds, byName })
+    linksTo.set(id, links.linksTo)
+    for (const name of links.wanted) {
+      const asking = wantedBy.get(name)
+      if (asking) {
+        asking.push(id)
+      } else {
+        wantedBy.set(name, [id])
+      }
+    }
   }
 
   const linkedFrom = new Map<string, Set<string>>()
@@ -72,11 +97,18 @@ export async function scanCompanyBrain(
     }
   }
 
-  const changed = new Set(await listChangedDocumentIds(location))
+  // Together: both read git, neither needs the other, and this one call sits on
+  // the critical path of creating a worktree.
+  const [changedIds, recentDocumentIds] = await Promise.all([
+    listChangedDocumentIds(location),
+    listRecentlyChangedDocuments(location, knownIds, RECENT_DOCUMENT_LIMIT)
+  ])
+  const changed = new Set(changedIds)
 
   const documents: BrainDocument[] = ids.map((id) => {
     const text = texts.get(id) ?? ''
     const outbound = linksTo.get(id) ?? []
+    const description = descriptions.get(id)
     return {
       id,
       name: documentName(id),
@@ -84,6 +116,9 @@ export async function scanCompanyBrain(
       // allows. They differ most where it matters — a dated decision slug.
       title: firstHeading(text) ?? documentName(id),
       folder: documentFolder(id),
+      // Omitted rather than empty: a brain that never wrote one must serialise
+      // exactly as it did before descriptions existed.
+      ...(description ? { description } : {}),
       linksTo: outbound,
       linkedFrom: [...(linkedFrom.get(id) ?? [])].sort(),
       changed: changed.has(id),
@@ -115,6 +150,12 @@ export async function scanCompanyBrain(
 
   const totalLinks = documents.reduce((sum, doc) => sum + doc.linksTo.length, 0)
 
+  // Most-asked-for first: a name three documents reached for is a bigger hole in
+  // the brain than one a single note mentioned once.
+  const wantedPages: BrainWantedPage[] = [...wantedBy.entries()]
+    .map(([name, requestedBy]) => ({ name, requestedBy }))
+    .sort((a, b) => b.requestedBy.length - a.requestedBy.length || a.name.localeCompare(b.name))
+
   return {
     repoPath,
     initialized: isBrainInitialized(location),
@@ -127,6 +168,8 @@ export async function scanCompanyBrain(
     folders,
     tree,
     orphanIds,
+    wantedPages,
+    recentDocumentIds,
     totalLinks,
     scannedAt: now
   }

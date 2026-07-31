@@ -23,6 +23,11 @@ export type BrainOpenFile = {
   relativePath: string
   /** What the header says, e.g. "Decisions / pricing". */
   title: string
+  /**
+   * Its id in the scan, when it came from there. Absent for a skill, which is a
+   * file in the brain folder but not a node in the document graph.
+   */
+  documentId?: string
 }
 
 export type BrainState = {
@@ -37,7 +42,7 @@ export type BrainState = {
   refresh: () => Promise<void>
   openFile: BrainOpenFile | null
   openDocument: (documentId: string) => void
-  openPath: (absolutePath: string, relativePath: string) => void
+  openPath: (absolutePath: string, relativePath: string, documentId?: string) => void
   closeFile: () => void
   /** Write the chosen sections into a repo that has no brain yet. */
   setUp: (folders: string[], summary: string, placement: BrainPlacementChoice) => Promise<void>
@@ -147,9 +152,17 @@ export function useBrain(): BrainState {
   // Why: editing happens inside the Brain rather than in the workspace editor.
   // Handing the file to the editor meant leaving this screen and navigating back
   // for every small change, which is the wrong shape for writing a handbook.
-  const openPath = useCallback((absolutePath: string, relativePath: string): void => {
-    setOpenFile({ absolutePath, relativePath, title: titleForBrainPath(relativePath) })
-  }, [])
+  const openPath = useCallback(
+    (absolutePath: string, relativePath: string, documentId?: string): void => {
+      setOpenFile({
+        absolutePath,
+        relativePath,
+        title: titleForBrainPath(relativePath),
+        ...(documentId ? { documentId } : {})
+      })
+    },
+    []
+  )
 
   // Brain ids are relative to the brain root, which is not always inside the repo.
   // Joined by hand rather than with `node:path`, which the renderer does not have.
@@ -159,7 +172,7 @@ export function useBrain(): BrainState {
       if (!root) {
         return
       }
-      openPath(`${root.replace(/[/\\]$/, '')}/${documentId}`, documentId)
+      openPath(`${root.replace(/[/\\]$/, '')}/${documentId}`, documentId, documentId)
     },
     [openPath, scan.resolution]
   )

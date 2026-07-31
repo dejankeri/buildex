@@ -63,6 +63,19 @@ export default function BrainPage(): React.JSX.Element {
 
   const lastSave = history.saves[0] ?? null
 
+  // Why: resolved here rather than inside the editor, which knows a path and a
+  // title and deliberately nothing about the graph.
+  const backlinks = useMemo(() => {
+    const documentId = openFile?.documentId
+    if (!documentId) {
+      return []
+    }
+    const byId = new Map(scan.documents.map((document) => [document.id, document]))
+    return (byId.get(documentId)?.linkedFrom ?? [])
+      .map((id) => byId.get(id))
+      .filter((document) => document !== undefined)
+  }, [openFile?.documentId, scan.documents])
+
   // Why: the scan carries the repo it describes, so this is true only once THIS
   // repo has been looked at. Without it the setup screen flashes for a moment on
   // every open — offering to create a brain that is already there.
@@ -164,7 +177,13 @@ export default function BrainPage(): React.JSX.Element {
           }}
         />
       ) : openFile ? (
-        <BrainDocument file={openFile} onClose={closeFile} onSaved={refresh} />
+        <BrainDocument
+          file={openFile}
+          backlinks={backlinks}
+          onClose={closeFile}
+          onSaved={refresh}
+          onOpenDocument={openDocument}
+        />
       ) : (
         <>
           <div className="flex shrink-0 flex-wrap items-end gap-6 border-b border-border px-5 py-4">

@@ -10,6 +10,23 @@ import { embeddedLocation } from './brain-location'
 
 let repo = ''
 
+/**
+ * The stated ceiling. Five hundred documents arranged as a real company arranges
+ * them — 120 clients with four files each, plus twenty decisions — must render
+ * in under this many lines. It is a ceiling on the *shape*: one line per entity,
+ * one per folder of documents, three trailing lists of ten. Raising it means the
+ * map grew a term that scales with the brain, which is the one thing it must not
+ * do.
+ */
+const CONTEXT_MAP_LINE_CEILING = 200
+
+/**
+ * The same ceiling in the unit that is actually spent. Lines are the growth law;
+ * characters are the bill, and a description is bounded at 160 of them, so both
+ * have to be stated or the second one drifts unwatched.
+ */
+const CONTEXT_MAP_CHARACTER_CEILING = 20_000
+
 // Brain documents live under `.buildex/`; the generated outputs do not, so they
 // are written and read with explicit paths below.
 function write(relativePath: string, contents: string): void {
@@ -95,6 +112,44 @@ describe('renderCompanyContext', () => {
     expect(rendered).not.toContain('2026-03-11')
   })
 
+  it('renders a description beside the filename, and nothing extra without one', async () => {
+    write('decisions/pricing.md', '---\ndescription: Why we price per seat.\n---\n\n# Pricing\n')
+    write('decisions/plain.md', '# Plain\n')
+
+    const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+
+    expect(rendered).toContain('- **decisions** — plain, pricing (Why we price per seat.)')
+  })
+
+  it('leaves a brain with no front matter rendering exactly as it did', async () => {
+    // The regression that would silently degrade every brain written so far.
+    write('rules/operating.md', '# Operating\n\nRules.\n')
+    write('notes/side.md', '# Side\n')
+
+    const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+
+    expect(rendered).toContain('- **rules** — operating')
+    expect(rendered).toContain('- **notes** — side')
+    // No document carries the parenthesis a description would have added.
+    expect(
+      rendered.split('\n').filter((line) => line.startsWith('- **') && line.includes('('))
+    ).toEqual([])
+  })
+
+  it('costs one document exactly one changed line when it gains a description', async () => {
+    write('rules/operating.md', '# Operating\n')
+    write('notes/side.md', '# Side\n')
+    const before = renderCompanyContext(await scan(), [], embeddedLocation(repo)).split('\n')
+
+    write('notes/side.md', '---\ndescription: Odds and ends.\n---\n\n# Side\n')
+    const after = renderCompanyContext(await scan(), [], embeddedLocation(repo)).split('\n')
+
+    expect(after).toHaveLength(before.length)
+    expect(after.filter((line, index) => line !== before[index])).toEqual([
+      '- **notes** — side (Odds and ends.)'
+    ])
+  })
+
   it('stays bounded as clients multiply: one line each, not one per file', async () => {
     // The shape this replaced emitted a bullet per folder path, so every client
     // added three or four lines of near-identical noise to every agent prompt.
@@ -115,6 +170,134 @@ describe('renderCompanyContext', () => {
 
     expect(clientLines(two)).toBe(2)
     expect(clientLines(six)).toBe(6)
+  })
+
+  it('holds its ceiling at five hundred documents, described or not', async () => {
+    // The map is read in full at the start of every agent session, so its size
+    // is the product's budget, not a detail. The growth law it has to keep: one
+    // line per entity and one per folder of documents, never one per file — and
+    // a `description:` rides the line its name was already on rather than
+    // claiming one of its own.
+    for (let index = 0; index < 120; index += 1) {
+      const client = `clients/client-${index}`
+      write(`${client}/index.md`, `---\ndescription: Client ${index}, renewing.\n---\n\n# Client\n`)
+      write(`${client}/notes.md`, '# Notes\n')
+      write(`${client}/calls/first.md`, '# Call\n')
+      write(`${client}/calls/second.md`, '# Call\n')
+    }
+    for (let index = 0; index < 20; index += 1) {
+      write(`decisions/decision-${index}.md`, `---\ndescription: Decision ${index}.\n---\n\n# D\n`)
+    }
+
+    const described = await scan()
+    const rendered = renderCompanyContext(described, [], embeddedLocation(repo))
+
+    // 9 declared sections + 120 entity lines + 9 lines of preamble and headings.
+    expect(described.documents).toHaveLength(500)
+    expect(rendered.split('\n')).toHaveLength(138)
+    expect(rendered.split('\n').length).toBeLessThanOrEqual(CONTEXT_MAP_LINE_CEILING)
+    expect(rendered.length).toBeLessThanOrEqual(CONTEXT_MAP_CHARACTER_CEILING)
+
+    // And the descriptions are free in lines: strip every one and the map is the
+    // same height, which is what "bounded" has to mean here.
+    for (let index = 0; index < 120; index += 1) {
+      write(`clients/client-${index}/index.md`, '# Client\n')
+    }
+    for (let index = 0; index < 20; index += 1) {
+      write(`decisions/decision-${index}.md`, '# D\n')
+    }
+
+    const bare = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+
+    expect(bare.split('\n')).toHaveLength(rendered.split('\n').length)
+  })
+})
+
+describe('renderCompanyContext recency and wanted pages', () => {
+  const location = embeddedLocation('/repo')
+
+  it('lists what changed most recently, in the order git reported it', async () => {
+    const rendered = renderCompanyContext(
+      {
+        ...EMPTY_BRAIN_SCAN,
+        recentDocumentIds: ['rules/operating.md', 'decisions/pricing.md']
+      },
+      [],
+      location
+    )
+
+    expect(rendered).toContain('## Recently changed')
+    expect(rendered.indexOf('`rules/operating.md`')).toBeLessThan(
+      rendered.indexOf('`decisions/pricing.md`')
+    )
+  })
+
+  it('says nothing about recency when there is no history to read', () => {
+    // No git, a folder workspace, a brain with nothing saved yet.
+    expect(renderCompanyContext(EMPTY_BRAIN_SCAN, [], location)).not.toContain(
+      '## Recently changed'
+    )
+  })
+
+  it('caps recency at ten however much has changed', () => {
+    const rendered = renderCompanyContext(
+      {
+        ...EMPTY_BRAIN_SCAN,
+        recentDocumentIds: Array.from({ length: 40 }, (_, index) => `doc-${index}.md`)
+      },
+      [],
+      location
+    )
+
+    expect(rendered.split('\n').filter((line) => line.startsWith('- `doc-'))).toHaveLength(10)
+  })
+
+  it('names wanted pages and who asked for them', () => {
+    const rendered = renderCompanyContext(
+      {
+        ...EMPTY_BRAIN_SCAN,
+        wantedPages: [{ name: 'acme-renewal-terms', requestedBy: ['clients/acme.md'] }]
+      },
+      [],
+      location
+    )
+
+    expect(rendered).toContain('## Wanted pages')
+    expect(rendered).toContain('- `acme-renewal-terms` — wanted by `clients/acme.md`')
+  })
+
+  it('keeps one popular gap to one line', () => {
+    const rendered = renderCompanyContext(
+      {
+        ...EMPTY_BRAIN_SCAN,
+        wantedPages: [
+          {
+            name: 'escalation',
+            requestedBy: ['a.md', 'b.md', 'c.md', 'd.md', 'e.md']
+          }
+        ]
+      },
+      [],
+      location
+    )
+
+    expect(rendered).toContain('- `escalation` — wanted by `a.md`, `b.md`, `c.md`, +2 more')
+  })
+
+  it('caps wanted pages at ten, however many the brain has asked for', () => {
+    const rendered = renderCompanyContext(
+      {
+        ...EMPTY_BRAIN_SCAN,
+        wantedPages: Array.from({ length: 50 }, (_, index) => ({
+          name: `wanted-${index}`,
+          requestedBy: ['a.md']
+        }))
+      },
+      [],
+      location
+    )
+
+    expect(rendered.split('\n').filter((line) => line.startsWith('- `wanted-'))).toHaveLength(10)
   })
 })
 

@@ -109,6 +109,7 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 |---|---|
 | `src/shared/buildex-brain-types.ts`, `buildex-store-types.ts`, `buildex-automation-context-types.ts` | **BuildEx-owned** wire contracts |
 | `src/main/buildex-brain/*`, `src/main/buildex-store/*` | **BuildEx-owned** domain layers |
+| `src/renderer/src/components/buildex-brain/*`, `buildex-apps/*`, `buildex-store/*`, `buildex-brand/*` | **BuildEx-owned** surfaces. Upstream has no Brain, Apps or Store, so nothing here can conflict |
 | `src/main/ipc/buildex-brain.ts`, `buildex-brain-placement.ts`, `buildex-store.ts`, `buildex-automation-context.ts` | **BuildEx-owned** IPC modules |
 | `src/main/ipc/register-core-handlers.ts` | 4 imports + 4 registration calls |
 | `src/preload/index.ts` | 5 type imports + 5 api namespaces (+2 type imports and 1 member for `buildexBrainSections.saveDiff`) |
@@ -225,6 +226,17 @@ would otherwise turn a rename into an add plus a delete; `--no-ext-diff` and
 `--no-textconv` because a global diff driver would replace the patch with its own
 output. The commit argument is checked against `/^[0-9a-f]{7,40}$/` before it is
 passed, so no revision expression and no leading-dash option can reach git.
+
+**The recency list's `git log` is pinned the same way, plus `-z`.** `log
+--max-count=200 --format= --name-only -z -M --no-color --no-ext-diff
+--no-textconv --no-show-signature -- <pathspec>`, every flag predating Git 2.25.
+`-z` is the one addition and is not optional: `--name-only` octal-quotes any
+non-ASCII path by default (`core.quotePath`), so a brain written in French would
+produce ids that match nothing the scan just walked. No hash, no revision
+expression and no user string reaches the command line — the only variable is the
+location's own pathspec. Every failure path returns an empty list: a repo with no
+commits, a folder workspace that is no repo, an SSH host without git. A brain
+with no history is still a brain, and it must never cost a scan.
 
 **A gate write is only ever as complete as the catalogue behind it.** The rules
 must come from the shelf *that company* sees — `readCompanyStoreEntries(location)`,

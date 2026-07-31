@@ -6,6 +6,7 @@ import { useAppStore } from '@/store'
 import type { BrainNode, BrainScan, BrainSectionInfo } from '../../../../shared/buildex-brain-types'
 import BrainEntityPage from './BrainEntityPage'
 import BrainSectionBlock, { type BrainAddKind } from './BrainSectionBlock'
+import BrainWantedPages from './BrainWantedPages'
 import { filterBrainTree } from './brain-tree-filter'
 
 // Browsing the brain, and adding to it.
@@ -239,6 +240,13 @@ export default function BrainSections({
             ) : null}
           </div>
         ))}
+
+        {/* Why: hidden while filtering. A wanted page is a name with no document
+            behind it, so it can match nothing the operator typed, and showing it
+            under "Nothing matches that" reads as a result. */}
+        {query.trim() === '' ? (
+          <BrainWantedPages pages={scan.wantedPages} onOpenDocument={onOpenDocument} />
+        ) : null}
       </div>
     </div>
   )
