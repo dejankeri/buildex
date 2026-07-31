@@ -14,6 +14,10 @@ import {
 //
 // Only installed plugins contribute. A key saved for a plugin the operator
 // later removed must not keep reaching the agent.
+//
+// Which company's keys is decided by `deps.companyKey` — the caller resolves it
+// from the workspace, because knowing what a business is is not this module's
+// job and threading a repo path down here would make it one.
 
 export function collectPluginEnv(
   deps: PluginCredentialDeps,

@@ -9,6 +9,7 @@ import type {
 } from '../../shared/buildex-store-types'
 import type { BrainLocation } from '../../shared/buildex-brain-types'
 import type { InstalledAppSummary } from '../buildex-brain/company-context'
+import { resolveCompanyIdentity } from '../buildex-company-identity'
 import { readCompanyMarketplaces } from './company-marketplaces'
 import { readInstalledPlugins } from './claude-plugin-install'
 import { readInstalledPluginInventory } from './installed-plugin-inventory'
@@ -42,6 +43,11 @@ function resourceRoot(): string {
 
 export type AppStoreCatalogOptions = {
   userDataPath?: string
+  /**
+   * Whose credentials `credentialConnected` reports on. Absent means no company
+   * was resolved, so only a pre-company key counts as connected.
+   */
+  companyKey?: string | null
   /** What the company expects installed. Only the Store's IPC has a repo to read it from. */
   roster?: StoreRoster | null
   /**
@@ -101,7 +107,7 @@ export function readAppStoreCatalog(options: AppStoreCatalogOptions = {}): Store
     entries: catalog.entries.map((entry) => ({
       ...entry,
       credentialConnected: entry.overlay?.apiKey
-        ? hasPluginCredential({ userDataPath }, entry.plugin.name)
+        ? hasPluginCredential({ userDataPath, companyKey: options.companyKey }, entry.plugin.name)
         : undefined
     }))
   }
@@ -132,8 +138,17 @@ export async function refreshAppStoreCatalog(
  * marketplace this company added is not on the shelf to be recognised, and the
  * context would describe it as nothing at all.
  */
-export function readInstalledAppSummaries(location?: BrainLocation | null): InstalledAppSummary[] {
-  return readInstalledPluginInventory(homedir(), readCompanyStoreEntries(location))
+export function readInstalledAppSummaries(
+  location: BrainLocation | null | undefined,
+  repoPath: string
+): InstalledAppSummary[] {
+  // Why the repo as well as the brain: the summaries say whether each app is
+  // connected, and a key is connected to a *company*. An external brain's
+  // gitRoot is the brain's own repo, so it cannot answer that.
+  return readInstalledPluginInventory(
+    homedir(),
+    readCompanyStoreEntries(location, resolveCompanyIdentity(repoPath)?.key)
+  )
 }
 
 /**
@@ -144,7 +159,10 @@ export function readInstalledAppSummaries(location?: BrainLocation | null): Inst
  * an app installed from one is then absent from the entries, and anything
  * deriving gate rules from them retires the rules that app is still relying on.
  */
-export function readCompanyStoreEntries(location?: BrainLocation | null): StoreEntry[] {
+export function readCompanyStoreEntries(
+  location?: BrainLocation | null,
+  companyKey?: string | null
+): StoreEntry[] {
   const companyMarketplaces = location ? readCompanyMarketplaces(location).entries : []
-  return readAppStoreCatalog({ companyMarketplaces }).entries
+  return readAppStoreCatalog({ companyMarketplaces, companyKey }).entries
 }

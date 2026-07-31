@@ -310,13 +310,17 @@ export type StoreCredentialStatus = {
   envKey: string
 }
 
+// Why: a key belongs to one business, so both requests name the workspace it was
+// given in. Without it the operator's two Stripe accounts share one slot.
 export type StoreCredentialSaveRequest = {
   pluginName: string
   apiKey: string
+  repoPath?: string
 }
 
 export type StoreCredentialClearRequest = {
   pluginName: string
+  repoPath?: string
 }
 
 export type StoreCredentialResult = {

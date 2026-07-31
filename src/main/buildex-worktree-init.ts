@@ -116,7 +116,7 @@ async function refreshContextWithinDeadline(
     const refreshed = refreshCompanyContext(
       worktreePath,
       location,
-      readInstalledAppSummaries(location)
+      readInstalledAppSummaries(location, worktreePath)
     ).then(() => 'refreshed' as const)
     if ((await Promise.race([refreshed, deadline])) === 'deadline') {
       console.warn(

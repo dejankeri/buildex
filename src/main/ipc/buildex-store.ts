@@ -39,6 +39,7 @@ import { embeddedLocation, requireBrainLocation } from '../buildex-brain/brain-l
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { readInstalledPluginInventory } from '../buildex-store/installed-plugin-inventory'
 import { initializeCompanyRepo, initializedCompanyRepos } from '../buildex-repo-init'
+import { resolveCompanyIdentity } from '../buildex-company-identity'
 
 // The Store's IPC surface.
 //
@@ -48,8 +49,16 @@ import { initializeCompanyRepo, initializedCompanyRepos } from '../buildex-repo-
 // not carry, which is the gate, the credential, and the line the brain tells the
 // agent about what this company now runs on.
 
-function credentialDeps(): { userDataPath: string } {
-  return { userDataPath: app.getPath('userData') }
+/**
+ * Whose keys the caller is asking about. Null company for a workspace that is
+ * not one — a scratch folder, or an SSH workspace whose path names the remote
+ * filesystem — and then only a pre-company key is in play.
+ */
+function credentialDeps(repoPath?: string): { userDataPath: string; companyKey: string | null } {
+  return {
+    userDataPath: app.getPath('userData'),
+    companyKey: resolveCompanyIdentity(repoPath)?.key ?? null
+  }
 }
 
 function claudeDeps(): {
@@ -88,8 +97,12 @@ function readBrainSources(repoPath: string | undefined): {
 
 /** The shelf, with what this machine and this company know about each entry. */
 function assembleCatalog(request?: StoreCatalogRequest): StoreCatalog {
+  const repoPath = request?.repoPath?.trim()
   return readAppStoreCatalog({
-    ...readBrainSources(request?.repoPath?.trim()),
+    ...readBrainSources(repoPath),
+    // Why: "Connected" has to mean connected *here*. Reported against the whole
+    // machine, one business's key would show as this one's.
+    companyKey: resolveCompanyIdentity(repoPath)?.key ?? null,
     unsupportedAgent: unsupportedInstallAgent(request?.agent)
   })
 }
@@ -180,9 +193,11 @@ export function registerBuildExStoreHandlers(): void {
   ipcMain.handle(
     'buildex-store:refresh',
     async (_event, request?: StoreCatalogRequest): Promise<StoreRefreshResult> => {
+      const repoPath = request?.repoPath?.trim()
       try {
         return await refreshAppStoreCatalog({
-          ...readBrainSources(request?.repoPath?.trim()),
+          ...readBrainSources(repoPath),
+          companyKey: resolveCompanyIdentity(repoPath)?.key ?? null,
           unsupportedAgent: unsupportedInstallAgent(request?.agent)
         })
       } catch (error) {
@@ -260,7 +275,17 @@ export function registerBuildExStoreHandlers(): void {
       if (!pluginName || typeof apiKey !== 'string') {
         return { ok: false, status: null, error: 'Missing pluginName or apiKey' }
       }
-      const deps = credentialDeps()
+      const deps = credentialDeps(request?.repoPath?.trim())
+      if (!deps.companyKey) {
+        // Why: with no company to file it under, the only place left is the slot
+        // every company reads — which would hand this business's key to the next
+        // one's agent. Say so instead.
+        return {
+          ok: false,
+          status: null,
+          error: "Open the business's git repo on this machine — a key is saved per company."
+        }
+      }
       const outcome = savePluginCredential(deps, pluginName, apiKey)
       if (!outcome.ok) {
         return { ok: false, status: null, error: outcome.error }
@@ -332,7 +357,7 @@ export function registerBuildExStoreHandlers(): void {
       if (!pluginName) {
         return { ok: false, status: null, error: 'Missing pluginName' }
       }
-      const deps = credentialDeps()
+      const deps = credentialDeps(request?.repoPath?.trim())
       clearPluginCredential(deps, pluginName)
       const overlay = assembleCatalog().entries.find(
         (entry) => entry.plugin.name === pluginName

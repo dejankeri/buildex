@@ -17,12 +17,17 @@ const dirs: string[] = []
 function userData(keys: Record<string, string> = {}): string {
   const root = mkdtempSync(path.join(tmpdir(), 'buildex-userdata-'))
   dirs.push(root)
-  const credentials = path.join(root, 'pack-credentials')
+  writeKeys(root, null, keys)
+  return root
+}
+
+/** A company folder of keys, or the pre-company slot when the company is null. */
+function writeKeys(root: string, companyKey: string | null, keys: Record<string, string>): void {
+  const credentials = path.join(root, 'pack-credentials', ...(companyKey ? [companyKey] : []))
   mkdirSync(credentials, { recursive: true })
   for (const [pluginName, value] of Object.entries(keys)) {
     writeFileSync(path.join(credentials, `${pluginName}.enc`), value, 'utf8')
   }
-  return root
 }
 
 function entry(
@@ -105,6 +110,30 @@ describe('collectPluginEnv', () => {
         entry('stripe', false, { apiKey: { transport: 'mcp-bearer' } })
       ])
     ).toEqual({})
+  })
+
+  it('gives two businesses their own key for the same plugin', () => {
+    const userDataPath = userData()
+    writeKeys(userDataPath, 'acme-0123456789abcdef', { stripe: 'sk_acme' })
+    writeKeys(userDataPath, 'beta-fedcba9876543210', { stripe: 'sk_beta' })
+    const shelf = [entry('stripe', true, { apiKey: { transport: 'mcp-bearer' } })]
+
+    expect(collectPluginEnv({ userDataPath, companyKey: 'acme-0123456789abcdef' }, shelf)).toEqual({
+      BUILDEX_STRIPE_API_KEY: 'sk_acme'
+    })
+    expect(collectPluginEnv({ userDataPath, companyKey: 'beta-fedcba9876543210' }, shelf)).toEqual({
+      BUILDEX_STRIPE_API_KEY: 'sk_beta'
+    })
+  })
+
+  it('falls back to a pre-company key for a business that has none of its own', () => {
+    const userDataPath = userData({ stripe: 'sk_legacy' })
+
+    expect(
+      collectPluginEnv({ userDataPath, companyKey: 'acme-0123456789abcdef' }, [
+        entry('stripe', true, { apiKey: { transport: 'mcp-bearer' } })
+      ])
+    ).toEqual({ BUILDEX_STRIPE_API_KEY: 'sk_legacy' })
   })
 
   it('ignores a plugin nobody curated, and one with no key saved', () => {

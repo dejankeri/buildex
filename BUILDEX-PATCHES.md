@@ -115,9 +115,10 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 | `src/preload/api-types.ts` | 2 type imports + 2 members on `PreloadApi` |
 | `resources/build/icon.{png,icns,ico}`, `resources/{icon,icon-dev}.png`, `resources/logo.svg` | BuildEx artwork |
 | `src/main/buildex-repo-init.ts`, `buildex-worktree-init.ts` | **BuildEx-owned.** Everything a repo and a fresh checkout need before an agent works there |
+| `src/main/buildex-company-identity.ts` | **BuildEx-owned.** Which business a path belongs to — the key everything stored per company is filed under |
 | `src/main/runtime/orca-runtime.ts` | 1 import + 1 `await prepareCompanyWorktree(created.path)` in `createManagedWorktree` |
 | `src/main/runtime/orca-runtime.test.ts` | 1 import + 1 `readFileSync` import member + 2 harness mocks + 1 test |
-| `src/main/ipc/pty.ts` | 3 imports + `applyBuildExPluginEnv` (installed plugins' keys into the agent's env) + 1 `gateCompanyWorktreeOnActivation(worktreePath, connectionId)` in `beginPtySpawnForWorktree` |
+| `src/main/ipc/pty.ts` | 2 imports + 1 `applyCompanyPluginEnv(...)` call in `buildPtyHostEnv` + 1 `buildexWorkspacePath` field on `BuildPtyHostEnvOptions` and the `ctx.cwd` line that fills it + 1 `gateCompanyWorktreeOnActivation(worktreePath, connectionId)` in `beginPtySpawnForWorktree` |
 
 **Why the runtime is touched at all.** The automations engine creates a headless
 worktree and launches the startup agent in the same call, and `.claude/` is
@@ -152,6 +153,15 @@ the same signal `pty.ts:1023` already keys host-loopback injection off) turns th
 call into a no-op. A remote checkout's gate still lands when a BuildEx surface
 touches the repo. **Gating remote worktrees needs a writer on the far side that
 BuildEx does not have yet — a known gap, not an oversight.**
+
+**A credential is keyed by company, and a worktree path is not one.** Both call
+sites hand over a *worktree* path, so keying storage on it would give one
+business N identities and split its keys N ways with no error to notice.
+`resolveCompanyIdentity` collapses them onto the primary checkout — the same
+aliasing `worktree-primary-checkout.ts` already solves for the brain — and a path
+outside any repo resolves to no company and therefore to no keys at all. Anything
+BuildEx stores per business goes through that one resolver; a second identity
+mechanism would disagree with the first on the day it matters.
 
 **A gate write is only ever as complete as the catalogue behind it.** The rules
 must come from the shelf *that company* sees — `readCompanyStoreEntries(location)`,

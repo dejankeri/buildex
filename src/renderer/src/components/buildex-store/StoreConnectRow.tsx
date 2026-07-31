@@ -5,6 +5,7 @@ import { translate } from '@/i18n/i18n'
 import { useDetectedAgents } from '@/hooks/useDetectedAgents'
 import { useAgentDetectionTargetForWorktree } from '@/hooks/useAgentDetectionTarget'
 import { useAppStore } from '@/store'
+import { useActiveWorktree } from '@/store/selectors'
 import type { StoreEntry } from '../../../../shared/buildex-store-types'
 import { launchMcpConnect, resolveMcpConnectAgent } from './connect-plugin-via-mcp'
 
@@ -18,6 +19,10 @@ import { launchMcpConnect, resolveMcpConnectAgent } from './connect-plugin-via-m
 // A few servers take a static key instead (no OAuth to run). For those the
 // operator pastes it, and it goes straight to main to be encrypted — never held
 // in the renderer beyond the keystroke, never read back, never in the repo.
+//
+// The key belongs to the business it was pasted for, so every call names the
+// workspace — read from the same selector the catalog is keyed on, so "Connected"
+// and "Disconnect" can never mean two different companies.
 
 export default function StoreConnectRow({
   entry,
@@ -28,6 +33,7 @@ export default function StoreConnectRow({
   worktreeId: string | null
   onChanged: () => void | Promise<void>
 }): React.JSX.Element | null {
+  const repoPath = useActiveWorktree()?.path ?? ''
   const detectionTarget = useAgentDetectionTargetForWorktree(worktreeId)
   const { detectedIds } = useDetectedAgents(detectionTarget)
   const defaultAgent = useAppStore((s) => s.settings?.defaultTuiAgent)
@@ -81,7 +87,11 @@ export default function StoreConnectRow({
     setBusy(true)
     setError(null)
     try {
-      const result = await window.api.buildexStore.saveCredential({ pluginName, apiKey: value })
+      const result = await window.api.buildexStore.saveCredential({
+        pluginName,
+        apiKey: value,
+        repoPath
+      })
       if (!result.ok) {
         setError(result.error ?? 'Could not save the key')
         return
@@ -100,7 +110,7 @@ export default function StoreConnectRow({
   const disconnect = async (): Promise<void> => {
     setBusy(true)
     try {
-      await window.api.buildexStore.clearCredential({ pluginName })
+      await window.api.buildexStore.clearCredential({ pluginName, repoPath })
       await onChanged()
     } finally {
       setBusy(false)
