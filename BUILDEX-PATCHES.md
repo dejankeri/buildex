@@ -114,6 +114,17 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 | `src/preload/index.ts` | 2 type imports + 2 api namespaces |
 | `src/preload/api-types.ts` | 2 type imports + 2 members on `PreloadApi` |
 | `resources/build/icon.{png,icns,ico}`, `resources/{icon,icon-dev}.png`, `resources/logo.svg` | BuildEx artwork |
+| `src/main/buildex-repo-init.ts`, `buildex-worktree-init.ts` | **BuildEx-owned.** Everything a repo and a fresh checkout need before an agent works there |
+| `src/main/runtime/orca-runtime.ts` | 1 import + 1 `await prepareCompanyWorktree(created.path)` in `createManagedWorktree` |
+| `src/main/runtime/orca-runtime.test.ts` | 1 import + 1 `readFileSync` import member + 1 test |
+
+**Why the runtime is touched at all.** The automations engine creates a headless
+worktree and launches the startup agent in the same call, and `.claude/` is
+git-excluded — so without this line the agent runs most autonomously exactly
+where it has the least memory and the fewest guardrails. It is **awaited**: Claude
+Code reads `.claude/` once at session start, so the void-fired refresh the IPC
+surfaces use would race the agent. Keep the logic in `buildex-worktree-init.ts`;
+the runtime's share is the one call.
 
 ### Branding the visible copy — Phase 6
 

@@ -5,7 +5,7 @@ import { performance } from 'node:perf_hooks'
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { lstat, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, join, win32 } from 'node:path'
@@ -69,6 +69,7 @@ import {
 } from './orca-runtime'
 import { RecentPtyOutputBuffer } from './recent-pty-output-buffer'
 import { HeadlessEmulator } from '../daemon/headless-emulator'
+import { buildHeadlessAutomationWorktreeCreateArgs } from '../automations/headless-workspace-create'
 import {
   HEADLESS_RUNTIME_WINDOW_ID,
   type RuntimeMobileSessionTabsResult,
@@ -434,6 +435,21 @@ vi.mock('../agent-trust-presets', () => ({
   markCodexProjectTrusted: markCodexProjectTrustedMock,
   markCopilotFolderTrusted: markCopilotFolderTrustedMock,
   markCursorWorkspaceTrusted: markCursorWorkspaceTrustedMock
+}))
+
+// BuildEx: worktree creation prepares the checkout for the agent (see the
+// automation startup test below). Two of its reads have no place in a runtime
+// unit test — the shelf walks the operator's real plugin directory, and the
+// brain's changed-document check spawns git, which this file's environment
+// cannot do by the time it has run its way here. Everything the test asserts on
+// is still written for real.
+vi.mock('../buildex-store/store-catalog-source', () => ({
+  readAppStoreCatalog: vi.fn(() => ({ entries: [] })),
+  readInstalledAppSummaries: vi.fn(() => [])
+}))
+
+vi.mock('../buildex-brain/company-brain-changed-docs', () => ({
+  listChangedDocumentIds: vi.fn(async () => [])
 }))
 
 vi.mock('../hooks', () => ({
@@ -33404,6 +33420,115 @@ describe('OrcaRuntimeService', () => {
       })
     )
     expect(metaById[result.worktree.id]).toMatchObject({ createdWithAgent: 'codex' })
+  })
+
+  // BuildEx: an automation launches its startup agent inside the worktree it just
+  // created, and the agent reads `.claude/` once at session start. See
+  // src/main/buildex-worktree-init.ts.
+  it('lands the company context and the gate before an automation startup agent spawns', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'buildex-automation-'))
+    const worktreePath = join(workspaceRoot, 'auto-nightly-digest')
+    // Why: the checkout is what carries the brain, so create it where git would.
+    addWorktreeMock.mockImplementationOnce(async () => {
+      await mkdir(join(worktreePath, '.buildex'), { recursive: true })
+      await writeFile(join(worktreePath, '.buildex', 'handbook.md'), '# Handbook\n', 'utf8')
+    })
+    const metaById: Record<string, WorktreeMeta> = {}
+    const runtimeStore = {
+      ...store,
+      getSettings: () => ({ ...store.getSettings(), agentCmdOverrides: {} }),
+      getAllWorktreeMeta: () => metaById,
+      getWorktreeMeta: (worktreeId: string) => metaById[worktreeId],
+      setWorktreeMeta: (worktreeId: string, meta: Partial<WorktreeMeta>) => {
+        metaById[worktreeId] = { ...(metaById[worktreeId] ?? makeWorktreeMeta()), ...meta }
+        return metaById[worktreeId]
+      }
+    }
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+    const readAtSpawn = (...relative: string[]): string | null => {
+      try {
+        return readFileSync(join(worktreePath, '.claude', ...relative), 'utf8')
+      } catch {
+        return null
+      }
+    }
+    let agentSawContext: string | null = null
+    let agentSawImport: string | null = null
+    let agentSawGate: string | null = null
+    const spawn = vi.fn().mockImplementation(() => {
+      agentSawContext = readAtSpawn('company-context.md')
+      agentSawImport = readAtSpawn('CLAUDE.md')
+      agentSawGate = readAtSpawn('settings.json')
+      return { id: 'pty-buildex-automation-startup' }
+    })
+    runtime.setPtyController({
+      spawn,
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null
+    })
+
+    computeWorktreePathMock.mockReturnValue(worktreePath)
+    ensurePathWithinWorkspaceMock.mockReturnValue(worktreePath)
+    vi.mocked(listWorktrees).mockResolvedValue([
+      {
+        path: worktreePath,
+        head: 'def',
+        branch: 'auto-nightly-digest-19700101T0000',
+        isBare: false,
+        isMainWorktree: false
+      }
+    ])
+    // Why: the path is a real directory here, so git would actually be spawned
+    // against it. What this test watches is written by the filesystem, not git.
+    const gitSpy = vi.spyOn(gitRunner, 'gitExecFileAsync').mockResolvedValue({
+      stdout: '',
+      stderr: ''
+    })
+
+    try {
+      await runtime.createManagedWorktree(
+        buildHeadlessAutomationWorktreeCreateArgs({
+          automation: {
+            id: 'automation-1',
+            name: 'Nightly digest',
+            prompt: 'summarise yesterday',
+            precheck: null,
+            agentId: 'codex',
+            projectId: TEST_REPO_ID,
+            executionTargetType: 'local',
+            executionTargetId: 'local',
+            schedulerOwner: 'local_host_service',
+            workspaceMode: 'new_per_run',
+            workspaceId: null,
+            baseBranch: null,
+            reuseSession: false,
+            timezone: 'UTC',
+            rrule: 'FREQ=DAILY',
+            dtstart: 0,
+            enabled: true,
+            nextRunAt: 0,
+            missedRunPolicy: 'run_once_within_grace',
+            missedRunGraceMinutes: 30,
+            createdAt: 0,
+            updatedAt: 0
+          },
+          run: { id: 'run-1', title: 'Nightly digest', scheduledFor: 0 },
+          repo: store.getRepos()[0] as never,
+          createdAt: 0
+        })
+      )
+
+      expect(spawn).toHaveBeenCalledTimes(1)
+      expect(agentSawContext).toContain('handbook')
+      expect(agentSawImport).toContain('@./company-context.md')
+      expect(
+        (JSON.parse(agentSawGate ?? '{}') as { permissions?: { ask?: string[] } }).permissions?.ask
+      ).not.toHaveLength(0)
+    } finally {
+      gitSpy.mockRestore()
+      await rm(workspaceRoot, { recursive: true, force: true })
+    }
   })
 
   it('sends follow-up prompts for CLI-created stdin-after-start startup agents', async () => {

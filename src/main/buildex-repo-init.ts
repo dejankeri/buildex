@@ -16,10 +16,9 @@ import { readAppStoreCatalog } from './buildex-store/store-catalog-source'
 // CLI, per operator rather than per repo, so there is nothing about a repo to
 // bring up to date on open.
 //
-// Called from the BuildEx IPC entry points rather than from worktree activation,
-// which is upstream surface this fork keeps thin. The cost is that the gate lands
-// when a BuildEx surface is first used rather than the instant a repo opens; see
-// PROGRESS.md.
+// Called from the BuildEx IPC entry points and from worktree creation, so the
+// gate lands the moment a checkout exists rather than whenever a surface first
+// happens to be opened against it — see buildex-worktree-init.ts.
 
 const initialized = new Set<string>()
 
@@ -54,6 +53,15 @@ export function initializeCompanyRepo(repoPath: string): void {
   } catch {
     // Never let policy bookkeeping take a surface down.
   }
+}
+
+/**
+ * Every checkout this run has initialized — the operator's open companies, as far
+ * as anything here can know them. Installing an app changes what the agent may
+ * reach for in all of them, not only the one whose Store was open.
+ */
+export function initializedCompanyRepos(): string[] {
+  return [...initialized]
 }
 
 /** Empty rather than throwing: an unreadable shelf must not cost the gate. */

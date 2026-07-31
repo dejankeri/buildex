@@ -796,8 +796,7 @@ import {
 } from '../ipc/worktree-symlinks'
 import { formatWorktreeIncludeCopyWarning } from '../ipc/worktree-include-copy-budget'
 import { resolveWorktreeIncludePaths } from '../git/worktree-include-file'
-import { requireBrainLocation } from '../buildex-brain/brain-location'
-import { relinkBrainSkills } from '../buildex-brain/skill-link'
+import { prepareCompanyWorktree } from '../buildex-worktree-init'
 import { deleteWorktreeHistoryDir } from '../terminal-history'
 import {
   cleanupUnusedWorktreePushTargetRemote,
@@ -18986,13 +18985,9 @@ export class OrcaRuntimeService {
       }
     }
 
-    // Why: `.claude/skills/` is gitignored and per-checkout, so a fresh worktree
-    // starts with no links into the brain and the agent working there sees none
-    // of the company's skills.
-    const brainLocation = requireBrainLocation(created.path)
-    if (brainLocation) {
-      relinkBrainSkills(created.path, brainLocation)
-    }
+    // Why: awaited, and here rather than later — the startup agent is launched
+    // below in this same call, and it reads `.claude/` once at session start.
+    await prepareCompanyWorktree(created.path)
 
     let setup: CreateWorktreeResult['setup']
     let warning: string | undefined = includeCopyWarning

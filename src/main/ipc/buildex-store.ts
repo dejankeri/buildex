@@ -33,7 +33,7 @@ import { syncGateSettings } from '../buildex-gate/gate-settings'
 import { embeddedLocation, requireBrainLocation } from '../buildex-brain/brain-location'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { readInstalledPluginInventory } from '../buildex-store/installed-plugin-inventory'
-import { initializeCompanyRepo } from '../buildex-repo-init'
+import { initializeCompanyRepo, initializedCompanyRepos } from '../buildex-repo-init'
 
 // The Store's IPC surface.
 //
@@ -97,12 +97,20 @@ function assembleCatalog(request?: StoreCatalogRequest): StoreCatalog {
  * app that is gone. Failures here never fail the install itself — the plugin is
  * installed either way, and a stale context is a smaller problem than an install
  * that reports failure after succeeding.
+ *
+ * The gate goes to every company this run has opened, not only this one: plugins
+ * are installed per operator, so an app installed from one company's Store is
+ * reachable from the agent working in all of them. The context stays scoped to
+ * this repo — the other companies' brains describe their own repos.
  */
 function syncRepoAfterChange(repoPath: string, entries: readonly StoreEntry[]): void {
-  try {
-    syncGateSettings(repoPath, collectPluginGateRules(entries))
-  } catch {
-    // The plugin is installed; a gate we could not write is visible in the Store.
+  const pluginRules = collectPluginGateRules(entries)
+  for (const companyPath of new Set([repoPath, ...initializedCompanyRepos()])) {
+    try {
+      syncGateSettings(companyPath, pluginRules)
+    } catch {
+      // The plugin is installed; a gate we could not write is visible in the Store.
+    }
   }
   try {
     const location = requireBrainLocation(repoPath) ?? embeddedLocation(repoPath)
