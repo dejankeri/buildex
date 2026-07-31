@@ -109,7 +109,7 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 |---|---|
 | `src/shared/buildex-brain-types.ts`, `buildex-store-types.ts` | **BuildEx-owned** wire contracts |
 | `src/main/buildex-brain/*`, `src/main/buildex-store/*` | **BuildEx-owned** domain layers |
-| `src/main/ipc/buildex-brain.ts`, `buildex-store.ts` | **BuildEx-owned** IPC modules |
+| `src/main/ipc/buildex-brain.ts`, `buildex-brain-placement.ts`, `buildex-store.ts` | **BuildEx-owned** IPC modules |
 | `src/main/ipc/register-core-handlers.ts` | 2 imports + 2 registration calls |
 | `src/preload/index.ts` | 2 type imports + 2 api namespaces |
 | `src/preload/api-types.ts` | 2 type imports + 2 members on `PreloadApi` |
@@ -158,10 +158,13 @@ BuildEx does not have yet — a known gap, not an oversight.**
 sites hand over a *worktree* path, so keying storage on it would give one
 business N identities and split its keys N ways with no error to notice.
 `resolveCompanyIdentity` collapses them onto the primary checkout — the same
-aliasing `worktree-primary-checkout.ts` already solves for the brain — and a path
-outside any repo resolves to no company and therefore to no keys at all. Anything
-BuildEx stores per business goes through that one resolver; a second identity
-mechanism would disagree with the first on the day it matters.
+aliasing `worktree-primary-checkout.ts` already solves for the brain. A folder
+workspace outside any repo has no such aliasing and is named by its own path,
+through the same slug-and-digest, so both supported workspace shapes get a key in
+one format. Only a path this machine cannot see resolves to no company; that is
+the SSH case, and it is deliberately not guessed at. Anything BuildEx stores per
+business goes through that one resolver; a second identity mechanism would
+disagree with the first on the day it matters.
 
 **A gate write is only ever as complete as the catalogue behind it.** The rules
 must come from the shelf *that company* sees — `readCompanyStoreEntries(location)`,

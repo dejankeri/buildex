@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -75,11 +75,31 @@ describe('resolveCompanyIdentity', () => {
     expect(resolveCompanyIdentity(link)?.key).toBe(resolveCompanyIdentity(acme)?.key)
   })
 
-  it('has no company for a folder outside any repo', () => {
-    const scratch = path.join(dir, 'downloads')
-    mkdirSync(scratch, { recursive: true })
+  it('names a folder workspace by itself, which is the identity it has', () => {
+    // A business run out of a plain folder is a supported shape, and a folder
+    // outside a repo has no aliasing to undo — the path is all there is.
+    const folder = path.join(dir, 'consulting')
+    mkdirSync(folder, { recursive: true })
 
-    expect(resolveCompanyIdentity(scratch)).toBeNull()
+    const identity = resolveCompanyIdentity(folder)
+
+    expect(identity?.key).toMatch(/^consulting-[0-9a-f]{16}$/)
+    expect(identity?.root).toBe(realpathSync.native(folder))
+    expect(resolveCompanyIdentity(folder)?.key).toBe(identity?.key)
+  })
+
+  it('keeps a folder workspace and a repo apart', () => {
+    const folder = path.join(dir, 'consulting')
+    mkdirSync(folder, { recursive: true })
+
+    expect(resolveCompanyIdentity(folder)?.key).not.toBe(resolveCompanyIdentity(acme)?.key)
+  })
+
+  it('prefers the repo when a folder workspace turns out to be inside one', () => {
+    const nested = path.join(acme, 'ops')
+    mkdirSync(nested, { recursive: true })
+
+    expect(resolveCompanyIdentity(nested)?.key).toBe(resolveCompanyIdentity(acme)?.key)
   })
 
   it('has no company for a path this machine cannot see, which is what an SSH workspace is', () => {

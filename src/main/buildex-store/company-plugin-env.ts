@@ -7,9 +7,10 @@ import { collectPluginEnv } from './plugin-env'
 // Everything a PTY spawn needs to know about business identity lives here rather
 // than in `pty.ts`, which is upstream's file and only registers the call.
 //
-// A workspace that is not a company gets nothing. That is the point: a shell
-// somewhere outside a business has no business holding that business's Stripe
-// key, and before this it held every one of them.
+// Every terminal gets its own business's keys and nobody else's — which before
+// this meant every terminal got every key on the machine. A workspace this
+// machine cannot see (a remote one) has no local business to be, and gets
+// nothing rather than a guess.
 
 export function applyCompanyPluginEnv(
   baseEnv: Record<string, string>,

@@ -50,15 +50,29 @@ import { resolveCompanyIdentity } from '../buildex-company-identity'
 // agent about what this company now runs on.
 
 /**
- * Whose keys the caller is asking about. Null company for a workspace that is
- * not one — a scratch folder, or an SSH workspace whose path names the remote
- * filesystem — and then only a pre-company key is in play.
+ * Whose keys the caller is asking about. Null company only for a workspace this
+ * machine cannot see — an SSH one names the remote filesystem — and then just
+ * the pre-company slot is in play.
  */
 function credentialDeps(repoPath?: string): { userDataPath: string; companyKey: string | null } {
   return {
     userDataPath: app.getPath('userData'),
     companyKey: resolveCompanyIdentity(repoPath)?.key ?? null
   }
+}
+
+/**
+ * Why a workspace has no company, in the operator's terms.
+ *
+ * Every directory this machine has is some business, so a path that resolved to
+ * nothing is one this machine does not have — which is what a remote workspace's
+ * path is. Worth distinguishing: one of these is fixed by opening a project and
+ * the other cannot be fixed here at all.
+ */
+function unidentifiedWorkspaceError(repoPath: string | undefined): string {
+  return repoPath
+    ? 'This workspace lives on another machine. BuildEx cannot store a key for a remote workspace yet.'
+    : 'Open a workspace first — a key is saved per company.'
 }
 
 function claudeDeps(): {
@@ -275,16 +289,14 @@ export function registerBuildExStoreHandlers(): void {
       if (!pluginName || typeof apiKey !== 'string') {
         return { ok: false, status: null, error: 'Missing pluginName or apiKey' }
       }
-      const deps = credentialDeps(request?.repoPath?.trim())
+      const repoPath = request?.repoPath?.trim()
+      const deps = credentialDeps(repoPath)
       if (!deps.companyKey) {
         // Why: with no company to file it under, the only place left is the slot
         // every company reads — which would hand this business's key to the next
-        // one's agent. Say so instead.
-        return {
-          ok: false,
-          status: null,
-          error: "Open the business's git repo on this machine — a key is saved per company."
-        }
+        // one's agent. Two different problems, two different answers: no
+        // workspace at all, or one whose files are on another machine.
+        return { ok: false, status: null, error: unidentifiedWorkspaceError(repoPath) }
       }
       const outcome = savePluginCredential(deps, pluginName, apiKey)
       if (!outcome.ok) {

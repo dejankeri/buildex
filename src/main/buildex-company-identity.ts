@@ -10,10 +10,16 @@ import { primaryCheckoutPath } from './buildex-brain/worktree-primary-checkout'
 // A worktree path is not that name: a company with four worktrees would be four
 // businesses, and its Stripe key would split four ways with no error to notice.
 //
-// A company is a git repository — that is BuildEx's model of a business, and it
-// is also the only identity available that survives `git worktree add`. A folder
-// that is not inside a repo is not a company: it has no brain, no gate, and
-// nothing of its own to isolate, so it gets none of anybody's keys.
+// Two shapes of business, one derivation. A git repo is named by its primary
+// checkout, which is the only identity that survives `git worktree add`. A
+// folder workspace outside any repo has no aliasing to undo — the path *is* the
+// identity — so it is named by itself. Both then go through the same slug and
+// digest, so there is one format and one filesystem-safety argument.
+//
+// What is not a company is a path this machine does not have. An SSH workspace
+// names the *remote* filesystem, and a local folder that happens to share that
+// path is a different directory; keying on it would file one business's key
+// under another's name.
 //
 // The key is derived from this machine's path, which does NOT travel with a
 // clone. That is correct rather than a compromise: what the key names is
@@ -26,47 +32,47 @@ const KEY_HASH_LENGTH = 16
 const SLUG_MAX_LENGTH = 24
 
 export type CompanyIdentity = {
-  /** The repo's primary checkout — the same path from every worktree of it. */
+  /**
+   * What the key names: a repo's primary checkout — the same path from every
+   * worktree of it — or, for a folder workspace outside any repo, itself.
+   */
   root: string
   /** Filesystem-safe name for this company's slice of machine-local state. */
   key: string
 }
 
 /**
- * The company this path belongs to, or null when it belongs to none.
+ * The company this path belongs to, or null when this machine cannot see it.
  *
- * Null is a normal answer, not an error: a scratch folder, a path this machine
- * cannot see (an SSH workspace names the *remote* filesystem), or a directory
- * outside any repo.
+ * Null is one case only, and it is a normal answer rather than an error: the
+ * caller gave no path, or gave one that is not on this machine — which is what a
+ * remote (SSH) workspace's path is. Every local directory is some business.
  */
 export function resolveCompanyIdentity(
   workspacePath: string | null | undefined
 ): CompanyIdentity | null {
-  const checkout = enclosingCheckout(workspacePath)
-  if (!checkout) {
+  if (!workspacePath?.trim()) {
     return null
   }
-  // A linked worktree is the same business at another path; the primary checkout
-  // is the one name all of them share.
-  const root = canonicalPath(primaryCheckoutPath(checkout) ?? checkout)
+  const workspace = path.resolve(workspacePath)
+  if (!existsSync(workspace)) {
+    return null
+  }
+  const checkout = enclosingCheckout(workspace)
+  // In a repo, a linked worktree is the same business at another path and the
+  // primary checkout is the one name they share. Outside one there is no such
+  // aliasing to undo, so a folder workspace is named by itself.
+  const root = canonicalPath(checkout ? (primaryCheckoutPath(checkout) ?? checkout) : workspace)
   return { root, key: `${slugFor(path.basename(root))}-${digestOf(root)}` }
 }
 
 /**
  * The nearest enclosing checkout, so a terminal opened in `packages/api` is the
- * same company as one opened at the root.
- *
- * A path this machine does not have is not a checkout to walk up from — that is
- * what keeps a remote workspace's path from matching an unrelated local folder.
+ * same company as one opened at the repo root. Null outside a repo, where there
+ * is no boundary to walk up to and the workspace path stands for itself.
  */
-function enclosingCheckout(workspacePath: string | null | undefined): string | null {
-  if (!workspacePath?.trim()) {
-    return null
-  }
-  let dir = path.resolve(workspacePath)
-  if (!existsSync(dir)) {
-    return null
-  }
+function enclosingCheckout(workspace: string): string | null {
+  let dir = workspace
   for (;;) {
     // `.git` is a directory in a clone and a file in a linked worktree; either is
     // a checkout, and neither costs a git process to recognise.

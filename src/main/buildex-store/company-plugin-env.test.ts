@@ -16,6 +16,7 @@ vi.mock('./store-catalog-source', () => ({ readAppStoreCatalog: () => readAppSto
 
 const { applyCompanyPluginEnv } = await import('./company-plugin-env')
 const { resolveCompanyIdentity } = await import('../buildex-company-identity')
+const { savePluginCredential } = await import('./plugin-credentials')
 
 let dir = ''
 let userDataPath = ''
@@ -50,15 +51,31 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+/** A git-repo business, with its key saved the way the Store's IPC saves it. */
 function company(name: string, stripeKey: string | null): string {
   const repo = path.join(dir, name)
   mkdirSync(path.join(repo, '.git'), { recursive: true })
+  return saveKeyFor(repo, stripeKey)
+}
+
+/** A business run out of a plain folder — no repo anywhere above it. */
+function folderWorkspace(name: string, stripeKey: string | null): string {
+  const folder = path.join(dir, name)
+  mkdirSync(folder, { recursive: true })
+  return saveKeyFor(folder, stripeKey)
+}
+
+function saveKeyFor(workspacePath: string, stripeKey: string | null): string {
   if (stripeKey !== null) {
-    const key = resolveCompanyIdentity(repo)!.key
-    mkdirSync(path.join(userDataPath, 'pack-credentials', key), { recursive: true })
-    writeFileSync(path.join(userDataPath, 'pack-credentials', key, 'stripe.enc'), stripeKey, 'utf8')
+    const companyKey = resolveCompanyIdentity(workspacePath)!.key
+    expect(savePluginCredential({ userDataPath, companyKey }, 'stripe', stripeKey).ok).toBe(true)
   }
-  return repo
+  return workspacePath
+}
+
+function preCompanyKey(value: string): void {
+  mkdirSync(path.join(userDataPath, 'pack-credentials'), { recursive: true })
+  writeFileSync(path.join(userDataPath, 'pack-credentials', 'stripe.enc'), value, 'utf8')
 }
 
 function envFor(workspacePath: string | undefined): Record<string, string> {
@@ -89,23 +106,44 @@ describe('applyCompanyPluginEnv', () => {
     expect(envFor(worktree)).toEqual({ BUILDEX_STRIPE_API_KEY: 'sk_acme' })
   })
 
-  it('gives a workspace that is not a company nothing, and does not even read the shelf', () => {
-    const scratch = path.join(dir, 'downloads')
-    mkdirSync(scratch, { recursive: true })
-    // Why: a pre-company key would otherwise reach a shell that belongs to no
-    // business at all — every key on the machine, in every terminal.
-    mkdirSync(path.join(userDataPath, 'pack-credentials'), { recursive: true })
-    writeFileSync(path.join(userDataPath, 'pack-credentials', 'stripe.enc'), 'sk_legacy', 'utf8')
+  it('saves and reads back a key for a business run out of a plain folder', () => {
+    // A folder workspace is a supported shape with no repo to name it, so it is
+    // named by its own path — and that has to be enough to store a key under.
+    const consulting = folderWorkspace('consulting', 'sk_consulting')
 
-    expect(envFor(scratch)).toEqual({})
+    expect(envFor(consulting)).toEqual({ BUILDEX_STRIPE_API_KEY: 'sk_consulting' })
+    // Stable: a second resolution of the same folder finds the same key.
+    expect(envFor(consulting)).toEqual({ BUILDEX_STRIPE_API_KEY: 'sk_consulting' })
+  })
+
+  it('keeps a folder workspace and a repo from sharing a key', () => {
+    const consulting = folderWorkspace('consulting', 'sk_consulting')
+    const acme = company('acme', 'sk_acme')
+
+    expect(envFor(consulting)).toEqual({ BUILDEX_STRIPE_API_KEY: 'sk_consulting' })
+    expect(envFor(acme)).toEqual({ BUILDEX_STRIPE_API_KEY: 'sk_acme' })
+  })
+
+  it('gives a PTY with no workspace nothing, and does not even read the shelf', () => {
+    preCompanyKey('sk_legacy')
+
     expect(envFor(undefined)).toEqual({})
+    expect(readAppStoreCatalog).not.toHaveBeenCalled()
+  })
+
+  it('gives a workspace this machine cannot see nothing, which is what a remote one is', () => {
+    // Why: the path names the *remote* filesystem, so nothing local answers for
+    // it — and a local folder that happened to share the path would be somebody
+    // else's business entirely.
+    preCompanyKey('sk_legacy')
+
+    expect(envFor(path.join(dir, 'not-here', 'deep'))).toEqual({})
     expect(readAppStoreCatalog).not.toHaveBeenCalled()
   })
 
   it('falls back to a pre-company key for a business that has none of its own', () => {
     const acme = company('acme', null)
-    mkdirSync(path.join(userDataPath, 'pack-credentials'), { recursive: true })
-    writeFileSync(path.join(userDataPath, 'pack-credentials', 'stripe.enc'), 'sk_legacy', 'utf8')
+    preCompanyKey('sk_legacy')
 
     expect(envFor(acme)).toEqual({ BUILDEX_STRIPE_API_KEY: 'sk_legacy' })
   })
