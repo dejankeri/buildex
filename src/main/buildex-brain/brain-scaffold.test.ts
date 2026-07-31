@@ -41,6 +41,20 @@ describe('scaffoldCompanyBrain', () => {
     }
   })
 
+  it('seeds reviews, clients and finance with a schedulable automation prompt', () => {
+    scaffoldCompanyBrain(location())
+
+    expect(read('reviews/weekly-review.md')).toContain('## Automation prompt')
+    expect(read('reviews/weekly-review.md')).toContain('reviews/')
+    expect(read('reviews/weekly-review.md')).toContain('decisions/log.md')
+
+    expect(read('clients/triage.md')).toContain('## Automation prompt')
+    expect(read('clients/triage.md')).toContain('clients/')
+
+    expect(read('finance/metrics.md')).toContain('## Automation prompt')
+    expect(read('finance/metrics.md')).toContain('finance/')
+  })
+
   it('writes nothing the second time', () => {
     scaffoldCompanyBrain(location())
 

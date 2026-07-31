@@ -108,6 +108,48 @@ copy goes to `~/.buildex-backups/` when anything is uncommitted or there is no g
 The context feed and the gate are Claude Code-specific today, since they write `.claude/`. Every
 other agent Orca supports still runs; it just does not get the company context automatically.
 
+## Automations: businesses run while you sleep
+
+This is Orca's own scheduler — cron and RRULE cadences, a fresh worktree per run when you want
+one, run history, and a mobile companion that hears about the same sessions everything else does.
+BuildEx built none of it; it only makes sure a scheduled run has the company's brain loaded before
+its first message, the same as a session you start by hand
+([how](BUILDEX-PATCHES.md#brain-packs-context--phases-2-4)).
+
+**Open it:** the **Automations** button in the sidebar, then the **+** (*Add automation*). Fill in:
+
+- **Project** — the repo, and **Workspace** — run in an existing **Worktree**, or **New run**,
+  which creates a fresh worktree from a branch for that run instead of reusing one you already
+  have open.
+- **Schedule** — a cadence (**Hourly**, **Daily**, **Weekdays**, **Weekly**, or **Custom cron**
+  for anything an RRULE preset can't say), a day/time, and a missed-run grace window for when
+  Orca wasn't running at the scheduled moment.
+- **Agent** and **Session** — which CLI agent runs it, and whether each run starts fresh or
+  resumes the previous live session.
+- Optionally a **precheck** command that has to pass before the run dispatches, and an *Advanced*
+  toggle to run the project's normal setup on a freshly created workspace.
+
+A run that can't proceed unattended — an SSH host it can't reach, or one that would need
+interactive credentials — is recorded as **skipped**, with why, in that automation's run history
+(**Run · Workspace · Spend · Tokens · Status**) rather than hanging or failing silently. **One
+honest gap:** gating currently lands when a worktree is *created* or when a BuildEx surface
+touches it; a worktree on an SSH host is not yet gated at *activation* the way a local one is
+([tracked here](PROGRESS.md#the-gate-what-is-done-and-what-is-not)) — schedule SSH automations
+knowing that.
+
+**Three rhythms worth starting with**, one per business, each a prompt against the section it
+serves:
+
+| Rhythm | Schedule | Reads / writes | Seeded in the Brain |
+|---|---|---|---|
+| Weekly review | Weekly | `reviews/`, `decisions/log.md`, `strategy/overview.md` | `reviews/weekly-review.md` |
+| Engagement triage | Weekly | `clients/` | `clients/triage.md` |
+| Metrics pull | Weekly, or Custom cron for a monthly close | `finance/` | `finance/metrics.md` |
+
+Each of those Brain documents ships with its automation's exact prompt, ready to paste into the
+**Prompt** field — set up the Brain's `reviews`, `clients` and `finance` sections and they're
+there. Nothing runs until you schedule it.
+
 ## What works today (honestly)
 
 | Works now | Not yet |
@@ -117,6 +159,7 @@ other agent Orca supports still runs; it just does not get the company context a
 | The Store on first run, with 11 packs shipped in the app | Pack MCP faces — parsed and carried, but installing does not write `.mcp.json` yet |
 | Auto-fed company context, refreshed without a button | Gate applied on worktree activation (today it applies when a BuildEx surface first touches a repo) |
 | The gate preset, enforced by the agent runtime | Any hosted sync — by decision, not by omission |
+| Scheduled automation runs load the company brain and gate before their first message | Automation worktrees on an SSH host are not gated at activation ([known gap](PROGRESS.md#the-gate-what-is-done-and-what-is-not)) |
 
 ## Run it
 

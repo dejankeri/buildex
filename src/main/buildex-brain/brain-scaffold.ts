@@ -12,6 +12,10 @@ import type { BrainLocation } from '../../shared/buildex-brain-types'
 // Every seeded file is a real, editable prompt rather than a placeholder. An
 // empty file teaches nothing; a file that asks the right question gets answered.
 //
+// reviews/, clients/ and finance/ also seed a ready-to-paste automation prompt.
+// The scheduler is Orca's own — cron/RRULE, disposable per-run worktrees, run
+// history — this fork only points it at a document the company already has.
+//
 // Written only when the operator asks for it. An earlier version ran this on the
 // first touch of any BuildEx surface, which meant opening the Store wrote nine
 // folders into a repo somebody had only wanted to browse apps from.
@@ -100,7 +104,25 @@ could be read two ways will be.
   {
     folder: 'clients',
     title: 'Clients',
-    purpose: 'Who we work with, what was agreed, and where each engagement stands.'
+    purpose: 'Who we work with, what was agreed, and where each engagement stands.',
+    seed: {
+      name: 'triage.md',
+      body: `# Engagement triage
+
+<!-- Flagged clients land below, dated. The client documents themselves are
+     never rewritten by the automation. -->
+
+## Automation prompt
+
+Schedule as a **Weekly** automation against this repo (sidebar \`Automations\`
+→ the \`+\`). Paste the prompt below and pick a day and time.
+
+> Read every document in \`clients/\`. For each one, check git history for
+> when it last changed and read what it says the next step is. Flag any
+> client with no update in the last 14 days, and any whose next step is
+> already due. Append the flagged list to this file, dated.
+`
+    }
   },
   {
     folder: 'product',
@@ -115,7 +137,26 @@ could be read two ways will be.
   {
     folder: 'finance',
     title: 'Finance',
-    purpose: 'Money in, money out, and what the numbers are supposed to be.'
+    purpose: 'Money in, money out, and what the numbers are supposed to be.',
+    seed: {
+      name: 'metrics.md',
+      body: `# Metrics
+
+<!-- Each automation run appends a dated entry below. -->
+
+## Automation prompt
+
+Schedule as **Weekly**, or pick **Custom cron** for a monthly close (sidebar
+\`Automations\` → the \`+\`). Paste the prompt below.
+
+> Read every document in \`finance/\`. Pull together the running numbers —
+> revenue, spend, and burn — from what is recorded there and from git
+> history for anything that changed since the last run. Append this
+> period's numbers to this file with the date, and one line on the trend
+> versus the period before. If a number is missing, say what is missing
+> rather than guessing.
+`
+    }
   },
   {
     folder: 'content',
@@ -125,7 +166,26 @@ could be read two ways will be.
   {
     folder: 'reviews',
     title: 'Reviews',
-    purpose: 'Weekly and periodic looks back — what happened, what it means.'
+    purpose: 'Weekly and periodic looks back — what happened, what it means.',
+    seed: {
+      name: 'weekly-review.md',
+      body: `# Weekly review
+
+<!-- Newest entry first. The automation below writes here; nothing stops you
+     from writing one by hand too. -->
+
+## Automation prompt
+
+Schedule as a **Weekly** automation against this repo (sidebar \`Automations\`
+→ the \`+\`). Paste the prompt below and pick a day and time.
+
+> Read every file changed in \`reviews/\` and every entry added to
+> \`decisions/log.md\` in the last 7 days. Read \`strategy/overview.md\` for
+> context. Write a new dated file in \`reviews/\` summarizing what shipped,
+> what changed, and what needs a decision this week. End with the single
+> thing that most needs attention. Keep it under a page.
+`
+    }
   }
 ]
 
