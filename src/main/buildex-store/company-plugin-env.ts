@@ -12,6 +12,19 @@ import { collectPluginEnv } from './plugin-env'
 // machine cannot see (a remote one) has no local business to be, and gets
 // nothing rather than a guess.
 
+/**
+ * The workspace a PTY spawn belongs to, or nothing when it belongs to none.
+ *
+ * `cwd` alone is just wherever a shell started. A bare `$HOME` terminal has a
+ * cwd, is nobody's business, and used to receive every key on the machine — so
+ * the workspace identity, not the directory, is what decides.
+ */
+export function companyWorkspacePathForSpawn(
+  ctx: { cwd?: string; worktreeId?: string } | undefined
+): string | undefined {
+  return ctx?.worktreeId && ctx.cwd ? ctx.cwd : undefined
+}
+
 export function applyCompanyPluginEnv(
   baseEnv: Record<string, string>,
   opts: { workspacePath?: string; userDataPath: string }

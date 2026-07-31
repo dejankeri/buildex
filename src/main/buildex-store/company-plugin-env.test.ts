@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
 const readAppStoreCatalog = vi.fn<() => StoreCatalog>()
 vi.mock('./store-catalog-source', () => ({ readAppStoreCatalog: () => readAppStoreCatalog() }))
 
-const { applyCompanyPluginEnv } = await import('./company-plugin-env')
+const { applyCompanyPluginEnv, companyWorkspacePathForSpawn } = await import('./company-plugin-env')
 const { resolveCompanyIdentity } = await import('../buildex-company-identity')
 const { savePluginCredential } = await import('./plugin-credentials')
 
@@ -164,5 +164,26 @@ describe('applyCompanyPluginEnv', () => {
     })
 
     expect(envFor(acme)).toEqual({})
+  })
+})
+
+describe('companyWorkspacePathForSpawn', () => {
+  it('gives a bare shell no workspace, however ordinary its cwd looks', () => {
+    // The old rule was "any cwd", so a terminal opened in $HOME received every
+    // key on the machine. A shell that belongs to no workspace is nobody's
+    // business.
+    expect(companyWorkspacePathForSpawn({ cwd: '/Users/dan' })).toBeUndefined()
+    expect(companyWorkspacePathForSpawn({})).toBeUndefined()
+    expect(companyWorkspacePathForSpawn(undefined)).toBeUndefined()
+  })
+
+  it('gives a workspace-owned spawn its cwd, which is where the business is', () => {
+    expect(
+      companyWorkspacePathForSpawn({ cwd: '/repos/acme', worktreeId: 'repo::/repos/acme' })
+    ).toBe('/repos/acme')
+  })
+
+  it('has no workspace for a spawn with an id but nowhere to run', () => {
+    expect(companyWorkspacePathForSpawn({ worktreeId: 'repo::/repos/acme' })).toBeUndefined()
   })
 })

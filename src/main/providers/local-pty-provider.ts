@@ -480,6 +480,8 @@ export type LocalPtyProviderOptions = {
       shellPath?: string
       isWsl?: boolean
       wslDistro?: string | null
+      /** Present when the spawn belongs to a workspace the user opened, absent for a bare shell. */
+      worktreeId?: string
     }
   ) => Record<string, string>
   /** Whether worktree-scoped shell history is enabled; when true (or absent) with a worktreeId, HISTFILE is scoped per-worktree. */
@@ -683,7 +685,8 @@ export class LocalPtyProvider implements IPtyProvider {
           cwd,
           shellPath,
           isWsl: isWslShell,
-          wslDistro: launchWslDistro
+          wslDistro: launchWslDistro,
+          worktreeId: args.worktreeId
         })
       : spawnEnv
     // Why: app-level env hooks can re-add scrubbed vars; delete last so shims like Claude Agent Teams keep their PATH.

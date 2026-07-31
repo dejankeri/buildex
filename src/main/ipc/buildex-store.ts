@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { app, ipcMain } from 'electron'
+import { ipcMain } from 'electron'
 import type {
   CompanyMarketplace,
   StoreCatalog,
@@ -40,6 +40,7 @@ import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { readInstalledPluginInventory } from '../buildex-store/installed-plugin-inventory'
 import { initializeCompanyRepo, initializedCompanyRepos } from '../buildex-repo-init'
 import { resolveCompanyIdentity } from '../buildex-company-identity'
+import { credentialWriteScope } from '../buildex-store/credential-company-scope'
 
 // The Store's IPC surface.
 //
@@ -48,32 +49,6 @@ import { resolveCompanyIdentity } from '../buildex-company-identity'
 // the agent's own plugin CLI — BuildEx contributes the parts a marketplace does
 // not carry, which is the gate, the credential, and the line the brain tells the
 // agent about what this company now runs on.
-
-/**
- * Whose keys the caller is asking about. Null company only for a workspace this
- * machine cannot see — an SSH one names the remote filesystem — and then just
- * the pre-company slot is in play.
- */
-function credentialDeps(repoPath?: string): { userDataPath: string; companyKey: string | null } {
-  return {
-    userDataPath: app.getPath('userData'),
-    companyKey: resolveCompanyIdentity(repoPath)?.key ?? null
-  }
-}
-
-/**
- * Why a workspace has no company, in the operator's terms.
- *
- * Every directory this machine has is some business, so a path that resolved to
- * nothing is one this machine does not have — which is what a remote workspace's
- * path is. Worth distinguishing: one of these is fixed by opening a project and
- * the other cannot be fixed here at all.
- */
-function unidentifiedWorkspaceError(repoPath: string | undefined): string {
-  return repoPath
-    ? 'This workspace lives on another machine. BuildEx cannot store a key for a remote workspace yet.'
-    : 'Open a workspace first — a key is saved per company.'
-}
 
 function claudeDeps(): {
   homeDir: string
@@ -289,15 +264,14 @@ export function registerBuildExStoreHandlers(): void {
       if (!pluginName || typeof apiKey !== 'string') {
         return { ok: false, status: null, error: 'Missing pluginName or apiKey' }
       }
-      const repoPath = request?.repoPath?.trim()
-      const deps = credentialDeps(repoPath)
-      if (!deps.companyKey) {
-        // Why: with no company to file it under, the only place left is the slot
-        // every company reads — which would hand this business's key to the next
-        // one's agent. Two different problems, two different answers: no
-        // workspace at all, or one whose files are on another machine.
-        return { ok: false, status: null, error: unidentifiedWorkspaceError(repoPath) }
+      // Why refuse rather than fall back: with no company to file it under, the
+      // only place left is the slot every company reads — which would hand this
+      // business's key to the next one's agent.
+      const resolved = credentialWriteScope(request ?? {})
+      if ('error' in resolved) {
+        return { ok: false, status: null, error: resolved.error }
       }
+      const deps = resolved
       const outcome = savePluginCredential(deps, pluginName, apiKey)
       if (!outcome.ok) {
         return { ok: false, status: null, error: outcome.error }
@@ -369,7 +343,14 @@ export function registerBuildExStoreHandlers(): void {
       if (!pluginName) {
         return { ok: false, status: null, error: 'Missing pluginName' }
       }
-      const deps = credentialDeps(request?.repoPath?.trim())
+      // Why the same gate as saving: disconnecting writes too — a marker inside
+      // this company's own folder — and with no company there is nothing of ours
+      // to write it in. The shared pre-company key is never ours to remove.
+      const resolved = credentialWriteScope(request ?? {})
+      if ('error' in resolved) {
+        return { ok: false, status: null, error: resolved.error }
+      }
+      const deps = resolved
       clearPluginCredential(deps, pluginName)
       const overlay = assembleCatalog().entries.find(
         (entry) => entry.plugin.name === pluginName

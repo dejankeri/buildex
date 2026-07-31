@@ -457,6 +457,23 @@ describe('LocalPtyProvider', () => {
       expect(spawnCall[2].env.CUSTOM_VAR).toBe('custom-value')
     })
 
+    it('tells buildSpawnEnv which workspace a spawn belongs to, and nothing for a bare shell', async () => {
+      // Why: env injection that keys off `cwd` alone cannot tell a workspace
+      // terminal from a shell that merely started somewhere.
+      const seen: (string | undefined)[] = []
+      provider.configure({
+        buildSpawnEnv: (_id, env, ctx) => {
+          seen.push(ctx?.worktreeId)
+          return env
+        }
+      })
+
+      await provider.spawn({ cols: 80, rows: 24, worktreeId: 'repo::/repos/acme' })
+      await provider.spawn({ cols: 80, rows: 24 })
+
+      expect(seen).toEqual(['repo::/repos/acme', undefined])
+    })
+
     it('does not inherit NODE_ENV from the Orca process env', async () => {
       // Why: NODE_ENV in Orca's process is Orca's build mode (electron-vite sets
       // `development` in dev runs); leaking it breaks `next build` and Vitest.

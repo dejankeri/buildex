@@ -92,7 +92,10 @@ import {
   applyTerminalAttributionEnv,
   resolveAttributionShellFamily
 } from '../attribution/terminal-attribution'
-import { applyCompanyPluginEnv } from '../buildex-store/company-plugin-env'
+import {
+  applyCompanyPluginEnv,
+  companyWorkspacePathForSpawn
+} from '../buildex-store/company-plugin-env'
 import { gateCompanyWorktreeOnActivation } from '../buildex-worktree-init'
 import { ensureLinuxTerminalOrcaCliShimDir } from '../cli/linux-terminal-orca-cli-shim'
 import { registerPty, unregisterPty } from '../memory/pty-registry'
@@ -687,8 +690,9 @@ export type BuildPtyHostEnvOptions = {
   networkProxySettings?: NetworkProxySettings
   /** Keep indexed Git config off the sparse daemon wire; the daemon appends guard entries after merging its inherited env. */
   deferGitConfigGuardToDaemon?: boolean
-  /** BuildEx: where this PTY runs, so the company it belongs to — if any — can
-   *  put its installed packs' API keys into the agent's environment. */
+  /** BuildEx: the opened workspace this PTY runs in, so that company's installed
+   *  packs' API keys reach the agent. Set only for a workspace-owned spawn;
+   *  absent for a bare shell, which belongs to no business and gets no keys. */
   buildexWorkspacePath?: string
 }
 
@@ -1700,7 +1704,8 @@ export function registerPtyHandlers(
         const env = buildPtyHostEnv(id, baseEnv, {
           isPackaged: app.isPackaged,
           userDataPath: app.getPath('userData'),
-          ...(ctx?.cwd ? { buildexWorkspacePath: ctx.cwd } : {}),
+          // BuildEx: see BUILDEX-PATCHES.md
+          buildexWorkspacePath: companyWorkspacePathForSpawn(ctx),
           selectedCodexHomePath,
           skipCodexHomeEnv,
           stripInheritedOrcaCodexHome: shouldStripInheritedOrcaCodexHome({

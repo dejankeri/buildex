@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, realpathSync } from 'node:fs'
+import { homedir } from 'node:os'
 import path from 'node:path'
 import { primaryCheckoutPath } from './buildex-brain/worktree-primary-checkout'
 
@@ -54,10 +55,13 @@ export function resolveCompanyIdentity(
   if (!workspacePath?.trim()) {
     return null
   }
-  const workspace = path.resolve(workspacePath)
-  if (!existsSync(workspace)) {
+  if (!existsSync(path.resolve(workspacePath))) {
     return null
   }
+  // Canonicalised before the walk, not after: the home-directory bound below is a
+  // path comparison, and `~/Work` given as `~/work` would slip past it on a
+  // case-insensitive filesystem.
+  const workspace = canonicalPath(path.resolve(workspacePath))
   const checkout = enclosingCheckout(workspace)
   // In a repo, a linked worktree is the same business at another path and the
   // primary checkout is the one name they share. Outside one there is no such
@@ -70,18 +74,26 @@ export function resolveCompanyIdentity(
  * The nearest enclosing checkout, so a terminal opened in `packages/api` is the
  * same company as one opened at the repo root. Null outside a repo, where there
  * is no boundary to walk up to and the workspace path stands for itself.
+ *
+ * The walk stops at the home directory and at the filesystem root, and tests
+ * neither. `git init ~` is an ordinary dotfiles setup, and a repo that encloses
+ * every business would collapse all of them into one — pooling the credentials
+ * of businesses that have nothing to do with each other. A false *merge* is the
+ * worse error here, so the bound is deliberate, not a guard against runaway
+ * loops.
  */
 function enclosingCheckout(workspace: string): string | null {
+  const home = canonicalPath(homedir())
   let dir = workspace
   for (;;) {
+    const parent = path.dirname(dir)
+    if (dir === home || parent === dir) {
+      return null
+    }
     // `.git` is a directory in a clone and a file in a linked worktree; either is
     // a checkout, and neither costs a git process to recognise.
     if (existsSync(path.join(dir, '.git'))) {
       return dir
-    }
-    const parent = path.dirname(dir)
-    if (parent === dir) {
-      return null
     }
     dir = parent
   }

@@ -36,6 +36,10 @@ export default function StoreConnectRow({
   const repoPath = useActiveWorktree()?.path ?? ''
   const detectionTarget = useAgentDetectionTargetForWorktree(worktreeId)
   const { detectedIds } = useDetectedAgents(detectionTarget)
+  // Why: `repoPath` cannot say which machine it is on — SSH to a host with the
+  // same username and the path exists on both sides. This is the host identity
+  // the row already resolved for agent detection.
+  const connectionId = detectionTarget?.kind === 'ssh' ? detectionTarget.connectionId : null
   const defaultAgent = useAppStore((s) => s.settings?.defaultTuiAgent)
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState('')
@@ -90,7 +94,8 @@ export default function StoreConnectRow({
       const result = await window.api.buildexStore.saveCredential({
         pluginName,
         apiKey: value,
-        repoPath
+        repoPath,
+        connectionId
       })
       if (!result.ok) {
         setError(result.error ?? 'Could not save the key')
@@ -110,7 +115,7 @@ export default function StoreConnectRow({
   const disconnect = async (): Promise<void> => {
     setBusy(true)
     try {
-      await window.api.buildexStore.clearCredential({ pluginName, repoPath })
+      await window.api.buildexStore.clearCredential({ pluginName, repoPath, connectionId })
       await onChanged()
     } finally {
       setBusy(false)

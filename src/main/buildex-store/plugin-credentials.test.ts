@@ -73,6 +73,13 @@ describe('savePluginCredential', () => {
       false
     )
   })
+
+  it('refuses to write the shared slot when there is no company at all', () => {
+    // Defence in depth: the IPC refuses first, and this is the layer that makes
+    // the shared file unreachable by any write.
+    expect(savePluginCredential({ userDataPath }, 'stripe', 'sk_nobody').ok).toBe(false)
+    expect(existsSync(path.join(userDataPath, 'pack-credentials', 'stripe.enc'))).toBe(false)
+  })
 })
 
 describe('readPluginCredential', () => {
@@ -115,26 +122,57 @@ describe('clearPluginCredential', () => {
 
     clearPluginCredential({ userDataPath, companyKey: ACME }, 'stripe')
 
+    expect(hasPluginCredential({ userDataPath, companyKey: ACME }, 'stripe')).toBe(false)
     expect(readPluginCredential({ userDataPath, companyKey: ACME }, 'stripe')).toBeNull()
+    expect(hasPluginCredential({ userDataPath, companyKey: BETA }, 'stripe')).toBe(true)
     expect(readPluginCredential({ userDataPath, companyKey: BETA }, 'stripe')).toBe('sk_beta')
   })
 
-  it('removes the pre-company key when that is the one this company was using', () => {
-    // Why: it is what "Connected" was reporting, so leaving it would make the
-    // Disconnect button a lie.
-    writePreCompanyKey('stripe', 'sk_legacy')
+  it('disconnects a company that was living on the pre-company key', () => {
+    // Why: it is what "Connected" was reporting, so leaving it answering would
+    // make the Disconnect button a lie.
+    const preCompanyKeyFile = writePreCompanyKey('stripe', 'sk_legacy')
 
     clearPluginCredential({ userDataPath, companyKey: ACME }, 'stripe')
 
     expect(hasPluginCredential({ userDataPath, companyKey: ACME }, 'stripe')).toBe(false)
+    expect(readPluginCredential({ userDataPath, companyKey: ACME }, 'stripe')).toBeNull()
+    // And the shared file is still there for everyone else.
+    expect(readFileSync(preCompanyKeyFile, 'utf8')).toBe('sk_legacy')
+    expect(hasPluginCredential({ userDataPath, companyKey: BETA }, 'stripe')).toBe(true)
+    expect(readPluginCredential({ userDataPath, companyKey: BETA }, 'stripe')).toBe('sk_legacy')
   })
 
-  it('leaves the pre-company key alone when this company has one of its own', () => {
+  it('disconnects a company that has both its own key and a pre-company one behind it', () => {
+    // The upgrade shape, and the one that used to reconnect itself: removing
+    // ACME's file let the pre-company key answer again — the very key the
+    // operator was trying to stop using.
     const preCompanyKeyFile = writePreCompanyKey('stripe', 'sk_legacy')
     savePluginCredential({ userDataPath, companyKey: ACME }, 'stripe', 'sk_acme')
 
     clearPluginCredential({ userDataPath, companyKey: ACME }, 'stripe')
 
+    expect(hasPluginCredential({ userDataPath, companyKey: ACME }, 'stripe')).toBe(false)
+    expect(readPluginCredential({ userDataPath, companyKey: ACME }, 'stripe')).toBeNull()
     expect(readFileSync(preCompanyKeyFile, 'utf8')).toBe('sk_legacy')
+  })
+
+  it('reconnects when the operator saves again', () => {
+    writePreCompanyKey('stripe', 'sk_legacy')
+    clearPluginCredential({ userDataPath, companyKey: ACME }, 'stripe')
+
+    savePluginCredential({ userDataPath, companyKey: ACME }, 'stripe', 'sk_acme')
+
+    expect(hasPluginCredential({ userDataPath, companyKey: ACME }, 'stripe')).toBe(true)
+    expect(readPluginCredential({ userDataPath, companyKey: ACME }, 'stripe')).toBe('sk_acme')
+  })
+
+  it('touches nothing when there is no company, because the shared key is not ours to remove', () => {
+    const preCompanyKeyFile = writePreCompanyKey('stripe', 'sk_legacy')
+
+    clearPluginCredential({ userDataPath }, 'stripe')
+
+    expect(readFileSync(preCompanyKeyFile, 'utf8')).toBe('sk_legacy')
+    expect(hasPluginCredential({ userDataPath }, 'stripe')).toBe(true)
   })
 })

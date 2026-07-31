@@ -118,7 +118,8 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 | `src/main/buildex-company-identity.ts` | **BuildEx-owned.** Which business a path belongs to — the key everything stored per company is filed under |
 | `src/main/runtime/orca-runtime.ts` | 1 import + 1 `await prepareCompanyWorktree(created.path)` in `createManagedWorktree` |
 | `src/main/runtime/orca-runtime.test.ts` | 1 import + 1 `readFileSync` import member + 2 harness mocks + 1 test |
-| `src/main/ipc/pty.ts` | 2 imports + 1 `applyCompanyPluginEnv(...)` call in `buildPtyHostEnv` + 1 `buildexWorkspacePath` field on `BuildPtyHostEnvOptions` and the `ctx.cwd` line that fills it + 1 `gateCompanyWorktreeOnActivation(worktreePath, connectionId)` in `beginPtySpawnForWorktree` |
+| `src/main/ipc/pty.ts` | 2 imports + 1 `applyCompanyPluginEnv(...)` call in `buildPtyHostEnv` + 1 `buildexWorkspacePath` field on `BuildPtyHostEnvOptions` and the `companyWorkspacePathForSpawn(ctx)` line that fills it + 1 `gateCompanyWorktreeOnActivation(worktreePath, connectionId)` in `beginPtySpawnForWorktree` |
+| `src/main/providers/local-pty-provider.ts` | 2 lines: `worktreeId?: string` on the `buildSpawnEnv` ctx type + `worktreeId: args.worktreeId` where it is called |
 
 **Why the runtime is touched at all.** The automations engine creates a headless
 worktree and launches the startup agent in the same call, and `.claude/` is
@@ -165,6 +166,23 @@ one format. Only a path this machine cannot see resolves to no company; that is
 the SSH case, and it is deliberately not guessed at. Anything BuildEx stores per
 business goes through that one resolver; a second identity mechanism would
 disagree with the first on the day it matters.
+
+**A cwd is not a workspace, and a path is not a host.** Two variants of the same
+mistake, both live at the same moment. `ctx.cwd` is wherever a shell started, so
+gating key injection on it gave a bare `$HOME` terminal every key on the machine;
+the spawn's `worktreeId` is what says the PTY belongs to a business, which is why
+`local-pty-provider.ts` now forwards it. And `repoPath` cannot say which machine
+it names — SSH to a host with the same username and `/home/ubuntu/acme` exists on
+both sides — so the credential IPC carries `connectionId`, exactly as
+`gateCompanyWorktreeOnActivation` does. **Host identity is carried, never
+inferred from a path.**
+
+**Nothing ever writes or deletes the pre-company credential file.** Every write
+lands in `pack-credentials/<companyKey>/`, which is why disconnecting is a
+`<plugin>.disconnected` marker rather than a deletion: the shared file is read by
+every business, so removing it would disconnect companies the operator said
+nothing about, and leaving it unshadowed would reconnect the plugin the instant
+they disconnected it.
 
 **A gate write is only ever as complete as the catalogue behind it.** The rules
 must come from the shelf *that company* sees — `readCompanyStoreEntries(location)`,

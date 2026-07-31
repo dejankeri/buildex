@@ -15,9 +15,15 @@ import type { StoreApiKey, StoreCredentialStatus } from '../../shared/buildex-st
 // files what it is given.
 //
 // A key saved before companies existed sits at `pack-credentials/<plugin>.enc`
-// and is still read, for any company with none of its own. That fallback is
-// read-only in both directions — saving never moves it, so downgrading to an
-// older build finds every key where it left it.
+// and is still read, for any company with none of its own. That file is
+// **read-only, without exception**: nothing here writes it, moves it or removes
+// it, so downgrading to an older build finds every key where it left it and one
+// business can never disconnect another's.
+//
+// Which is why disconnecting is a marker file rather than a deletion. Every
+// write this module makes lands in `pack-credentials/<companyKey>/`, so the only
+// way to say "not here" about a shared key is to shadow it from inside the
+// company's own folder.
 //
 // Encrypted with safeStorage, which is the OS keychain on macOS and Windows.
 // Where that is unavailable the file is written 0600 in plaintext and the caller
@@ -56,50 +62,67 @@ export function envKeyForPlugin(pluginName: string, apiKey?: StoreApiKey): strin
   return apiKey?.envKey ?? `BUILDEX_${pluginName.replace(/[-.]/g, '_').toUpperCase()}_API_KEY`
 }
 
-function credentialDir(deps: PluginCredentialDeps): string | null {
-  const root = path.join(deps.userDataPath, CREDENTIAL_DIR_NAME)
-  if (!deps.companyKey) {
-    return root
-  }
-  // Never quietly fall back to the shared folder: a key meant for one company
-  // landing where every company reads it is the failure this whole change exists
-  // to remove.
-  return COMPANY_KEY_RE.test(deps.companyKey) ? path.join(root, deps.companyKey) : null
-}
-
-function credentialPath(deps: PluginCredentialDeps, pluginName: string): string | null {
-  const dir = credentialDir(deps)
-  if (!dir || !PLUGIN_NAME_RE.test(pluginName)) {
+/**
+ * This company's own folder. Null when there is no company to own one — and
+ * never the shared root, because a key meant for one business landing where
+ * every business reads it is the failure this whole change exists to remove.
+ */
+function companyDir(deps: PluginCredentialDeps): string | null {
+  if (!deps.companyKey || !COMPANY_KEY_RE.test(deps.companyKey)) {
     return null
   }
-  return path.join(dir, `${pluginName}.enc`)
+  return path.join(deps.userDataPath, CREDENTIAL_DIR_NAME, deps.companyKey)
+}
+
+/** This company's key file — the only path anything here ever writes or removes. */
+function companyCredentialPath(deps: PluginCredentialDeps, pluginName: string): string | null {
+  const dir = companyDir(deps)
+  return dir && PLUGIN_NAME_RE.test(pluginName) ? path.join(dir, `${pluginName}.enc`) : null
 }
 
 /**
- * Where this company's key is, then where a pre-company one would be. Ordered:
- * the first that holds anything is the one this company is using.
+ * "This company disconnected this plugin."
+ *
+ * Written on Disconnect, and the reason it exists: the pre-company key is shared
+ * with every other business, so removing it is not this company's to do — but
+ * leaving it answering here would reconnect the plugin the instant the operator
+ * disconnected it. The marker shadows it here and nowhere else.
  */
-function credentialPaths(deps: PluginCredentialDeps, pluginName: string): string[] {
-  const own = credentialPath(deps, pluginName)
-  if (!own) {
-    return []
-  }
-  const preCompany = credentialPath({ userDataPath: deps.userDataPath }, pluginName)
-  return preCompany && preCompany !== own ? [own, preCompany] : [own]
+function disconnectedMarkerPath(deps: PluginCredentialDeps, pluginName: string): string | null {
+  const dir = companyDir(deps)
+  return dir && PLUGIN_NAME_RE.test(pluginName)
+    ? path.join(dir, `${pluginName}.disconnected`)
+    : null
 }
 
-/** The file this company reads from, or null when it has no key by either route. */
-function storedCredentialPath(deps: PluginCredentialDeps, pluginName: string): string | null {
-  for (const candidate of credentialPaths(deps, pluginName)) {
-    try {
-      if (existsSync(candidate) && readFileSync(candidate).length > 0) {
-        return candidate
-      }
-    } catch {
-      // Unreadable is indistinguishable from absent to everyone downstream.
-    }
+/** The pre-company slot, shared by every business. Read-only, always. */
+function preCompanyCredentialPath(deps: PluginCredentialDeps, pluginName: string): string | null {
+  return PLUGIN_NAME_RE.test(pluginName)
+    ? path.join(deps.userDataPath, CREDENTIAL_DIR_NAME, `${pluginName}.enc`)
+    : null
+}
+
+function holdsSomething(target: string): boolean {
+  try {
+    return existsSync(target) && readFileSync(target).length > 0
+  } catch {
+    // Unreadable is indistinguishable from absent to everyone downstream.
+    return false
   }
-  return null
+}
+
+/** The file this company reads from, or null when it has no key by any route. */
+function storedCredentialPath(deps: PluginCredentialDeps, pluginName: string): string | null {
+  const marker = disconnectedMarkerPath(deps, pluginName)
+  if (marker && existsSync(marker)) {
+    return null
+  }
+  const own = companyCredentialPath(deps, pluginName)
+  if (own && holdsSomething(own)) {
+    return own
+  }
+  const preCompany = preCompanyCredentialPath(deps, pluginName)
+  return preCompany && holdsSomething(preCompany) ? preCompany : null
 }
 
 export function hasPluginCredential(deps: PluginCredentialDeps, pluginName: string): boolean {
@@ -113,8 +136,11 @@ export function savePluginCredential(
   pluginName: string,
   apiKey: string
 ): SaveOutcome {
-  const target = credentialPath(deps, pluginName)
-  if (!target) {
+  // No company, no save. The caller is expected to have refused already; this is
+  // the layer that makes the shared slot unreachable by a write at all.
+  const target = companyCredentialPath(deps, pluginName)
+  const marker = disconnectedMarkerPath(deps, pluginName)
+  if (!target || !marker) {
     return { ok: false, error: `Nowhere to store a key for ${pluginName}` }
   }
   const trimmed = apiKey.trim()
@@ -123,35 +149,47 @@ export function savePluginCredential(
   }
   try {
     mkdirSync(path.dirname(target), { recursive: true })
+    let encrypted = false
     if (safeStorage.isEncryptionAvailable()) {
       writeFileSync(target, safeStorage.encryptString(trimmed), { mode: 0o600 })
-      return { ok: true, encrypted: true }
+      encrypted = true
+    } else {
+      writeFileSync(target, trimmed, { encoding: 'utf8', mode: 0o600 })
     }
-    writeFileSync(target, trimmed, { encoding: 'utf8', mode: 0o600 })
-    return { ok: true, encrypted: false }
+    // Reconnecting: lift this company's own disconnect. After the write, so a
+    // failure here leaves the plugin disconnected rather than quietly back on a
+    // pre-company key.
+    rmSync(marker, { force: true })
+    return { ok: true, encrypted }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
 
 /**
- * Disconnect removes the key this company is actually using — its own when it
- * has one, and otherwise the pre-company key that was answering for it.
+ * Disconnect, scoped to this company and only this company.
  *
- * Removing only the company file would leave the fallback still connected and
- * make the button a lie; removing both would disconnect companies the operator
- * said nothing about.
+ * Two writes, both inside `pack-credentials/<companyKey>/`: this company's key
+ * goes, and a marker goes down saying it disconnected. The shared pre-company
+ * file is never touched — the operator disconnected one business, and deleting
+ * it would silently disconnect every other one reading through the fallback.
+ *
+ * Without a company there is nothing of ours to remove and nothing we may
+ * remove, so this is a no-op; the caller refuses that case with a message.
  */
 export function clearPluginCredential(deps: PluginCredentialDeps, pluginName: string): void {
-  const target = storedCredentialPath(deps, pluginName)
-  if (!target) {
-    // Nothing stored is already the outcome the caller wanted.
+  const target = companyCredentialPath(deps, pluginName)
+  const marker = disconnectedMarkerPath(deps, pluginName)
+  if (!target || !marker) {
     return
   }
   try {
-    rmSync(target)
+    rmSync(target, { force: true })
+    mkdirSync(path.dirname(marker), { recursive: true })
+    writeFileSync(marker, '', { mode: 0o600 })
   } catch {
-    // Removed by something else in the meantime; same outcome.
+    // A marker we could not write leaves the plugin connected here, which the
+    // Store reports honestly on its next read.
   }
 }
 

@@ -312,15 +312,23 @@ export type StoreCredentialStatus = {
 
 // Why: a key belongs to one business, so both requests name the workspace it was
 // given in. Without it the operator's two Stripe accounts share one slot.
+//
+// And the host that owns that workspace, because `repoPath` alone cannot say
+// which machine it is on: SSH to a box with the same username and
+// `/home/ubuntu/acme` exists on both sides. Same reason
+// `gateCompanyWorktreeOnActivation` takes one — host identity is carried, never
+// inferred from a path.
 export type StoreCredentialSaveRequest = {
   pluginName: string
   apiKey: string
   repoPath?: string
+  connectionId?: string | null
 }
 
 export type StoreCredentialClearRequest = {
   pluginName: string
   repoPath?: string
+  connectionId?: string | null
 }
 
 export type StoreCredentialResult = {
