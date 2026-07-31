@@ -46,9 +46,12 @@ export type BrainSection = {
   }
 }
 
+/** The section capture writes into. Always created, chosen or not — see below. */
+const CAPTURE_SECTION = 'inbox'
+
 export const BRAIN_SECTIONS: BrainSection[] = [
   {
-    folder: 'inbox',
+    folder: CAPTURE_SECTION,
     title: 'Inbox',
     purpose: 'Captured mid-session, before anyone decided where it belongs. Emptied weekly.',
     seed: {
@@ -61,8 +64,9 @@ somebody deciding which document it belongs in. One file per day, named
 
 Capturing is not filing. An entry stays here until the weekly pass below copies
 it into the section that owns it and marks it \`Filed\`; a day whose entries are
-all filed moves to \`inbox/archive/\`. Nothing here is ever deleted, and nothing
-here is ever rewritten after it is written.
+all filed moves to \`inbox/archive/\`. Nothing here is ever deleted and no entry
+is ever reworded — the only thing the pass adds to an entry is a \`Filed\` line
+beneath it.
 
 The \`record-decision\` skill writes here and nowhere else. Read it before adding
 an entry by hand, so what you write reads like the rest.
@@ -80,18 +84,32 @@ scheduled, everything captured stays in the inbox — visible, but unfiled.
 > For each entry not already marked \`Filed\`, in order:
 >
 > 1. Choose its destination by this table and nothing else. A call that could
->    have gone another way goes to \`decisions/log.md\`. Something about how this
->    company works goes to \`rules/operating.md\`. Anything else goes to the
->    single most specific document that **already exists** for what the entry is
->    about — a named client's own document before the \`clients/\` overview,
->    \`finance/metrics.md\` before anything broader. If no document that exists
->    covers it, leave the entry where it is and go to the next one. Do not create
->    a document to hold an entry. An entry left in the inbox is not a mistake; a
->    misfiled one is.
-> 2. Copy the entry into that document directly under its \`#\` heading, above
->    what is already there — at the top of the file if it has no \`#\` heading —
->    keeping the entry's original date and its exact words. Change nothing that
->    was already in that document.
+>    have gone another way goes to \`decisions/log.md\` — unless that file
+>    already holds more than twenty \`##\` entries, in which case this decision
+>    gets a file of its own, \`decisions/<the entry's date>-<slug>.md\`, where
+>    the slug is the entry's own heading lowercased, punctuation dropped, spaces
+>    turned into hyphens. Derive that name from the entry; never choose one.
+>    Something about how this company works goes to \`rules/operating.md\`.
+>    Anything else goes to the single most specific document that **already
+>    exists** for what the entry is about — a named client's own document before
+>    the \`clients/\` overview, \`finance/metrics.md\` before anything broader.
+>    If no document that exists covers it, leave the entry where it is and go to
+>    the next one. That derived decision file is the only file you may create;
+>    do not invent a document to hold an entry. An entry left in the inbox is
+>    not a mistake; a misfiled one is.
+> 2. Write it in the shape that destination already has, keeping the entry's own
+>    date and changing nothing that was already there.
+>    - A decision getting a file of its own opens with a \`---\` front matter
+>      block holding one \`description:\` sentence, then the entry — and gets a
+>      one-line pointer under \`decisions/log.md\`'s \`#\` heading, reading
+>      \`- <date> — <heading> → <path>\`.
+>    - \`rules/operating.md\` is a list of rules, not a log. Add the entry as one
+>      more bullet at the end of the list already there, worded as an
+>      instruction, and leave that document's heading and opening paragraph
+>      alone. Never paste a dated block into it.
+>    - Every other destination is newest first: copy the entry verbatim directly
+>      under the document's \`#\` heading, above what is already there — at the
+>      top of the file if it has no \`#\` heading.
 > 3. Append one line under the entry in its inbox file:
 >    \`> Filed <today> → <destination>\`, where \`<today>\` is today's date as
 >    \`YYYY-MM-DD\`, read from the system rather than guessed.
@@ -107,9 +125,10 @@ scheduled, everything captured stays in the inbox — visible, but unfiled.
 > add one line to the document that replaced it naming what it supersedes. Never
 > delete a document, and never archive one this run's entries did not supersede.
 >
-> Create no new sections, rename nothing, reorganise nothing. Finish by replying
-> with one line per entry filed — its date and where it went — and one line for
-> each entry you left behind, saying why.
+> Beyond the archive folders and the one decision file named above, create
+> nothing, rename nothing, reorganise nothing. Finish by replying with one line
+> per entry filed — its date and where it went — and one line for each entry you
+> left behind, saying why.
 `
     }
   },
@@ -149,11 +168,13 @@ pass files them, or by hand. A decision that changes an earlier one supersedes
 it with a new dated entry — the old one stays, so the reasoning is still
 readable later.
 
-Once this file runs past about twenty entries, or a decision needs more than a
-screen, give that one its own file: \`decisions/YYYY-MM-DD-<slug>.md\`, opening
-with a \`description:\` front matter line so the map can say what it is without
-being opened, and leave a one-line pointer to it here. Both shapes sit side by
-side; a file per decision is what this becomes at size.
+Once this file holds more than twenty entries, a new decision gets its own file
+instead: \`decisions/YYYY-MM-DD-<slug>.md\`, named from that decision's own date
+and heading, opening with a \`description:\` front matter line so the map can
+say what it is without being opened, and leaving a one-line pointer here. The
+weekly distillation pass does exactly this on its own once the count is past
+twenty; do the same by hand. Both shapes sit side by side — a file per decision
+is what this becomes at size.
 
 ## YYYY-MM-DD — <the call>
 
@@ -318,7 +339,13 @@ export function scaffoldCompanyBrain(
   options: ScaffoldOptions = {}
 ): ScaffoldResult {
   const brainRoot = location.root
-  const chosen = options.folders ? new Set(options.folders) : null
+  // Why `inbox` is forced in: the capture skill below is seeded whatever the
+  // operator picked, and its one destination is this folder. Declining the
+  // section used to be harmless — the skill carried its own routing table — but
+  // that table now lives in `inbox/distillation.md`, so an unchosen inbox would
+  // leave a brain holding a skill that writes to nowhere and no copy of the
+  // convention anywhere in it.
+  const chosen = options.folders ? new Set([...options.folders, CAPTURE_SECTION]) : null
   const summary = options.summary?.trim() ?? ''
   const created: string[] = []
 

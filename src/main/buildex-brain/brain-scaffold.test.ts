@@ -55,6 +55,8 @@ describe('scaffoldCompanyBrain', () => {
     expect(read('finance/metrics.md')).toContain('finance/')
   })
 
+  // Substrings only, never a phrase that spans a line break: these assert what
+  // the prompt says, and rewrapping a paragraph must not fail them.
   it('gives capture a home and the distillation pass a prompt to run on it', () => {
     scaffoldCompanyBrain(location())
 
@@ -68,13 +70,50 @@ describe('scaffoldCompanyBrain', () => {
     expect(distillation).toContain('inbox/archive/')
     // Named, not "this one": the prompt is read in the Automations field, where
     // there is no "this file" for it to refer to.
-    expect(distillation).toContain('except\n> `inbox/distillation.md`')
+    expect(distillation).toContain('`inbox/distillation.md`')
+    expect(distillation).not.toContain('except this one')
     // The valve that makes two agents on two weeks agree: an entry with no home
     // that already exists stays put rather than landing somewhere new each week.
     expect(distillation).toContain('leave the entry where it is')
-    expect(distillation).toContain('Do not create\n>    a document to hold an entry.')
+    expect(distillation).toContain('do not invent a document to hold an entry')
     // A brain in a folder workspace has no git to move a file with.
     expect(distillation).toContain('a plain move when it is not')
+  })
+
+  it('lets the pass reach file-per-decision, since nothing else can', () => {
+    // The capture skill no longer writes to `decisions/log.md`, so the weekly
+    // pass is the only thing that grows it. A prompt that may never create a
+    // file leaves the convention beside it dead — exercisable only by hand.
+    scaffoldCompanyBrain(location())
+
+    const distillation = read('inbox/distillation.md')
+    expect(distillation).toContain('more than twenty `##`')
+    expect(distillation).toContain("`decisions/<the entry's date>-<slug>.md`")
+    // Derived from the entry, so two weeks cannot produce two names for it —
+    // which is why this one exception does not reopen the invention it forbids.
+    expect(distillation).toContain('Derive that name from the entry; never choose one.')
+    expect(distillation).toContain('description:')
+    expect(distillation).toContain('the only file you may create')
+
+    // And the seed beside it names the same threshold and the same shape.
+    const log = read('decisions/log.md')
+    expect(log).toContain('more than twenty entries')
+    expect(log).toContain('decisions/YYYY-MM-DD-<slug>.md')
+    expect(log).toContain('weekly distillation pass does exactly this on its own')
+  })
+
+  it('files a rule as a rule, not as a dated block above the rules', () => {
+    // `rules/operating.md` is the one seeded document whose shape is
+    // load-bearing: it is the document the agent is told to follow. A log-shaped
+    // insertion wedges a dated block between its heading and its own intro, and
+    // does it again every week.
+    scaffoldCompanyBrain(location())
+
+    const distillation = read('inbox/distillation.md')
+    expect(distillation).toContain('is a list of rules, not a log')
+    expect(distillation).toContain('Never paste a dated block into it.')
+    // The newest-first rule still applies everywhere it should.
+    expect(distillation).toContain('Every other destination is newest first')
   })
 
   it('states both conventions where an operator will meet them', () => {
@@ -117,12 +156,27 @@ describe('scaffoldCompanyBrain', () => {
     expect(read('strategy/overview.md')).toBe('# Rewritten\n')
   })
 
-  it('creates only the sections that were chosen', () => {
+  it('creates only the sections that were chosen, plus the one capture needs', () => {
     scaffoldCompanyBrain(location(), { folders: ['strategy', 'decisions'] })
 
     expect(existsSync(path.join(repo, '.buildex', 'strategy'))).toBe(true)
     expect(existsSync(path.join(repo, '.buildex', 'decisions'))).toBe(true)
     expect(existsSync(path.join(repo, '.buildex', 'finance'))).toBe(false)
+  })
+
+  it('gives the capture skill its destination even when inbox was declined', () => {
+    // The skill is seeded whatever the operator picked, and its one destination
+    // is `inbox/`. Declining the section used to be harmless, because the skill
+    // carried its own routing table; that table now lives in the inbox seed, so
+    // an unchosen inbox would leave a skill writing to nowhere and no copy of
+    // the convention anywhere in the brain.
+    const result = scaffoldCompanyBrain(location(), { folders: ['finance'] })
+
+    expect(result.created).toContain('inbox/distillation.md')
+    expect(read('inbox/distillation.md')).toContain('## Automation prompt')
+    expect(
+      readFileSync(path.join(repo, '.buildex', 'skills', 'record-decision', 'SKILL.md'), 'utf8')
+    ).toContain('`inbox/<today>.md`')
   })
 
   it("answers the seed's opening question with what the operator typed", () => {

@@ -126,7 +126,7 @@ const MAP_DOCUMENTS_PER_FOLDER = 12
 const ARCHIVE_SEGMENT_RE = /(^|\/)archive(\/|$)/i
 
 /** True for `clients/archive` and `clients/archive/acme.md`, false for `notes/archive.md`. */
-export function isArchivedBrainPath(pathOrId: string): boolean {
+function isArchivedBrainPath(pathOrId: string): boolean {
   return ARCHIVE_SEGMENT_RE.test(pathOrId)
 }
 
