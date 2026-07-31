@@ -116,7 +116,8 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 | `resources/build/icon.{png,icns,ico}`, `resources/{icon,icon-dev}.png`, `resources/logo.svg` | BuildEx artwork |
 | `src/main/buildex-repo-init.ts`, `buildex-worktree-init.ts` | **BuildEx-owned.** Everything a repo and a fresh checkout need before an agent works there |
 | `src/main/runtime/orca-runtime.ts` | 1 import + 1 `await prepareCompanyWorktree(created.path)` in `createManagedWorktree` |
-| `src/main/runtime/orca-runtime.test.ts` | 1 import + 1 `readFileSync` import member + 1 test |
+| `src/main/runtime/orca-runtime.test.ts` | 1 import + 1 `readFileSync` import member + 2 harness mocks + 1 test |
+| `src/main/ipc/pty.ts` | 2 imports + `applyBuildExPluginEnv` (installed plugins' keys into the agent's env) + 1 `gateCompanyWorktreeOnActivation(worktreePath)` in `beginPtySpawnForWorktree` |
 
 **Why the runtime is touched at all.** The automations engine creates a headless
 worktree and launches the startup agent in the same call, and `.claude/` is
@@ -125,6 +126,22 @@ where it has the least memory and the fewest guardrails. It is **awaited**: Clau
 Code reads `.claude/` once at session start, so the void-fired refresh the IPC
 surfaces use would race the agent. Keep the logic in `buildex-worktree-init.ts`;
 the runtime's share is the one call.
+
+**Awaited is not unbounded.** The context scan spawns `git status`, and it now
+sits on the critical path of creating a worktree, so a wedged git would stall
+worktree creation outright. `prepareCompanyWorktree` races it against
+`COMPANY_CONTEXT_DEADLINE_MS` and degrades to no-context with a log line. A
+broken brain must never cost a worktree.
+
+**Why `pty.ts` is the activation hook.** Worktree activation is renderer state —
+main never hears about it, and `ui:activateWorktree` runs the other way. The
+narrowest main-process point where an agent begins working in a checkout is
+`beginPtySpawnForWorktree`, which **both** spawn entry points already call
+(`ipcMain.handle('pty:spawn')` for the renderer, and the runtime's pty controller
+for CLI, mobile and automations) and which already holds the worktree's absolute
+path. Gating there is synchronous and once per checkout per run; the context is
+deliberately *not* refreshed there, because that reads git and a spawn is no
+place to wait for it.
 
 ### Branding the visible copy — Phase 6
 

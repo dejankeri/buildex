@@ -2,9 +2,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as CompanyContextRefreshModule from './buildex-brain/company-context-refresh'
 
 const mocks = vi.hoisted(() => ({
-  readInstalledAppSummaries: vi.fn(() => [] as unknown[])
+  readInstalledAppSummaries: vi.fn(() => [] as unknown[]),
+  /** Set by the deadline test: a scan that never comes back. */
+  stallContextRefresh: false
 }))
 
 vi.mock('electron', () => ({
@@ -16,7 +19,18 @@ vi.mock('./buildex-store/store-catalog-source', () => ({
   readAppStoreCatalog: vi.fn(() => ({ entries: [] }))
 }))
 
-const { prepareCompanyWorktree } = await import('./buildex-worktree-init')
+vi.mock('./buildex-brain/company-context-refresh', async (importOriginal) => {
+  const actual = await importOriginal<typeof CompanyContextRefreshModule>()
+  return {
+    refreshCompanyContext: (...args: Parameters<typeof actual.refreshCompanyContext>) =>
+      mocks.stallContextRefresh
+        ? new Promise<void>(() => {})
+        : actual.refreshCompanyContext(...args)
+  }
+})
+
+const { COMPANY_CONTEXT_DEADLINE_MS, gateCompanyWorktreeOnActivation, prepareCompanyWorktree } =
+  await import('./buildex-worktree-init')
 const { resetCompanyRepoInitialization } = await import('./buildex-repo-init')
 
 function read(worktree: string, ...relative: string[]): string {
@@ -34,11 +48,13 @@ describe('prepareCompanyWorktree', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.readInstalledAppSummaries.mockReturnValue([])
+    mocks.stallContextRefresh = false
     resetCompanyRepoInitialization()
     worktree = mkdtempSync(path.join(tmpdir(), 'buildex-worktree-'))
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     rmSync(worktree, { recursive: true, force: true })
   })
 
@@ -83,11 +99,64 @@ describe('prepareCompanyWorktree', () => {
     expect(existsSync(path.join(worktree, '.claude', 'company-context.md'))).toBe(false)
   })
 
+  it('gives up on a scan that never comes back, and still yields a gated worktree', async () => {
+    writeBrainDocument()
+    mocks.stallContextRefresh = true
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.useFakeTimers()
+
+    const preparing = prepareCompanyWorktree(worktree)
+    await vi.advanceTimersByTimeAsync(COMPANY_CONTEXT_DEADLINE_MS)
+
+    await expect(preparing).resolves.toBeUndefined()
+    expect(askRules(worktree).length).toBeGreaterThan(0)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(worktree))
+    warn.mockRestore()
+  })
+
   it('writes nothing for a path this machine cannot see', async () => {
     const absent = path.join(worktree, 'never-created')
 
     await prepareCompanyWorktree(absent)
 
     expect(existsSync(absent)).toBe(false)
+  })
+})
+
+describe('gateCompanyWorktreeOnActivation', () => {
+  let worktree: string
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetCompanyRepoInitialization()
+    worktree = mkdtempSync(path.join(tmpdir(), 'buildex-activated-'))
+  })
+
+  afterEach(() => {
+    rmSync(worktree, { recursive: true, force: true })
+  })
+
+  it('gates a checkout the operator opened rather than created', () => {
+    gateCompanyWorktreeOnActivation(worktree)
+
+    expect(askRules(worktree).length).toBeGreaterThan(0)
+  })
+
+  it('writes no context — a spawn is not the place to wait for a git scan', () => {
+    mkdirSync(path.join(worktree, '.buildex'), { recursive: true })
+    writeFileSync(path.join(worktree, '.buildex', 'handbook.md'), '# Handbook\n', 'utf8')
+
+    gateCompanyWorktreeOnActivation(worktree)
+
+    expect(existsSync(path.join(worktree, '.claude', 'company-context.md'))).toBe(false)
+  })
+
+  it('leaves a bare shell and a worktree on another host alone', () => {
+    const elsewhere = path.join(worktree, 'on-another-host')
+
+    gateCompanyWorktreeOnActivation(undefined)
+    gateCompanyWorktreeOnActivation(elsewhere)
+
+    expect(existsSync(elsewhere)).toBe(false)
   })
 })

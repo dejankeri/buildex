@@ -115,12 +115,18 @@ own hook identity and config dir, or share Orca's and accept the interference.
 Worth noting the same caveat applies to simply *running* this fork alongside
 Orca today — it has not been launched outside the isolated e2e profile.
 
-The gate now lands when a worktree is created as well as when a BuildEx surface
-first touches a repo — `createManagedWorktree` awaits `prepareCompanyWorktree`,
+The gate is no longer applied lazily. It lands at three moments now: when a
+worktree is **created** (`createManagedWorktree` awaits `prepareCompanyWorktree`,
 which also writes the company context and relinks the brain's skills, so an
 automation's headless checkout is gated before its startup agent reads
-`.claude/`. Installing an app re-gates every company opened this run, not only
-the one whose Store was open.
+`.claude/`), when a worktree is **activated** — the first terminal spawned in a
+checkout, which is the one main-process moment every path shares, since
+activation itself is renderer state — and when a BuildEx surface touches a repo.
+Installing an app re-gates every company opened this run, not only the one whose
+Store was open.
+
+The context scan is awaited but bounded (`COMPANY_CONTEXT_DEADLINE_MS`): it
+spawns git, and no brain is worth failing to create a worktree over.
 
 ## Read before touching anything
 

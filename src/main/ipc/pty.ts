@@ -94,6 +94,7 @@ import {
 } from '../attribution/terminal-attribution'
 import { collectPluginEnv } from '../buildex-store/plugin-env'
 import { readAppStoreCatalog } from '../buildex-store/store-catalog-source'
+import { gateCompanyWorktreeOnActivation } from '../buildex-worktree-init'
 import { ensureLinuxTerminalOrcaCliShimDir } from '../cli/linux-terminal-orca-cli-shim'
 import { registerPty, unregisterPty } from '../memory/pty-registry'
 import { advertisedUrlWatcher } from '../ports/advertised-url-watcher'
@@ -1236,6 +1237,9 @@ function beginPtySpawnForWorktree(
   const worktreePath = worktreeId
     ? splitWorktreeIdForFilesystem(worktreeId)?.worktreePath
     : undefined
+  // BuildEx: see BUILDEX-PATCHES.md. Both spawn paths pass through here, so this
+  // is where the gate reaches a checkout the operator opened rather than created.
+  gateCompanyWorktreeOnActivation(worktreePath)
   const installPaths = new Map<string, string>()
   for (const candidate of [worktreePath, cwd]) {
     if (candidate) {
