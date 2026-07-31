@@ -55,6 +55,42 @@ describe('scaffoldCompanyBrain', () => {
     expect(read('finance/metrics.md')).toContain('finance/')
   })
 
+  it('gives capture a home and the distillation pass a prompt to run on it', () => {
+    scaffoldCompanyBrain(location())
+
+    const distillation = read('inbox/distillation.md')
+    expect(distillation).toContain('## Automation prompt')
+    // The routing table lives here and nowhere else — the skill writes the
+    // stream, this files it.
+    expect(distillation).toContain('decisions/log.md')
+    expect(distillation).toContain('rules/operating.md')
+    expect(distillation).toContain('Filed <today> → <destination>')
+    expect(distillation).toContain('inbox/archive/')
+    // Named, not "this one": the prompt is read in the Automations field, where
+    // there is no "this file" for it to refer to.
+    expect(distillation).toContain('except\n> `inbox/distillation.md`')
+    // The valve that makes two agents on two weeks agree: an entry with no home
+    // that already exists stays put rather than landing somewhere new each week.
+    expect(distillation).toContain('leave the entry where it is')
+    expect(distillation).toContain('Do not create\n>    a document to hold an entry.')
+    // A brain in a folder workspace has no git to move a file with.
+    expect(distillation).toContain('a plain move when it is not')
+  })
+
+  it('states both conventions where an operator will meet them', () => {
+    scaffoldCompanyBrain(location())
+
+    // File-per-decision once the log grows — ADR practice, prose not code.
+    expect(read('decisions/log.md')).toContain('decisions/YYYY-MM-DD-<slug>.md')
+    expect(read('decisions/log.md')).toContain('inbox/')
+
+    // The archive convention, in the rules the agent is told to follow.
+    const rules = read('rules/operating.md')
+    expect(rules).toContain('inbox/<today>.md')
+    expect(rules).toContain('clients/archive/')
+    expect(rules).toContain('lowercase')
+  })
+
   it('writes nothing the second time', () => {
     scaffoldCompanyBrain(location())
 

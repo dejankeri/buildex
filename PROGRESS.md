@@ -28,7 +28,7 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
 
 ## What works
 
-- **Company Brain** (left rail, full screen) — nine sections over `.buildex/`
+- **Company Brain** (left rail, full screen) — ten sections over `.buildex/`
   with coverage bars, the skills the company wrote and the ones its apps brought,
   and history of every save. Documents are written **in the Brain** with the app's
   own rich markdown editor; YAML front matter is held back from the editor and

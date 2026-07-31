@@ -220,9 +220,12 @@ describe('renderCompanyContext', () => {
       described.documents.filter((document) => document.description?.endsWith('…'))
     ).toHaveLength(640)
 
-    // 9 declared sections + 1 undeclared (`notes`) + 120 entity lines + 9 of
+    // 10 declared sections + 1 undeclared (`notes`) + 120 entity lines + 9 of
     // preamble and headings. The 620 documents inside those folders cost zero.
-    expect(rendered.split('\n')).toHaveLength(139)
+    // The tenth declared section is `inbox`, and it is why this is 140 rather
+    // than 139: a section costs one line whether or not it holds anything, so
+    // declaring one moves this by exactly one and moves nothing's growth law.
+    expect(rendered.split('\n')).toHaveLength(140)
     expect(rendered.split('\n').length).toBeLessThanOrEqual(CONTEXT_MAP_LINE_CEILING)
     expect(rendered.length).toBeLessThanOrEqual(CONTEXT_MAP_CHARACTER_CEILING)
 
@@ -276,6 +279,130 @@ describe('renderCompanyContext', () => {
     expect(line).toContain('decision-00, decision-01')
     expect(line).toContain('+18 more')
     expect(line).not.toContain('decision-12')
+  })
+})
+
+describe('renderCompanyContext archive de-emphasis', () => {
+  it('names an archive by path and count, and lists nothing inside it', async () => {
+    write('clients/acme.md', '# Acme\n')
+    write('clients/archive/dead-co.md', '# Dead Co\n\nChurned in 2025.\n')
+    write('clients/archive/gone-ltd.md', '# Gone Ltd\n')
+
+    const scanned = await scan()
+    const rendered = renderCompanyContext(scanned, [], embeddedLocation(repo))
+
+    // Present in the repo and in the scan — nothing is hidden from an agent
+    // that opens the folder, and nothing was deleted to make the map smaller.
+    expect(scanned.documents.map((document) => document.id)).toContain('clients/archive/dead-co.md')
+    // De-emphasised in the map: the path and how much is there, no names.
+    expect(rendered).toContain(
+      '- **clients/archive** — 2 superseded documents, kept for history and not listed here.'
+    )
+    expect(rendered).not.toContain('dead-co')
+    expect(rendered).not.toContain('gone-ltd')
+    expect(rendered).toContain('- **clients** — acme')
+  })
+
+  it('strictly reduces the map, measured against the same folder not archived', async () => {
+    // Identical content either side of the convention, so the difference is the
+    // convention rather than the fixture.
+    const long = `${'situation '.repeat(30)}end`
+    for (let index = 0; index < 20; index += 1) {
+      write(`clients/archive/dead-${index}.md`, `---\ndescription: ${long}\n---\n\n# Dead\n`)
+      write(`clients/live/open-${index}.md`, `---\ndescription: ${long}\n---\n\n# Open\n`)
+    }
+
+    const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+    const lineFor = (folder: string): string =>
+      rendered.split('\n').find((line) => line.includes(`**${folder}**`)) ?? ''
+
+    expect(lineFor('clients/live')).toContain('+8 more')
+    expect(lineFor('clients/archive')).toContain('20 superseded documents')
+    expect(lineFor('clients/archive').length).toBeLessThan(lineFor('clients/live').length / 5)
+  })
+
+  it('costs exactly one line however much history piles up', async () => {
+    write('clients/acme.md', '# Acme\n')
+    write('clients/archive/dead-0.md', '# Dead\n')
+    const few = renderCompanyContext(await scan(), [], embeddedLocation(repo)).split('\n')
+
+    for (let index = 1; index < 400; index += 1) {
+      write(`clients/archive/dead-${index}.md`, '# Dead\n')
+    }
+    const many = renderCompanyContext(await scan(), [], embeddedLocation(repo)).split('\n')
+
+    expect(many).toHaveLength(few.length)
+    expect(many.join('\n')).toContain('400 superseded documents')
+  })
+
+  it('collapses everything below an archive, not only its top level', async () => {
+    write('clients/archive/2024/dead-co/index.md', '# Dead Co\n\nChurned.\n')
+    write('clients/archive/2024/dead-co/contract.md', '# Contract\n')
+    write('clients/archive/note.md', '# Note\n')
+
+    const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+    const archiveLines = rendered.split('\n').filter((line) => line.includes('archive'))
+
+    expect(archiveLines).toHaveLength(1)
+    expect(archiveLines[0]).toContain('3 superseded documents')
+    expect(rendered).not.toContain('Dead Co')
+    expect(rendered).not.toContain('contract')
+  })
+
+  it('treats `Archive/` as the same folder, because on this filesystem it is', async () => {
+    // Recorded trap 4b: `Orca` and `orca` share an inode on APFS. A case-exact
+    // match would enumerate this folder on macOS and collapse it on Linux —
+    // the same commit rendering two ways.
+    write('decisions/Archive/old-call.md', '# Old call\n')
+
+    const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+
+    expect(rendered).toContain('- **decisions/Archive** — 1 superseded document')
+    expect(rendered).not.toContain('old-call')
+  })
+
+  it('leaves a document merely named `archive` alone', async () => {
+    // The convention is a folder. A document called `archive.md` is a document.
+    write('notes/archive.md', '# Archive\n')
+
+    const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+
+    expect(rendered).toContain('- **notes** — archive')
+    expect(rendered).not.toContain('superseded')
+  })
+
+  it('keeps archived ids out of recency before the cap, not after', () => {
+    // Archiving is a git change, so the week a dead client is retired is the
+    // week this list would be nothing but the ten documents just declared
+    // finished — the loudest possible answer pointing at the wrong place.
+    const rendered = renderCompanyContext(
+      {
+        ...EMPTY_BRAIN_SCAN,
+        recentDocumentIds: [
+          ...Array.from({ length: 10 }, (_, index) => `clients/archive/dead-${index}.md`),
+          'rules/operating.md'
+        ]
+      },
+      [],
+      embeddedLocation('/repo')
+    )
+
+    expect(rendered).toContain('- `rules/operating.md`')
+    expect(rendered).not.toContain('archive')
+  })
+
+  it('never lets a superseded document hold a most-connected slot', async () => {
+    // A document keeps every backlink it ever earned, so without this the dead
+    // engagement outranks the live one that replaced it.
+    write('clients/archive/dead.md', '# Dead\n')
+    write('a.md', '[[dead]]\n')
+    write('b.md', '[[dead]] [[a]]\n')
+
+    const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+
+    expect(rendered).toContain('## Most connected')
+    expect(rendered).toContain('- `a.md`')
+    expect(rendered).not.toContain('- `clients/archive/dead.md`')
   })
 })
 

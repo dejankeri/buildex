@@ -37,12 +37,16 @@ describe('the seeded capture skill', () => {
     expect(readFileSync(manifestPath(), 'utf8')).toContain('# Record a decision')
   })
 
-  it('tells the agent where to write and to date the entry', () => {
+  it('sends every capture to the inbox, and to nothing else', () => {
+    // The skill writes the stream; the weekly distillation pass files it. Two
+    // instructions naming two destinations would be worse than either.
     seedCaptureSkill(embeddedLocation(repo))
     const body = readFileSync(manifestPath(), 'utf8')
 
-    expect(body).toContain('decisions/log.md')
-    expect(body).toContain('rules/operating.md')
+    expect(body).toContain('`inbox/<today>.md`')
+    expect(body).toContain('That is the only destination.')
+    expect(body).toContain('Do not pick a section')
+    expect(body).toContain('date +%F')
     expect(body).toContain('YYYY-MM-DD')
     // The description is what the agent matches on, so both phrasings must be in it.
     expect(body).toContain('record this decision')

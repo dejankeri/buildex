@@ -62,7 +62,7 @@ Built for the operator who runs the company, not the engineer.
 
 | Surface | What it does |
 |---|---|
-| **Company Brain** | A full-screen view over `.buildex/` — nine sections with coverage bars, the skills your company wrote and the ones its apps brought, and history of every save. Documents are written in place with the app's own markdown editor; YAML front matter is held back and restored byte for byte, so a skill's `name:` and `description:` survive editing. |
+| **Company Brain** | A full-screen view over `.buildex/` — ten sections with coverage bars, the skills your company wrote and the ones its apps brought, and history of every save. Documents are written in place with the app's own markdown editor; YAML front matter is held back and restored byte for byte, so a skill's `name:` and `description:` survive editing. |
 | **Store & Apps** | 11 capability packs ship inside the app (Slack, Stripe, Linear, Notion, HubSpot, Asana, Calendly, Canva, Intercom, HeyGen, Protocol), so a fresh repo has a full shelf on first run. Installing writes skill scaffolds into the repo and never overwrites an existing skill. A repo's own catalog overrides a shipped pack by id. |
 | **Agent context** | Writes `.claude/company-context.md` and an `@`-import into `.claude/CLAUDE.md`, so the next session starts knowing the company. Refreshed automatically whenever the map can have changed — there is no button, because a context someone has to remember to refresh is a context that is usually wrong. |
 | **The gate** | An allow/ask/deny preset written into the repo's `.claude/settings.json`, so the agent's own runtime enforces it. A company can override it in `.buildex/gate-preset.json`; a broken override falls back to the shipped preset rather than to no gates. |
@@ -79,7 +79,7 @@ Built for the operator who runs the company, not the engineer.
     <td width="50%" valign="top">
       <img src="docs/assets/company-brain.png"
            alt="The Company Brain: nine sections - strategy, decisions, rules, clients, product, people, finance, content and reviews - each holding a document, with nine documents saved and none unsaved." />
-      <p><strong>Then it fills up.</strong> Nine sections of plain markdown in a repo you own, each with a
+      <p><strong>Then it fills up.</strong> Sections of plain markdown in a repo you own, each with a
       coverage bar — and every save is a commit you can walk back.</p>
     </td>
   </tr>
@@ -148,25 +148,39 @@ into one, or when a BuildEx surface touches it; a worktree on an SSH host is not
 ([tracked here](PROGRESS.md#the-gate-what-is-done-and-what-is-not)) — schedule SSH automations
 knowing that.
 
-**Three rhythms worth starting with**, one per business, each a prompt against the section it
+**Four rhythms worth starting with**, one per business, each a prompt against the section it
 serves:
 
 | Rhythm | Schedule | Reads / writes | Seeded in the Brain |
 |---|---|---|---|
+| Inbox distillation | Weekly | `inbox/` → every durable section | `inbox/distillation.md` |
 | Weekly review | Weekly | `reviews/`, `decisions/log.md`, `strategy/overview.md` | `reviews/weekly-review.md` |
 | Engagement triage | Weekly | `clients/` | `clients/triage.md` |
 | Metrics pull | Weekly, or Custom cron for a monthly close | `finance/` | `finance/metrics.md` |
 
 Each of those Brain documents ships with its automation's exact prompt, ready to paste into the
-**Prompt** field — set up the Brain's `reviews`, `clients` and `finance` sections and they're
-there. Nothing runs until you schedule it.
+**Prompt** field — set up the Brain's `inbox`, `reviews`, `clients` and `finance` sections and
+they're there. Nothing runs until you schedule it.
+
+**Distillation is the one that closes the loop.** Capturing and filing are separate jobs. Mid-task
+the agent uses the seeded `record-decision` skill, which writes to one place and only one —
+`inbox/<today>.md` — because an agent asked to choose a destination while work is happening chooses
+a different one each night. The weekly pass reads the week's inbox, copies each entry into the
+section that owns it, marks it `Filed →` where it went, and archives the day's file once every
+entry in it has landed. An entry it isn't sure about it leaves alone; guessing is the failure, not
+a leftover. Until you schedule it, everything captured is still in `inbox/`, visible and unfiled.
+
+Nothing in a brain is deleted. A document a newer one replaces moves to an `archive/` folder beside
+it — `clients/archive/`, `decisions/archive/` — and the agent's context map renders that folder as
+a count rather than a list, so history stays in the repo without spending every session's first
+read on it.
 
 ## What works today (honestly)
 
 | Works now | Not yet |
 |---|---|
 | Everything Orca does — worktrees, terminals, diffs, agents, SSH | Linux and Windows downloads (both run from source today) |
-| The Brain: nine sections over `.buildex/`, edited in place | Inline approval cards and the activity ledger ([why](PROGRESS.md#the-gate-what-is-done-and-what-is-not)) |
+| The Brain: ten sections over `.buildex/`, edited in place | Inline approval cards and the activity ledger ([why](PROGRESS.md#the-gate-what-is-done-and-what-is-not)) |
 | The Store on first run, with 11 packs shipped in the app | Pack MCP faces — parsed and carried, but installing does not write `.mcp.json` yet |
 | Auto-fed company context, refreshed without a button | Gate applied on worktree activation (today it applies when a BuildEx surface first touches a repo) |
 | The gate preset, enforced by the agent runtime | Any hosted sync — by decision, not by omission |

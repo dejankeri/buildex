@@ -13,6 +13,13 @@ import { skillsRoot } from './skill-link'
 //
 // Kept short on purpose. A skill an agent has to wade through gets skimmed, and
 // one an operator finds too long to audit never gets read at all.
+//
+// It writes to the inbox and nowhere else. An earlier version routed the entry
+// itself — decisions here, rules there, everything else to "the document for
+// that area" — which asks an agent mid-task to make a filing judgement with the
+// brain's whole shape in view. That judgement is the distillation pass's, once a
+// week, with every entry of the week in front of it. Two instructions naming two
+// destinations would be worse than either; there is one destination.
 
 export const CAPTURE_SKILL_NAME = 'record-decision'
 
@@ -25,19 +32,19 @@ description: Use when a decision is made, a number is agreed, or something is le
 
 # Record a decision
 
-Write it down where the next session will find it. One entry, one place, dated.
+Write it down while it is still true. One entry, one place, dated. Where it
+eventually belongs is not your call to make now — the weekly distillation pass
+files it from the inbox into the section that owns it.
 
 ## Where it goes
 
-| What happened | File |
-| --- | --- |
-| A call that could have gone another way | \`decisions/log.md\` |
-| Something about how this company works | \`rules/operating.md\` |
-| Anything else | the document for that area — \`clients/\`, \`finance/\`, \`product/\`, … |
+\`inbox/<today>.md\` in the company brain, where \`<today>\` is today's date as
+\`YYYY-MM-DD\`. That is the only destination. Do not pick a section, do not write
+to \`decisions/log.md\` or \`rules/operating.md\`, and do not start a second inbox.
 
-Those paths are relative to the company brain. \`.claude/company-context.md\`
-says where that folder is and what is already in it; read it if you are unsure.
-Never write outside it, and never create a second log next to an existing one.
+Create the file if it is not there yet, opening it with \`# <today>\` and nothing
+else; append to it if it is. \`.claude/company-context.md\` says where the brain
+folder is; read it if you are unsure. Never write outside that folder.
 
 ## How to write it
 
@@ -54,17 +61,17 @@ ${FENCE}
 **Why.** What made it the right call, and what we gave up.
 ${FENCE}
 
-- Get today's date from the system (\`date +%F\`) rather than guessing it, and
-  write it \`YYYY-MM-DD\`.
+- Read today's date off the system (\`date +%F\` on macOS and Linux) rather than
+  guessing it, and write it \`YYYY-MM-DD\`.
 - One entry per decision. Two decisions are two entries.
-- Never edit or delete an earlier entry. A decision that replaces one gets its
-  own entry saying which it supersedes.
+- Never edit or delete an earlier entry, here or anywhere else. A decision that
+  replaces one gets its own entry saying which it supersedes.
 - Write what a reader six months from now needs. No preamble.
 
 ## Check before finishing
 
-- The entry went into a document that already covers this, not a new file beside it.
-- The date is today's, in \`YYYY-MM-DD\` form.
+- The entry is in \`inbox/<today>.md\` and in no other file.
+- The date is today's, in \`YYYY-MM-DD\` form, in the heading and in the filename.
 - Nothing that was already in the file changed.
 `
 

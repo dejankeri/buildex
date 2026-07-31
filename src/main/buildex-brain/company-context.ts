@@ -114,6 +114,23 @@ const MAP_DESCRIPTION_BUDGET = 80
 const MAP_DOCUMENTS_PER_FOLDER = 12
 
 /**
+ * A folder named `archive`, and everything below it.
+ *
+ * Case-insensitive on purpose. `Archive/` and `archive/` are the *same
+ * directory* on macOS and Windows, so a case-sensitive match would render one
+ * commit two ways depending on which machine scanned it — and the machine that
+ * enumerated the folder is the one that blew the budget this exists to hold.
+ * The lowercase spelling is what the scaffold seeds and what the guidance says;
+ * this only refuses to be surprised by the other one.
+ */
+const ARCHIVE_SEGMENT_RE = /(^|\/)archive(\/|$)/i
+
+/** True for `clients/archive` and `clients/archive/acme.md`, false for `notes/archive.md`. */
+export function isArchivedBrainPath(pathOrId: string): boolean {
+  return ARCHIVE_SEGMENT_RE.test(pathOrId)
+}
+
+/**
  * The brain's shape, as lines the agent can act on.
  *
  * An entity is named and summarised; the documents inside it are not listed.
@@ -135,6 +152,21 @@ function renderTree(nodes: BrainNode[], depth = 0): string[] {
   const lines: string[] = []
   const indent = '  '.repeat(depth)
   for (const node of nodes) {
+    if (isArchivedBrainPath(node.path)) {
+      // De-emphasis, exactly: an archive costs one line carrying its path and
+      // how much is in it, and never a name, a description or a nested folder.
+      // Both halves are load-bearing. Dropping it entirely would be cheaper and
+      // wrong — an agent that cannot see history exists re-derives what a dead
+      // client already taught the business — but a folder of superseded work
+      // must not be enumerated the way live work is, because it only grows.
+      const count = node.documentCount
+      lines.push(
+        `${indent}- **${node.path}** — ${count} superseded ${
+          count === 1 ? 'document' : 'documents'
+        }, kept for history and not listed here.`
+      )
+      continue
+    }
     if (node.kind === 'entity') {
       const summary = truncateAtWord(node.main?.summary ?? '', MAP_DESCRIPTION_BUDGET)
       lines.push(`${indent}- **${node.title}** \`${node.path}/\`${summary ? ` — ${summary}` : ''}`)
@@ -219,14 +251,17 @@ export function renderCompanyContext(
   lines.push('')
 
   // Why: the most-linked documents are the ones the company actually organises
-  // around. Surfacing them tells the agent where to look first.
+  // around. Surfacing them tells the agent where to look first — which is why
+  // an archived document may not hold one of the ten slots: a superseded
+  // document keeps every backlink it ever earned, so the most-connected list is
+  // exactly where a dead engagement would outrank the live one that replaced it.
   const hubs = scan.documents
     .map((doc) => ({
       name: doc.name,
       id: doc.id,
       degree: doc.linksTo.length + doc.linkedFrom.length
     }))
-    .filter((entry) => entry.degree > 0)
+    .filter((entry) => entry.degree > 0 && !isArchivedBrainPath(entry.id))
     .sort((a, b) => b.degree - a.degree || a.id.localeCompare(b.id))
     .slice(0, 10)
 
@@ -242,7 +277,15 @@ export function renderCompanyContext(
   // has been doing. Coming back to a business after three weeks, the second
   // question is the better one — and it is a cue to open something, so it is
   // capped rather than allowed to become a second index of the brain.
-  const recent = scan.recentDocumentIds.slice(0, RECENT_LIMIT)
+  //
+  // Archived ids are dropped *before* the cap, not after. Archiving is a git
+  // change, so the week the operator retires a dead client is the week this
+  // list would be nothing but the ten documents they just declared finished —
+  // the loudest possible answer to "what is this business doing", pointing at
+  // the one place the answer is not.
+  const recent = scan.recentDocumentIds
+    .filter((id) => !isArchivedBrainPath(id))
+    .slice(0, RECENT_LIMIT)
   if (recent.length > 0) {
     lines.push('## Recently changed', '')
     for (const id of recent) {
