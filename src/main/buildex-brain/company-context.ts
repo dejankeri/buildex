@@ -1,6 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import type { BrainLocation, BrainNode, BrainScan } from '../../shared/buildex-brain-types'
+import type {
+  BrainLocation,
+  BrainNode,
+  BrainScan,
+  BrainWantedPage
+} from '../../shared/buildex-brain-types'
+import { truncateAtWord } from './brain-text-budget'
 
 // Auto-feeds the company brain to the coding agent.
 //
@@ -93,6 +99,21 @@ function renderApps(apps: InstalledAppSummary[], location: BrainLocation): strin
 }
 
 /**
+ * What this file is allowed to spend, enforced here rather than trusted to the
+ * data. `DESCRIPTION_LIMIT` is 160 because that is what a Brain tree row and an
+ * entity card can afford; this file is read *in full* at the start of every
+ * agent session, so it takes half. A brain of two hundred entities is the
+ * difference between 25 kB of prompt and 12 kB.
+ *
+ * The per-folder slice is the other half of the same guard. A line is not
+ * bounded just because it is one line: a flat `decisions/` of five hundred
+ * described documents rendered as a single line of ~87 kB, which passed a line
+ * ceiling and blew a character one fourfold.
+ */
+const MAP_DESCRIPTION_BUDGET = 80
+const MAP_DOCUMENTS_PER_FOLDER = 12
+
+/**
  * The brain's shape, as lines the agent can act on.
  *
  * An entity is named and summarised; the documents inside it are not listed.
@@ -104,19 +125,33 @@ function renderApps(apps: InstalledAppSummary[], location: BrainLocation): strin
  * parentheses. It has to: the growth law here is one line per entity and one per
  * folder, and a description that claimed a line of its own would rewrite that
  * law into one line per file — the exact shape this render replaced.
+ *
+ * What is *not* cut: names and paths. A truncated title still opens, because the
+ * path beside it is the real identifier — but a truncated path or filename names
+ * something the agent cannot open, which is worse than a long line. Those are
+ * the map's remaining unbounded terms, and the filesystem is what bounds them.
  */
 function renderTree(nodes: BrainNode[], depth = 0): string[] {
   const lines: string[] = []
   const indent = '  '.repeat(depth)
   for (const node of nodes) {
     if (node.kind === 'entity') {
-      const summary = node.main?.summary
+      const summary = truncateAtWord(node.main?.summary ?? '', MAP_DESCRIPTION_BUDGET)
       lines.push(`${indent}- **${node.title}** \`${node.path}/\`${summary ? ` — ${summary}` : ''}`)
       continue
     }
-    const names = node.documents.map((document) =>
-      document.description ? `${document.name} (${document.description})` : document.name
+    const shown = node.documents.slice(0, MAP_DOCUMENTS_PER_FOLDER)
+    const names = shown.map((document) =>
+      document.description
+        ? `${document.name} (${truncateAtWord(document.description, MAP_DESCRIPTION_BUDGET)})`
+        : document.name
     )
+    const hidden = node.documents.length - shown.length
+    if (hidden > 0) {
+      // Said out loud: an agent that knows there are more will open the folder,
+      // where a silently cut list would have it believe it had seen everything.
+      names.push(`+${hidden} more`)
+    }
     lines.push(
       `${indent}- **${node.path === '' ? 'root' : node.path}**${
         names.length > 0 ? ` — ${names.join(', ')}` : ''
@@ -137,9 +172,12 @@ const RECENT_LIMIT = 10
 const WANTED_LIMIT = 10
 const REQUESTERS_PER_WANTED_PAGE = 3
 
-function renderRequesters(requestedBy: string[]): string {
-  const shown = requestedBy.slice(0, REQUESTERS_PER_WANTED_PAGE)
-  const rest = requestedBy.length - shown.length
+function renderRequesters(page: BrainWantedPage): string {
+  const shown = page.requestedBy.slice(0, REQUESTERS_PER_WANTED_PAGE)
+  // Against the true count, not the length of the list that arrived: the scan
+  // already capped `requestedBy`, so subtracting from it would under-report by
+  // exactly as much as that cap dropped.
+  const rest = page.requestedByCount - shown.length
   return `${shown.map((id) => `\`${id}\``).join(', ')}${rest > 0 ? `, +${rest} more` : ''}`
 }
 
@@ -227,7 +265,7 @@ export function renderCompanyContext(
       ''
     )
     for (const page of wanted) {
-      lines.push(`- \`${page.name}\` — wanted by ${renderRequesters(page.requestedBy)}`)
+      lines.push(`- \`${page.name}\` — wanted by ${renderRequesters(page)}`)
     }
     lines.push('')
   }

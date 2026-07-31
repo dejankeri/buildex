@@ -41,6 +41,16 @@ function documentFolder(id: string): string {
 /** A cue to open something, not an index — an index would grow with the brain. */
 const RECENT_DOCUMENT_LIMIT = 10
 
+/**
+ * The same discipline for the brain's backlog. Both of these cross IPC on every
+ * scan and sit in the renderer's store; the map shows ten and the panel twelve,
+ * so a brain that has asked for two thousand pages must not ship two thousand of
+ * them — each with a `requestedBy` that could name every document in the brain —
+ * for a list nobody will scroll.
+ */
+const WANTED_PAGE_LIMIT = 50
+const WANTED_REQUESTER_LIMIT = 10
+
 export async function scanCompanyBrain(
   repoPath: string,
   location: BrainLocation,
@@ -151,10 +161,20 @@ export async function scanCompanyBrain(
   const totalLinks = documents.reduce((sum, doc) => sum + doc.linksTo.length, 0)
 
   // Most-asked-for first: a name three documents reached for is a bigger hole in
-  // the brain than one a single note mentioned once.
+  // the brain than one a single note mentioned once. Ranked on the true counts,
+  // then cut — so the cut keeps the biggest holes rather than the first ones.
   const wantedPages: BrainWantedPage[] = [...wantedBy.entries()]
-    .map(([name, requestedBy]) => ({ name, requestedBy }))
-    .sort((a, b) => b.requestedBy.length - a.requestedBy.length || a.name.localeCompare(b.name))
+    .sort(([nameA, askingA], [nameB, askingB]) =>
+      askingB.length !== askingA.length
+        ? askingB.length - askingA.length
+        : nameA.localeCompare(nameB)
+    )
+    .slice(0, WANTED_PAGE_LIMIT)
+    .map(([name, asking]) => ({
+      name,
+      requestedBy: asking.slice(0, WANTED_REQUESTER_LIMIT),
+      requestedByCount: asking.length
+    }))
 
   return {
     repoPath,
@@ -169,6 +189,7 @@ export async function scanCompanyBrain(
     tree,
     orphanIds,
     wantedPages,
+    wantedPageCount: wantedBy.size,
     recentDocumentIds,
     totalLinks,
     scannedAt: now

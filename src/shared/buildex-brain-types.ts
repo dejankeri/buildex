@@ -110,8 +110,14 @@ export type BrainScan = {
   tree: BrainNode[]
   /** Documents nothing links to and which link nowhere — the brain's dead ends. */
   orphanIds: string[]
-  /** Pages the brain asks for and does not have. Most-asked-for first. */
+  /**
+   * Pages the brain asks for and does not have, most-asked-for first and
+   * **capped** — like `recentDocumentIds` beside it, this crosses IPC on every
+   * scan and no surface renders more than a dozen of them.
+   */
   wantedPages: BrainWantedPage[]
+  /** How many there are in total, since {@link wantedPages} is a prefix. */
+  wantedPageCount: number
   /**
    * Document ids in the order git last touched them, most recent first and
    * capped. Empty where there is no git and where nothing has been saved yet.
@@ -129,10 +135,12 @@ export type BrainScan = {
  * written in the course of writing something else.
  */
 export type BrainWantedPage = {
-  /** The wikilink name, as written. */
+  /** The wikilink name, whitespace-collapsed so it renders on one line. */
   name: string
-  /** Documents asking for it, by id, sorted. */
+  /** Documents asking for it, by id, sorted — capped, like the list itself. */
   requestedBy: string[]
+  /** How many ask in total, since {@link requestedBy} is a prefix. */
+  requestedByCount: number
 }
 
 export type BrainScanRequest = {
@@ -149,6 +157,7 @@ export const EMPTY_BRAIN_SCAN: BrainScan = {
   tree: [],
   orphanIds: [],
   wantedPages: [],
+  wantedPageCount: 0,
   recentDocumentIds: [],
   totalLinks: 0,
   scannedAt: 0

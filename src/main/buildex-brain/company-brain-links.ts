@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { collapseWhitespace } from './brain-text-budget'
 
 // Link extraction for the company brain. Two forms are supported, matching how
 // operators actually write in a markdown repo:
@@ -55,10 +56,20 @@ export function extractRelativeLinkPaths(text: string): string[] {
 }
 
 /**
- * Longest a name gets before it stops reading as a page somebody meant to
- * write. `[[…]]` accepts anything up to the closing bracket, and an accidental
- * sentence inside one used to cost nothing because the name was only ever a
- * lookup key. Now it renders, so it needs a bound.
+ * A wanted name is rendered, and everything a lookup key was allowed to be a
+ * rendered name is not.
+ *
+ * `WIKILINK_RE` matches across newlines — `[^\]]` includes `\n` — so a stray
+ * `[[` closed by a `]]` three paragraphs later yields a "name" with newlines in
+ * it. That cost nothing while the name was only a key into `byName`; written
+ * into the context map it becomes a multi-line bullet with a code span that
+ * opens and never closes, in the file Claude reads in full at session start. A
+ * backtick does the same thing on one line, and cannot be escaped inside a span,
+ * so a name carrying one is skipped rather than mangled.
+ *
+ * The length bound is the third case: `[[…]]` accepts anything up to the closing
+ * bracket, and an accidental sentence inside one must not take a slot in a list
+ * capped at ten.
  */
 const WANTED_NAME_LIMIT = 80
 
@@ -87,8 +98,9 @@ export function resolveDocumentLinks(args: {
   for (const name of extractWikilinkNames(text)) {
     const target = byName.get(name.toLowerCase())
     if (!target) {
-      if (name.length <= WANTED_NAME_LIMIT) {
-        wanted.add(name)
+      const renderable = collapseWhitespace(name)
+      if (renderable && renderable.length <= WANTED_NAME_LIMIT && !renderable.includes('`')) {
+        wanted.add(renderable)
       }
       continue
     }

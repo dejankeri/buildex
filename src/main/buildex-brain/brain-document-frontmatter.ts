@@ -14,8 +14,14 @@
 // scalars and nested maps that nothing downstream can render, and would throw on
 // the half-written document that is exactly when this has to keep working.
 
-/** Longest a description gets on a map line. Beyond this, open the document. */
-const DESCRIPTION_LIMIT = 160
+import { collapseWhitespace, truncateAtWord } from './brain-text-budget'
+
+/**
+ * Longest a description gets as *data*. The Brain tree and the entity card can
+ * afford this; the context map cuts it again to its own tighter budget, because
+ * that file is read in full at the start of every agent session.
+ */
+export const DESCRIPTION_LIMIT = 160
 
 const BLOCK_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/
 // No leading whitespace: an indented `description:` belongs to some other key.
@@ -36,13 +42,7 @@ function clean(raw: string): string {
     return ''
   }
   const unquoted = /^(['"])([\s\S]*)\1$/.exec(value)?.[2] ?? value
-  const collapsed = unquoted.replace(/\s+/g, ' ').trim()
-  if (collapsed.length <= DESCRIPTION_LIMIT) {
-    return collapsed
-  }
-  const cut = collapsed.slice(0, DESCRIPTION_LIMIT)
-  const lastSpace = cut.lastIndexOf(' ')
-  return `${(lastSpace > 0 ? cut.slice(0, lastSpace) : cut).replace(/[,;:.\s]+$/, '')}…`
+  return truncateAtWord(collapseWhitespace(unquoted), DESCRIPTION_LIMIT)
 }
 
 export function readDocumentFrontmatter(text: string): DocumentFrontmatter {

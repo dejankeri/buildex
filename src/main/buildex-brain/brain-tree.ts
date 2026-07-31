@@ -6,6 +6,7 @@ import type {
   BrainSectionInfo
 } from '../../shared/buildex-brain-types'
 import { readDocumentFrontmatter } from './brain-document-frontmatter'
+import { truncateAtWord } from './brain-text-budget'
 
 // The brain as the company arranged it, rather than as a flat list of paths.
 //
@@ -80,12 +81,7 @@ export function summarize(text: string): string {
     if (!line || line.startsWith('#') || line.startsWith('<!--')) {
       continue
     }
-    if (line.length <= SUMMARY_LIMIT) {
-      return line
-    }
-    const cut = line.slice(0, SUMMARY_LIMIT)
-    const lastSpace = cut.lastIndexOf(' ')
-    return `${(lastSpace > 0 ? cut.slice(0, lastSpace) : cut).replace(/[,;:.\s]+$/, '')}…`
+    return truncateAtWord(line, SUMMARY_LIMIT)
   }
   return ''
 }

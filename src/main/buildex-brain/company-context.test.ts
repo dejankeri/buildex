@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { BrainResolution, BrainScan } from '../../shared/buildex-brain-types'
 import { EMPTY_BRAIN_SCAN } from '../../shared/buildex-brain-types'
+import { DESCRIPTION_LIMIT } from './brain-document-frontmatter'
 import { renderCompanyContext, syncCompanyContext } from './company-context'
 import { scanCompanyBrain } from './company-brain-service'
 import { embeddedLocation } from './brain-location'
@@ -22,8 +23,14 @@ const CONTEXT_MAP_LINE_CEILING = 200
 
 /**
  * The same ceiling in the unit that is actually spent. Lines are the growth law;
- * characters are the bill, and a description is bounded at 160 of them, so both
- * have to be stated or the second one drifts unwatched.
+ * characters are the bill.
+ *
+ * This one is **enforced in the renderer**, not merely asserted here: the map
+ * has its own 80-character description budget and a 12-document slice per folder
+ * line, so the number below is a consequence of those two constants rather than
+ * a property of whatever the fixture happened to write. The first version of
+ * this test asserted 20 000 against 19-character descriptions and would have
+ * passed while the real worst case was over 24 000.
  */
 const CONTEXT_MAP_CHARACTER_CEILING = 20_000
 
@@ -172,44 +179,103 @@ describe('renderCompanyContext', () => {
     expect(clientLines(six)).toBe(6)
   })
 
-  it('holds its ceiling at five hundred documents, described or not', async () => {
+  it('holds both ceilings at a thousand documents, every description at its limit', async () => {
     // The map is read in full at the start of every agent session, so its size
     // is the product's budget, not a detail. The growth law it has to keep: one
     // line per entity and one per folder of documents, never one per file — and
     // a `description:` rides the line its name was already on rather than
     // claiming one of its own.
+    //
+    // Deliberately adversarial where the first version of this test was polite.
+    // Every description is written at `DESCRIPTION_LIMIT`, not at the twenty
+    // characters a fixture reaches for by habit; and 500 documents sit in a
+    // FLAT section, which `renderTree` folds onto a single line — the shape that
+    // passes a line ceiling at one line while blowing a character ceiling
+    // fourfold. Entity children never reach that code path at all, so a fixture
+    // made only of entities cannot see it.
+    const fullLength = `${'situation '.repeat(30)}end`
+    expect(fullLength.length).toBeGreaterThan(DESCRIPTION_LIMIT)
+
     for (let index = 0; index < 120; index += 1) {
       const client = `clients/client-${index}`
-      write(`${client}/index.md`, `---\ndescription: Client ${index}, renewing.\n---\n\n# Client\n`)
+      write(`${client}/index.md`, `---\ndescription: ${fullLength}\n---\n\n# Client ${index}\n`)
       write(`${client}/notes.md`, '# Notes\n')
       write(`${client}/calls/first.md`, '# Call\n')
       write(`${client}/calls/second.md`, '# Call\n')
     }
+    for (let index = 0; index < 500; index += 1) {
+      write(`decisions/decision-${index}.md`, `---\ndescription: ${fullLength}\n---\n\n# D\n`)
+    }
     for (let index = 0; index < 20; index += 1) {
-      write(`decisions/decision-${index}.md`, `---\ndescription: Decision ${index}.\n---\n\n# D\n`)
+      write(`notes/note-${index}.md`, `---\ndescription: ${fullLength}\n---\n\n# N\n`)
     }
 
     const described = await scan()
     const rendered = renderCompanyContext(described, [], embeddedLocation(repo))
 
-    // 9 declared sections + 120 entity lines + 9 lines of preamble and headings.
-    expect(described.documents).toHaveLength(500)
-    expect(rendered.split('\n')).toHaveLength(138)
+    // Every description reached the map at its full permitted length, so this is
+    // the worst case rather than an average one.
+    expect(described.documents).toHaveLength(1000)
+    expect(
+      described.documents.filter((document) => document.description?.endsWith('…'))
+    ).toHaveLength(640)
+
+    // 9 declared sections + 1 undeclared (`notes`) + 120 entity lines + 9 of
+    // preamble and headings. The 620 documents inside those folders cost zero.
+    expect(rendered.split('\n')).toHaveLength(139)
     expect(rendered.split('\n').length).toBeLessThanOrEqual(CONTEXT_MAP_LINE_CEILING)
     expect(rendered.length).toBeLessThanOrEqual(CONTEXT_MAP_CHARACTER_CEILING)
 
     // And the descriptions are free in lines: strip every one and the map is the
     // same height, which is what "bounded" has to mean here.
     for (let index = 0; index < 120; index += 1) {
-      write(`clients/client-${index}/index.md`, '# Client\n')
+      write(`clients/client-${index}/index.md`, `# Client ${index}\n`)
+    }
+    for (let index = 0; index < 500; index += 1) {
+      write(`decisions/decision-${index}.md`, '# D\n')
     }
     for (let index = 0; index < 20; index += 1) {
-      write(`decisions/decision-${index}.md`, '# D\n')
+      write(`notes/note-${index}.md`, '# N\n')
     }
 
     const bare = renderCompanyContext(await scan(), [], embeddedLocation(repo))
 
     expect(bare.split('\n')).toHaveLength(rendered.split('\n').length)
+  })
+
+  it('cuts a description harder for the map than for the tree', async () => {
+    // 160 is what a Brain row and an entity card can afford. This file is read in
+    // full every session and takes half, so the same document reads longer in the
+    // app than it does in the agent's prompt — on purpose.
+    const long = `${'situation '.repeat(30)}end`
+    write('decisions/pricing.md', `---\ndescription: ${long}\n---\n\n# Pricing\n`)
+
+    const scanned = await scan()
+    const rendered = renderCompanyContext(scanned, [], embeddedLocation(repo))
+    const line = rendered.split('\n').find((entry) => entry.startsWith('- **decisions**')) ?? ''
+
+    const asData = scanned.documents[0]?.description ?? ''
+    expect(asData.length).toBeLessThanOrEqual(DESCRIPTION_LIMIT)
+    expect(asData.endsWith('…')).toBe(true)
+    // The map's copy is shorter still, and the whole line comes in under what
+    // the description alone was allowed as data.
+    expect(line.length).toBeLessThan(DESCRIPTION_LIMIT)
+    expect(line.endsWith('…)')).toBe(true)
+  })
+
+  it('says how many documents a folder line left out rather than cutting silently', async () => {
+    // An agent that knows there are more will open the folder; one shown a
+    // silently cut list believes it has seen everything there is.
+    for (let index = 0; index < 30; index += 1) {
+      write(`decisions/decision-${String(index).padStart(2, '0')}.md`, '# D\n')
+    }
+
+    const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+    const line = rendered.split('\n').find((entry) => entry.startsWith('- **decisions**')) ?? ''
+
+    expect(line).toContain('decision-00, decision-01')
+    expect(line).toContain('+18 more')
+    expect(line).not.toContain('decision-12')
   })
 })
 
@@ -256,7 +322,13 @@ describe('renderCompanyContext recency and wanted pages', () => {
     const rendered = renderCompanyContext(
       {
         ...EMPTY_BRAIN_SCAN,
-        wantedPages: [{ name: 'acme-renewal-terms', requestedBy: ['clients/acme.md'] }]
+        wantedPages: [
+          {
+            name: 'acme-renewal-terms',
+            requestedBy: ['clients/acme.md'],
+            requestedByCount: 1
+          }
+        ]
       },
       [],
       location
@@ -273,7 +345,8 @@ describe('renderCompanyContext recency and wanted pages', () => {
         wantedPages: [
           {
             name: 'escalation',
-            requestedBy: ['a.md', 'b.md', 'c.md', 'd.md', 'e.md']
+            requestedBy: ['a.md', 'b.md', 'c.md', 'd.md', 'e.md'],
+            requestedByCount: 5
           }
         ]
       },
@@ -290,7 +363,8 @@ describe('renderCompanyContext recency and wanted pages', () => {
         ...EMPTY_BRAIN_SCAN,
         wantedPages: Array.from({ length: 50 }, (_, index) => ({
           name: `wanted-${index}`,
-          requestedBy: ['a.md']
+          requestedBy: ['a.md'],
+          requestedByCount: 1
         }))
       },
       [],

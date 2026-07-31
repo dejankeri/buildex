@@ -79,8 +79,12 @@ describe('scanCompanyBrain', () => {
     const scan = await runScan(1)
 
     expect(scan.wantedPages).toEqual([
-      { name: 'acme-renewal-terms', requestedBy: ['clients/acme.md', 'rules/operating.md'] },
-      { name: 'escalation', requestedBy: ['rules/operating.md'] }
+      {
+        name: 'acme-renewal-terms',
+        requestedBy: ['clients/acme.md', 'rules/operating.md'],
+        requestedByCount: 2
+      },
+      { name: 'escalation', requestedBy: ['rules/operating.md'], requestedByCount: 1 }
     ])
   })
 
@@ -101,6 +105,46 @@ describe('scanCompanyBrain', () => {
     const scan = await runScan(1)
 
     expect(scan.wantedPages).toEqual([])
+  })
+
+  it('never lets a wanted name carry a newline into the context map', async () => {
+    // `[[` closed by a `]]` three lines later matches, because `[^\]]` includes
+    // `\n`. Rendered as `- \`name\`` that is a bullet spanning several lines with
+    // a code span that opens and never closes — in the file Claude reads in full
+    // at the start of every session.
+    write('a.md', '# A\n\nSee [[renewal\nterms]] for the detail.\n')
+
+    const scan = await runScan(1)
+
+    expect(scan.wantedPages).toEqual([
+      { name: 'renewal terms', requestedBy: ['a.md'], requestedByCount: 1 }
+    ])
+  })
+
+  it('skips a wanted name holding a backtick, which no code span can escape', async () => {
+    write('a.md', '# A\n\n[[weird`name]]\n')
+
+    const scan = await runScan(1)
+
+    expect(scan.wantedPages).toEqual([])
+  })
+
+  it('caps the wanted list and its askers at the source, and says the true totals', async () => {
+    // Both this and `recentDocumentIds` cross IPC on every scan and sit in the
+    // renderer's store; neither surface renders more than a dozen.
+    const names = Array.from({ length: 60 }, (_, index) => `[[wanted-${index}]]`).join(' ')
+    for (let index = 0; index < 15; index += 1) {
+      write(`asker-${String(index).padStart(2, '0')}.md`, `# Asker\n${names}\n`)
+    }
+
+    const scan = await runScan(1)
+
+    expect(scan.wantedPageCount).toBe(60)
+    expect(scan.wantedPages).toHaveLength(50)
+    // The cut keeps the biggest holes: ranked on true counts, then sliced.
+    expect(scan.wantedPages[0]?.requestedByCount).toBe(15)
+    expect(scan.wantedPages[0]?.requestedBy).toHaveLength(10)
+    expect(scan.wantedPages[0]?.requestedBy[0]).toBe('asker-00.md')
   })
 
   it('does not want a page an unresolved relative path names', async () => {

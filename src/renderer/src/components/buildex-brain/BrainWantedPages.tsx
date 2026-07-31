@@ -17,16 +17,22 @@ const REQUESTERS_SHOWN = 3
 
 export default function BrainWantedPages({
   pages,
+  totalCount,
   onOpenDocument
 }: {
+  /** Already capped by the scan — a prefix, ranked most-asked-for first. */
   pages: BrainWantedPage[]
+  /** How many there are in total, which the prefix cannot say. */
+  totalCount: number
   onOpenDocument: (documentId: string) => void
 }): React.JSX.Element | null {
   if (pages.length === 0) {
     return null
   }
   const shown = pages.slice(0, SHOWN)
-  const hidden = pages.length - shown.length
+  // Counted from the total, not from what arrived: the scan capped the list
+  // before it got here, so `pages.length` under-reports by whatever it dropped.
+  const hidden = Math.max(totalCount, pages.length) - shown.length
 
   return (
     <section className="flex flex-col gap-2 py-4">
@@ -34,7 +40,9 @@ export default function BrainWantedPages({
         <h2 className="text-[11px] font-semibold tracking-[0.05em] uppercase">
           {translate('buildex.brain.wanted.title', 'Wanted pages')}
         </h2>
-        <span className="text-[11px] tabular-nums text-muted-foreground/70">{pages.length}</span>
+        <span className="text-[11px] tabular-nums text-muted-foreground/70">
+          {Math.max(totalCount, pages.length)}
+        </span>
       </header>
 
       <p className="text-[11px] leading-snug text-muted-foreground/80">
@@ -59,10 +67,10 @@ export default function BrainWantedPages({
                   {documentId}
                 </button>
               ))}
-              {page.requestedBy.length > REQUESTERS_SHOWN ? (
+              {page.requestedByCount > REQUESTERS_SHOWN ? (
                 <span className="text-[11px] text-muted-foreground/60">
                   {translate('buildex.brain.wanted.moreAskers', '+{{value0}} more', {
-                    value0: page.requestedBy.length - REQUESTERS_SHOWN
+                    value0: page.requestedByCount - REQUESTERS_SHOWN
                   })}
                 </span>
               ) : null}

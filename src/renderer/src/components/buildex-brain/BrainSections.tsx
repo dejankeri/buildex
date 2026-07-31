@@ -245,7 +245,11 @@ export default function BrainSections({
             behind it, so it can match nothing the operator typed, and showing it
             under "Nothing matches that" reads as a result. */}
         {query.trim() === '' ? (
-          <BrainWantedPages pages={scan.wantedPages} onOpenDocument={onOpenDocument} />
+          <BrainWantedPages
+            pages={scan.wantedPages}
+            totalCount={scan.wantedPageCount}
+            onOpenDocument={onOpenDocument}
+          />
         ) : null}
       </div>
     </div>
