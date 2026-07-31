@@ -7,6 +7,7 @@ import type * as CompanyContextRefreshModule from './buildex-brain/company-conte
 const mocks = vi.hoisted(() => ({
   readInstalledAppSummaries: vi.fn(() => [] as unknown[]),
   readCompanyStoreEntries: vi.fn(() => [] as unknown[]),
+  refreshCompanyContext: vi.fn(),
   /** Set by the deadline test: a scan that never comes back. */
   stallContextRefresh: false
 }))
@@ -24,15 +25,21 @@ vi.mock('./buildex-store/store-catalog-source', () => ({
 vi.mock('./buildex-brain/company-context-refresh', async (importOriginal) => {
   const actual = await importOriginal<typeof CompanyContextRefreshModule>()
   return {
-    refreshCompanyContext: (...args: Parameters<typeof actual.refreshCompanyContext>) =>
-      mocks.stallContextRefresh
+    refreshCompanyContext: (...args: Parameters<typeof actual.refreshCompanyContext>) => {
+      mocks.refreshCompanyContext(...args)
+      return mocks.stallContextRefresh
         ? new Promise<void>(() => {})
         : actual.refreshCompanyContext(...args)
+    }
   }
 })
 
-const { COMPANY_CONTEXT_DEADLINE_MS, gateCompanyWorktreeOnActivation, prepareCompanyWorktree } =
-  await import('./buildex-worktree-init')
+const {
+  COMPANY_CONTEXT_DEADLINE_MS,
+  gateCompanyWorktreeOnActivation,
+  prepareCompanyWorktree,
+  prepareCompanyWorktreeForAutomationRun
+} = await import('./buildex-worktree-init')
 const { resetCompanyRepoInitialization } = await import('./buildex-repo-init')
 
 function read(worktree: string, ...relative: string[]): string {
@@ -126,6 +133,101 @@ describe('prepareCompanyWorktree', () => {
   })
 })
 
+describe('prepareCompanyWorktreeForAutomationRun', () => {
+  let worktree: string
+  /** The store, as far as this module ever asks: which host a repo is on. */
+  let repos: { getRepo: (repoId: string) => { connectionId?: string | null } | undefined }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.readInstalledAppSummaries.mockReturnValue([])
+    mocks.readCompanyStoreEntries.mockReturnValue([])
+    mocks.stallContextRefresh = false
+    resetCompanyRepoInitialization()
+    worktree = mkdtempSync(path.join(tmpdir(), 'buildex-automation-'))
+    repos = { getRepo: () => ({ connectionId: null }) }
+    mkdirSync(path.join(worktree, '.buildex'), { recursive: true })
+    writeFileSync(path.join(worktree, '.buildex', 'pricing.md'), '# Pricing\n\nAnnual only.\n')
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    rmSync(worktree, { recursive: true, force: true })
+  })
+
+  function existingWorkspace(): { workspaceMode: 'existing'; workspaceId: string } {
+    return { workspaceMode: 'existing', workspaceId: `repo-1::${worktree}` }
+  }
+
+  it('writes the context and the gate into a worktree the run did not create', async () => {
+    await prepareCompanyWorktreeForAutomationRun(existingWorkspace(), repos)
+
+    expect(read(worktree, '.claude', 'company-context.md')).toContain('pricing')
+    expect(read(worktree, '.claude', 'CLAUDE.md')).toContain('@./company-context.md')
+    expect(askRules(worktree).length).toBeGreaterThan(0)
+  })
+
+  it('leaves a new_per_run workspace alone — creating it already prepared it', async () => {
+    await prepareCompanyWorktreeForAutomationRun(
+      { workspaceMode: 'new_per_run', workspaceId: `repo-1::${worktree}` },
+      repos
+    )
+
+    expect(mocks.refreshCompanyContext).not.toHaveBeenCalled()
+    expect(existsSync(path.join(worktree, '.claude'))).toBe(false)
+  })
+
+  it('writes nothing for a workspace whose repo is on another host', async () => {
+    // Why: an SSH workspace's path is the remote filesystem's. A local directory
+    // at the same path is a different directory — see gateCompanyWorktreeOnActivation.
+    repos = { getRepo: () => ({ connectionId: 'ssh-connection-1' }) }
+
+    await prepareCompanyWorktreeForAutomationRun(existingWorkspace(), repos)
+
+    expect(existsSync(path.join(worktree, '.claude'))).toBe(false)
+  })
+
+  it('writes nothing when nothing can say which host the workspace is on', async () => {
+    await prepareCompanyWorktreeForAutomationRun(existingWorkspace(), { getRepo: () => undefined })
+    await prepareCompanyWorktreeForAutomationRun(existingWorkspace(), null)
+    await prepareCompanyWorktreeForAutomationRun(
+      { workspaceMode: 'existing', workspaceId: null },
+      repos
+    )
+
+    expect(existsSync(path.join(worktree, '.claude'))).toBe(false)
+  })
+
+  it('dispatches the run with stale context when the scan never comes back', async () => {
+    mkdirSync(path.join(worktree, '.claude'), { recursive: true })
+    writeFileSync(path.join(worktree, '.claude', 'company-context.md'), 'last week\n')
+    mocks.stallContextRefresh = true
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.useFakeTimers()
+
+    const preparing = prepareCompanyWorktreeForAutomationRun(existingWorkspace(), repos)
+    await vi.advanceTimersByTimeAsync(COMPANY_CONTEXT_DEADLINE_MS)
+
+    // The run proceeds, on the context that was already there.
+    await expect(preparing).resolves.toBeUndefined()
+    expect(read(worktree, '.claude', 'company-context.md')).toBe('last week\n')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(worktree))
+    warn.mockRestore()
+  })
+
+  it('dispatches the run when the brain cannot be read at all', async () => {
+    mocks.readInstalledAppSummaries.mockImplementation(() => {
+      throw new Error('shelf unreadable')
+    })
+
+    await expect(
+      prepareCompanyWorktreeForAutomationRun(existingWorkspace(), repos)
+    ).resolves.toBeUndefined()
+
+    expect(askRules(worktree).length).toBeGreaterThan(0)
+  })
+})
+
 describe('gateCompanyWorktreeOnActivation', () => {
   let worktree: string
 
@@ -147,11 +249,15 @@ describe('gateCompanyWorktreeOnActivation', () => {
   })
 
   it('writes no context — a spawn is not the place to wait for a git scan', () => {
+    // Why: this is the distinction the design rests on. A scheduled dispatch can
+    // afford a bounded scan (prepareCompanyWorktreeForAutomationRun); a human
+    // opening a terminal cannot, so no refresh is even started here.
     mkdirSync(path.join(worktree, '.buildex'), { recursive: true })
     writeFileSync(path.join(worktree, '.buildex', 'handbook.md'), '# Handbook\n', 'utf8')
 
     gateCompanyWorktreeOnActivation(worktree)
 
+    expect(mocks.refreshCompanyContext).not.toHaveBeenCalled()
     expect(existsSync(path.join(worktree, '.claude', 'company-context.md'))).toBe(false)
   })
 

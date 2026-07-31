@@ -112,24 +112,23 @@ other agent Orca supports still runs; it just does not get the company context a
 
 This is Orca's own scheduler — cron and RRULE cadences, a fresh worktree per run when you want
 one, run history, and a mobile companion that hears about the same sessions everything else does.
-BuildEx built none of it. What Task 1 added is narrower than "every automation knows the company":
-a **New run** automation's fresh worktree gets the company's brain and gate written before its
-startup agent's first message reads `.claude/`, same as a session you start by hand
-([how](BUILDEX-PATCHES.md#brain-packs-context--phases-2-4)) — see the **Workspace** bullet below
-for what an existing-worktree automation gets instead, which is not that.
+BuildEx built none of it. What BuildEx added is the company: **every** automation's workspace gets
+the brain and the gate written before its startup agent's first message reads `.claude/`, same as a
+session you start by hand ([how](BUILDEX-PATCHES.md#brain-packs-context--phases-2-4)) — a **New run**
+worktree as it is created, an existing **Worktree** at dispatch. Both are bounded; see the
+**Workspace** bullet below for what happens when the scan runs long.
 
 **Open it:** the **Automations** button in the sidebar, then the **+** (*Add automation*). Fill in:
 
 - **Project** — the repo, and **Workspace** — run in an existing **Worktree** (the default), or
-  **New run**. These two are not equivalent for context: **New run** creates a fresh worktree from
-  a branch for that run and is where the brain-loaded guarantee above applies — bounded by a
-  10-second scan, so a slow or wedged git degrades to the agent starting with no context rather
-  than the run waiting on it, logged only to the console (invisible in the run's history). **Worktree**
-  reuses a worktree you already have open and does **not** refresh context at dispatch time; it
-  sees whatever `.claude/company-context.md` that worktree already holds — current if the Brain or
-  Store has been touched there recently, stale or absent otherwise. Pick **New run** for an
-  automation you want reliably brain-aware; reuse a **Worktree** only once you know its context
-  is current.
+  **New run**. Both load the company: **New run** creates a fresh worktree from a branch for that
+  run and gets its context as it is created; **Worktree** reuses a worktree you already have open
+  and gets its context refreshed at dispatch, before the agent starts. Either way the scan is
+  bounded at 10 seconds, so a slow or wedged git degrades to the agent starting on whatever
+  `.claude/company-context.md` was already there — stale, or absent if nothing has written one —
+  rather than the run waiting on it or not happening. That expiry is logged only to the console,
+  so it is invisible in the run's history. A **Worktree** run on an **SSH** host is the exception:
+  its context is not written from here at all (see the gap below).
 - **Schedule** — a cadence (**Hourly**, **Daily**, **Weekdays**, **Weekly**, or **Custom cron**
   for anything an RRULE preset can't say), a day/time, and a missed-run grace window for when
   Orca wasn't running at the scheduled moment.
@@ -141,8 +140,9 @@ for what an existing-worktree automation gets instead, which is not that.
 A run that can't proceed unattended — an SSH host it can't reach, or one that would need
 interactive credentials — is recorded as **skipped**, with why, in that automation's run history
 (**Run · Workspace · Spend · Tokens · Status**) rather than hanging or failing silently. **One
-honest gap:** gating currently lands when a worktree is *created* or when a BuildEx surface
-touches it; a worktree on an SSH host is not yet gated at *activation* the way a local one is
+honest gap:** gating currently lands when a worktree is *created*, when an automation dispatches
+into one, or when a BuildEx surface touches it; a worktree on an SSH host is not yet gated at
+*activation* the way a local one is — and an SSH automation gets neither gate nor context here
 ([tracked here](PROGRESS.md#the-gate-what-is-done-and-what-is-not)) — schedule SSH automations
 knowing that.
 
@@ -168,7 +168,7 @@ there. Nothing runs until you schedule it.
 | The Store on first run, with 11 packs shipped in the app | Pack MCP faces — parsed and carried, but installing does not write `.mcp.json` yet |
 | Auto-fed company context, refreshed without a button | Gate applied on worktree activation (today it applies when a BuildEx surface first touches a repo) |
 | The gate preset, enforced by the agent runtime | Any hosted sync — by decision, not by omission |
-| `New run` automations load the company brain and gate before their first message | `Worktree` (existing-worktree) automations do not refresh context at dispatch — and SSH worktrees aren't gated at activation at all ([known gap](PROGRESS.md#the-gate-what-is-done-and-what-is-not)) |
+| Automations load the company brain and gate before their first message, in both workspace modes | Automations on an SSH host — nothing writes their context or gate from here, and SSH worktrees aren't gated at activation at all ([known gap](PROGRESS.md#the-gate-what-is-done-and-what-is-not)) |
 
 ## Run it
 

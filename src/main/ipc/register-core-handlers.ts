@@ -44,6 +44,7 @@ import { registerWorkspacePortHandlers } from './workspace-ports'
 import { registerLocalhostWorktreeLabelHandlers } from './localhost-worktree-labels'
 import { registerAutomationHandlers } from './automations'
 // BuildEx: see BUILDEX-PATCHES.md
+import { registerBuildExAutomationContextHandlers } from './buildex-automation-context'
 import { registerBuildExBrainHandlers } from './buildex-brain'
 import { registerBuildExGateHandlers } from './buildex-gate'
 import { registerBuildExStoreHandlers } from './buildex-store'
@@ -175,6 +176,7 @@ export function registerCoreHandlers(
   registerComputerUsePermissionHandlers()
   registerSettingsHandlers(store, agentAwakeService)
   registerSkillsHandlers(store)
+  registerBuildExAutomationContextHandlers(store)
   registerBuildExBrainHandlers()
   registerBuildExGateHandlers()
   registerBuildExStoreHandlers()

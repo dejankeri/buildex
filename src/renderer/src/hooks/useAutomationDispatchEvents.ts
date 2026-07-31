@@ -7,6 +7,8 @@ import { submitPromptToAgentPty } from '@/lib/agent-paste-draft'
 import { findReusableAutomationSession } from '@/lib/automation-session-reuse'
 import { observeExistingAutomationSession } from '@/lib/automation-session-observer'
 import { launchWorktreeBackgroundTerminals } from '@/lib/launch-worktree-background-terminals'
+// BuildEx: see BUILDEX-PATCHES.md
+import { prepareAutomationWorkspaceContext } from '@/lib/buildex-automation-workspace-context'
 import { useAppStore } from '@/store'
 import type {
   AutomationDispatchResult,
@@ -258,6 +260,8 @@ export function useAutomationDispatchEvents(): void {
               console.warn('[automations] Failed to launch workspace setup/default tabs:', error)
             })
           }
+
+          await prepareAutomationWorkspaceContext(automation, worktree.id)
 
           const outputSnapshotBuffer = createAutomationRunOutputSnapshotBuffer()
           let latestAssistantMessage: string | null = null

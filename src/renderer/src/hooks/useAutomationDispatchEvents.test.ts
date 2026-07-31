@@ -12,6 +12,8 @@ const mockOnDispatchRequested = vi.fn()
 const mockRendererReady = vi.fn()
 const mockFinalizeTerminalOwnership = vi.fn()
 const mockReleaseTerminalOwnership = vi.fn()
+// BuildEx: see BUILDEX-PATCHES.md
+const mockPrepareWorkspaceContext = vi.fn()
 
 const setupLaunch = {
   runnerScriptPath: '/tmp/setup.sh',
@@ -161,6 +163,7 @@ describe('useAutomationDispatchEvents setup launch', () => {
         release: mockReleaseTerminalOwnership
       }
     })
+    mockPrepareWorkspaceContext.mockResolvedValue(undefined)
     mockOnDispatchRequested.mockReturnValue(() => {})
     vi.stubGlobal('window', {
       api: {
@@ -175,7 +178,9 @@ describe('useAutomationDispatchEvents setup launch', () => {
           needsPassphrasePrompt: vi.fn().mockResolvedValue(false),
           getState: vi.fn().mockResolvedValue({ status: 'connected' }),
           connect: vi.fn()
-        }
+        },
+        // BuildEx: see BUILDEX-PATCHES.md
+        buildexAutomationContext: { prepareWorkspace: mockPrepareWorkspaceContext }
       },
       dispatchEvent: vi.fn()
     })
@@ -316,6 +321,55 @@ describe('useAutomationDispatchEvents setup launch', () => {
         worktreeId: 'wt-existing',
         prompt: 'run this'
       })
+    )
+  })
+
+  // BuildEx: see BUILDEX-PATCHES.md
+  it('refreshes company context before an existing-worktree run reads .claude/', async () => {
+    const order: string[] = []
+    state.allWorktrees.mockReturnValue([
+      { id: 'wt-existing', repoId: 'repo-1', displayName: 'Existing workspace', path: '/repo/x' }
+    ])
+    mockPrepareWorkspaceContext.mockImplementation(async () => {
+      order.push('context')
+    })
+    mockLaunchAgentBackgroundSession.mockImplementation(async () => {
+      order.push('agent')
+      return { tabId: 'agent-tab', paneKey: 'agent-pane', ptyId: 'agent-pty', startupPlan: {} }
+    })
+
+    await registerAndDispatch(
+      makeAutomation({ workspaceMode: 'existing', workspaceId: 'wt-existing' })
+    )
+
+    expect(mockPrepareWorkspaceContext).toHaveBeenCalledWith({
+      workspaceMode: 'existing',
+      workspaceId: 'wt-existing'
+    })
+    expect(order).toEqual(['context', 'agent'])
+  })
+
+  // BuildEx: see BUILDEX-PATCHES.md
+  it('dispatches the run even when the context refresh fails', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    state.allWorktrees.mockReturnValue([
+      { id: 'wt-existing', repoId: 'repo-1', displayName: 'Existing workspace', path: '/repo/x' }
+    ])
+    mockPrepareWorkspaceContext.mockRejectedValue(new Error('brain unreadable'))
+
+    try {
+      await registerAndDispatch(
+        makeAutomation({ workspaceMode: 'existing', workspaceId: 'wt-existing' })
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
+
+    expect(mockLaunchAgentBackgroundSession).toHaveBeenCalledWith(
+      expect.objectContaining({ worktreeId: 'wt-existing' })
+    )
+    expect(mockMarkDispatchResult).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: 'run-1', status: 'dispatched' })
     )
   })
 

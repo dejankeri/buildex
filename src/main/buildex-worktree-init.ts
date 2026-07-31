@@ -1,5 +1,7 @@
 import { existsSync } from 'node:fs'
+import type { AutomationWorkspaceContextRequest } from '../shared/buildex-automation-context-types'
 import type { BrainLocation } from '../shared/buildex-brain-types'
+import { splitWorktreeIdForFilesystem } from '../shared/worktree-id'
 import { requireBrainLocation } from './buildex-brain/brain-location'
 import { isBrainInitialized } from './buildex-brain/company-brain-scan'
 import { refreshCompanyContext } from './buildex-brain/company-context-refresh'
@@ -62,6 +64,47 @@ export async function prepareCompanyWorktree(worktreePath: string): Promise<void
     return
   }
   await refreshContextWithinDeadline(worktreePath, location)
+}
+
+/** Which host a workspace's repo is on — the only question asked of the store. */
+type WorkspaceRepoLookup = {
+  getRepo: (repoId: string) => { connectionId?: string | null } | undefined
+}
+
+/**
+ * The same preparation, for an automation that runs in a checkout it did not create.
+ *
+ * `existing` is the Automations UI's default, so this is the common dispatch and
+ * not the edge case: without it those runs read whatever `.claude/` a Brain or
+ * Store interaction last happened to leave there. Both dispatch paths — headless
+ * and renderer-present, the latter through `buildex-automation-context:*` — land
+ * here, so neither can drift from the other.
+ *
+ * A scheduled dispatch can afford the bounded wait that worktree creation takes;
+ * a human opening a terminal cannot, which is why `gateCompanyWorktreeOnActivation`
+ * still refreshes nothing.
+ *
+ * Host identity is carried, never inferred from the path: an SSH workspace's path
+ * names the *remote* filesystem, so a repo with a `connectionId` — and a workspace
+ * whose repo cannot be looked up at all — is left alone rather than guessed at.
+ */
+export async function prepareCompanyWorktreeForAutomationRun(
+  automation: AutomationWorkspaceContextRequest,
+  repos: WorkspaceRepoLookup | null | undefined
+): Promise<void> {
+  // `new_per_run` is already prepared as its worktree is created; scanning again
+  // would spend a second deadline on context the agent has by then.
+  if (automation.workspaceMode === 'new_per_run' || !automation.workspaceId || !repos) {
+    return
+  }
+  const parsed = splitWorktreeIdForFilesystem(automation.workspaceId)
+  const repo = parsed ? repos.getRepo(parsed.repoId) : undefined
+  // No repo is no host: a workspace BuildEx cannot place on this machine is left
+  // alone rather than written to on the chance that the path is local.
+  if (!parsed || !repo || repo.connectionId) {
+    return
+  }
+  await prepareCompanyWorktree(parsed.worktreePath)
 }
 
 /**

@@ -10,6 +10,8 @@ import {
   getCanonicalUserDataPath,
   migrateMobilePairingDataToCanonicalUserDataPath
 } from './persistence'
+// BuildEx: see BUILDEX-PATCHES.md
+import { prepareCompanyWorktreeForAutomationRun } from './buildex-worktree-init'
 import { initSessionParseCachePersistence } from './ai-vault/session-parse-cache-persistence'
 import { ensureActiveOrcaProfile, initOrcaProfilePaths } from './orca-profiles/profile-index-store'
 import { getOrcaCloudAuthConfig } from './orca-profiles/profile-cloud-auth-config'
@@ -2169,6 +2171,8 @@ app.whenReady().then(async () => {
             if (!automation.workspaceId) {
               throw new Error('The target workspace is no longer available.')
             }
+            // BuildEx: see BUILDEX-PATCHES.md
+            await prepareCompanyWorktreeForAutomationRun(automation, store)
             const terminal = await runtimeService.launchAgentTerminal(
               `id:${automation.workspaceId}`,
               {

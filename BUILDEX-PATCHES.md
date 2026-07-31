@@ -107,12 +107,12 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 
 | File | Change |
 |---|---|
-| `src/shared/buildex-brain-types.ts`, `buildex-store-types.ts` | **BuildEx-owned** wire contracts |
+| `src/shared/buildex-brain-types.ts`, `buildex-store-types.ts`, `buildex-automation-context-types.ts` | **BuildEx-owned** wire contracts |
 | `src/main/buildex-brain/*`, `src/main/buildex-store/*` | **BuildEx-owned** domain layers |
-| `src/main/ipc/buildex-brain.ts`, `buildex-brain-placement.ts`, `buildex-store.ts` | **BuildEx-owned** IPC modules |
-| `src/main/ipc/register-core-handlers.ts` | 2 imports + 2 registration calls |
-| `src/preload/index.ts` | 2 type imports + 2 api namespaces |
-| `src/preload/api-types.ts` | 2 type imports + 2 members on `PreloadApi` |
+| `src/main/ipc/buildex-brain.ts`, `buildex-brain-placement.ts`, `buildex-store.ts`, `buildex-automation-context.ts` | **BuildEx-owned** IPC modules |
+| `src/main/ipc/register-core-handlers.ts` | 4 imports + 4 registration calls |
+| `src/preload/index.ts` | 5 type imports + 5 api namespaces |
+| `src/preload/api-types.ts` | 5 type imports + 5 members on `PreloadApi` |
 | `resources/build/icon.{png,icns,ico}`, `resources/{icon,icon-dev}.png`, `resources/logo.svg` | BuildEx artwork |
 | `src/main/buildex-repo-init.ts`, `buildex-worktree-init.ts` | **BuildEx-owned.** Everything a repo and a fresh checkout need before an agent works there |
 | `src/main/buildex-company-identity.ts` | **BuildEx-owned.** Which business a path belongs to — the key everything stored per company is filed under |
@@ -120,6 +120,10 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 | `src/main/runtime/orca-runtime.test.ts` | 1 import + 1 `readFileSync` import member + 2 harness mocks + 1 test |
 | `src/main/ipc/pty.ts` | 2 imports + 1 `applyCompanyPluginEnv(...)` call in `buildPtyHostEnv` + 1 `buildexWorkspacePath` field on `BuildPtyHostEnvOptions` and the `companyWorkspacePathForSpawn(ctx)` line that fills it + 1 `gateCompanyWorktreeOnActivation(worktreePath, connectionId)` in `beginPtySpawnForWorktree` |
 | `src/main/providers/local-pty-provider.ts` | 2 lines: `worktreeId?: string` on the `buildSpawnEnv` ctx type + `worktreeId: args.worktreeId` where it is called |
+| `src/main/index.ts` | 1 import + 1 `await prepareCompanyWorktreeForAutomationRun(automation, store)` in the headless dispatcher's existing-workspace branch |
+| `src/renderer/src/lib/buildex-automation-workspace-context.ts` | **BuildEx-owned.** The renderer dispatch path's one-line ask |
+| `src/renderer/src/hooks/useAutomationDispatchEvents.ts` | 1 import + 1 `await prepareAutomationWorkspaceContext(automation, worktree.id)` before the agent launch |
+| `src/renderer/src/hooks/useAutomationDispatchEvents.test.ts` | 1 mock + 1 `window.api` stub member + 2 tests |
 
 **Why the runtime is touched at all.** The automations engine creates a headless
 worktree and launches the startup agent in the same call, and `.claude/` is
@@ -134,6 +138,26 @@ sits on the critical path of creating a worktree, so a wedged git would stall
 worktree creation outright. `prepareCompanyWorktree` races it against
 `COMPANY_CONTEXT_DEADLINE_MS` and degrades to no-context with a log line. A
 broken brain must never cost a worktree.
+
+**`new_per_run` was the example, not the boundary.** Wiring context into worktree
+*creation* only reached the automations that create one — and `existing` is the
+Automations UI's default, so the common scheduled run still read whatever
+`.claude/` a Brain or Store interaction last happened to leave behind. Those runs
+now go through `prepareCompanyWorktreeForAutomationRun`, which is the same
+bounded, no-throw preparation with a workspace id in front of it. Both dispatch
+paths reach it: `index.ts`'s headless branch calls it directly, and the
+renderer-present hook calls it over `buildex-automation-context:prepareWorkspace`.
+The renderer holds no copy of the logic — only the ask — so the two cannot drift.
+The refresh runs on **every** dispatch, which for an hourly automation is an
+hourly `git status` over the brain; the deadline is what keeps that bounded, and
+there is deliberately no cache to go stale behind it.
+
+**A workspace id is not a host either.** The path comes out of the worktree id,
+but which machine it names comes from `store.getRepo(repoId)?.connectionId` —
+the same signal `gateCompanyWorktreeOnActivation` takes. A workspace whose repo
+the store cannot produce is left alone rather than written to on the chance the
+path happens to be local, which is why the store travels with the request instead
+of the renderer asserting the host.
 
 **Why `pty.ts` is the activation hook.** Worktree activation is renderer state —
 main never hears about it, and `ui:activateWorktree` runs the other way. The

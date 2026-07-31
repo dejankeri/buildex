@@ -383,6 +383,7 @@ import type {
   BrainSkillsRequest,
   BrainSkillsResult
 } from '../shared/buildex-brain-types'
+import type { AutomationWorkspaceContextRequest } from '../shared/buildex-automation-context-types'
 import type { GateSettingsRequest, GateSettingsResult } from '../shared/buildex-gate-types'
 import type {
   StoreCatalog,
@@ -2414,6 +2415,9 @@ export type PreloadApi = {
   }
   buildexGate: {
     sync: (request: GateSettingsRequest) => Promise<GateSettingsResult>
+  }
+  buildexAutomationContext: {
+    prepareWorkspace: (request: AutomationWorkspaceContextRequest) => Promise<void>
   }
   pet: {
     import: () => Promise<CustomPet | null>

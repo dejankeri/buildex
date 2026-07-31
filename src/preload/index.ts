@@ -125,6 +125,7 @@ import type {
   BrainSkillsRequest,
   BrainSkillsResult
 } from '../shared/buildex-brain-types'
+import type { AutomationWorkspaceContextRequest } from '../shared/buildex-automation-context-types'
 import type { GateSettingsRequest, GateSettingsResult } from '../shared/buildex-gate-types'
 import type {
   StoreCatalog,
@@ -2384,6 +2385,11 @@ const api = {
   buildexGate: {
     sync: (request: GateSettingsRequest): Promise<GateSettingsResult> =>
       ipcRenderer.invoke('buildex-gate:sync', request)
+  },
+
+  buildexAutomationContext: {
+    prepareWorkspace: (request: AutomationWorkspaceContextRequest): Promise<void> =>
+      ipcRenderer.invoke('buildex-automation-context:prepareWorkspace', request)
   },
 
   pet: {
