@@ -1239,7 +1239,7 @@ function beginPtySpawnForWorktree(
     : undefined
   // BuildEx: see BUILDEX-PATCHES.md. Both spawn paths pass through here, so this
   // is where the gate reaches a checkout the operator opened rather than created.
-  gateCompanyWorktreeOnActivation(worktreePath)
+  gateCompanyWorktreeOnActivation(worktreePath, connectionId)
   const installPaths = new Map<string, string>()
   for (const candidate of [worktreePath, cwd]) {
     if (candidate) {

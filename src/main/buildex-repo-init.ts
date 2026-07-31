@@ -1,8 +1,10 @@
+import { existsSync } from 'node:fs'
+import { requireBrainLocation } from './buildex-brain/brain-location'
 import { ensureBuildExGitExclude } from './buildex-brain/repo-git-exclude'
 import { syncGateSettings } from './buildex-gate/gate-settings'
 import { removeLegacyPackMcpServers } from './buildex-store/legacy-mcp-config-cleanup'
 import { collectPluginGateRules } from './buildex-store/plugin-env'
-import { readAppStoreCatalog } from './buildex-store/store-catalog-source'
+import { readCompanyStoreEntries } from './buildex-store/store-catalog-source'
 
 // What BuildEx does the first time a run touches a company repo: keep what it
 // writes out of the operator's git index, and put the gate into the file the
@@ -49,7 +51,7 @@ export function initializeCompanyRepo(repoPath: string): void {
   // The installed plugins' own rules go in with it: syncing without them would
   // take an installed app's gates back out every time a surface is opened.
   try {
-    syncGateSettings(repoPath, installedPluginGateRules())
+    syncGateSettings(repoPath, installedPluginGateRules(repoPath))
   } catch {
     // Never let policy bookkeeping take a surface down.
   }
@@ -59,15 +61,33 @@ export function initializeCompanyRepo(repoPath: string): void {
  * Every checkout this run has initialized — the operator's open companies, as far
  * as anything here can know them. Installing an app changes what the agent may
  * reach for in all of them, not only the one whose Store was open.
+ *
+ * Forgets the ones that are gone. A `new_per_run` automation creates and discards
+ * worktrees by design, and a set that only ever grows would have a later install
+ * mkdir `.claude/` back into a checkout git no longer knows about — and re-walk
+ * every one of them, every install, for the rest of the session.
  */
 export function initializedCompanyRepos(): string[] {
+  for (const repoPath of initialized) {
+    if (!existsSync(repoPath)) {
+      initialized.delete(repoPath)
+    }
+  }
   return [...initialized]
 }
 
-/** Empty rather than throwing: an unreadable shelf must not cost the gate. */
-function installedPluginGateRules(): { ask: string[]; deny: string[] } {
+/**
+ * The rules of what is installed, as *this* company sees the shelf.
+ *
+ * Repo-scoped deliberately: an app installed from a marketplace this company's
+ * brain adds is missing from a catalogue read without it, and the sync would then
+ * retire the very rules that app is still gated by (BUILDEX-PATCHES.md).
+ *
+ * Empty rather than throwing: an unreadable shelf must not cost the gate.
+ */
+function installedPluginGateRules(repoPath: string): { ask: string[]; deny: string[] } {
   try {
-    return collectPluginGateRules(readAppStoreCatalog().entries)
+    return collectPluginGateRules(readCompanyStoreEntries(requireBrainLocation(repoPath)))
   } catch {
     return { ask: [], deny: [] }
   }

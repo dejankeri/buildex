@@ -39,6 +39,11 @@ export async function prepareCompanyWorktree(worktreePath: string): Promise<void
   if (!existsSync(worktreePath)) {
     return
   }
+  // First, and before anything below writes: it installs the git-exclude, and
+  // that has to be in place before `.claude/skills/` links exist to be seen by
+  // the operator's index. It also carries the gate, which is the part that must
+  // land whether or not this repo has a brain.
+  initializeCompanyRepo(worktreePath)
   const location = resolveLocation(worktreePath)
   if (location) {
     try {
@@ -47,13 +52,9 @@ export async function prepareCompanyWorktree(worktreePath: string): Promise<void
       // company's skills.
       relinkBrainSkills(worktreePath, location)
     } catch {
-      // Skills the agent will not see. The gate below still has to land.
+      // Skills the agent will not see. The gate is already in.
     }
   }
-  // The gate and the git-exclude are machine state, wanted whether or not this
-  // repo has a brain — and this is the moment they land, rather than whenever a
-  // BuildEx surface first happens to be opened against the repo.
-  initializeCompanyRepo(worktreePath)
   // A repo with nothing in its brain is a normal state, not an error: there is no
   // company context to write, and writing an empty one would put BuildEx's files
   // into a repo that never asked for them.
@@ -70,10 +71,23 @@ export async function prepareCompanyWorktree(worktreePath: string): Promise<void
  * spawn path: everything it does is a small local write, and the second spawn in
  * a worktree costs a set lookup. The context is deliberately not refreshed here —
  * that reads git, and a spawn is not the place to wait for it.
+ *
+ * `connectionId` names an SSH connection, and a remote worktree's path belongs to
+ * the *remote* filesystem. A path that also exists on this machine is a different
+ * directory, so gating on it would write into an unrelated local folder and still
+ * leave the real checkout ungated. **Remote worktrees are therefore not gated on
+ * activation at all** — that needs a writer on the far side, which BuildEx does
+ * not have yet. Their gate still lands when a BuildEx surface touches the repo.
  */
-export function gateCompanyWorktreeOnActivation(worktreePath: string | undefined): void {
-  // Undefined for a bare shell with no workspace, and absent for a worktree that
-  // lives on another host. Neither is a checkout on this disk to gate.
+export function gateCompanyWorktreeOnActivation(
+  worktreePath: string | undefined,
+  connectionId?: string | null
+): void {
+  if (connectionId) {
+    return
+  }
+  // Undefined for a bare shell with no workspace, absent for a checkout this
+  // machine does not have. Neither is a directory to gate.
   if (!worktreePath || !existsSync(worktreePath)) {
     return
   }
@@ -83,9 +97,11 @@ export function gateCompanyWorktreeOnActivation(worktreePath: string | undefined
 /**
  * Wait for the context, but never indefinitely.
  *
- * A refresh that overruns is left running rather than cancelled: it writes the
- * same bytes whenever it finishes, which is exactly what the IPC surfaces do
- * today. What changes is that the agent starts without it, and says so in the log.
+ * A refresh that overruns is left running rather than cancelled. It can therefore
+ * land after a later refresh has already written a newer one — a lost update that
+ * reverts the context by one scan. Small and self-healing: the render is
+ * deterministic, and the next refresh of a repo that has changed corrects it. A
+ * stale context for one session beats an unbounded wait for every worktree.
  */
 async function refreshContextWithinDeadline(
   worktreePath: string,

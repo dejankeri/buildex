@@ -1,7 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { BrainLocation } from '../../shared/buildex-brain-types'
 import type { StoreCatalog, StoreEntry, StoreInstallResult } from '../../shared/buildex-store-types'
 import { EMPTY_STORE_CATALOG } from '../../shared/buildex-store-types'
 
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   readAppStoreCatalog: vi.fn(),
   refreshAppStoreCatalog: vi.fn(),
   readInstalledAppSummaries: vi.fn(() => []),
+  readCompanyStoreEntries: vi.fn(() => [] as StoreEntry[]),
   readInstalledPluginInventory: vi.fn(() => []),
   refreshCompanyContext: vi.fn(async () => undefined)
 }))
@@ -34,7 +36,8 @@ vi.mock('../buildex-store/claude-cli-runner', () => ({
 vi.mock('../buildex-store/store-catalog-source', () => ({
   readAppStoreCatalog: mocks.readAppStoreCatalog,
   refreshAppStoreCatalog: mocks.refreshAppStoreCatalog,
-  readInstalledAppSummaries: mocks.readInstalledAppSummaries
+  readInstalledAppSummaries: mocks.readInstalledAppSummaries,
+  readCompanyStoreEntries: mocks.readCompanyStoreEntries
 }))
 
 vi.mock('../buildex-store/installed-plugin-inventory', () => ({
@@ -52,33 +55,41 @@ vi.mock('./buildex-store-marketplaces', () => ({
 const { registerBuildExStoreHandlers } = await import('./buildex-store')
 const { resetCompanyRepoInitialization } = await import('../buildex-repo-init')
 
-const GATED_TOOL = 'mcp__acme__send_invoice'
+/** On the bundled shelf, so every company can see it. */
+const ACME_TOOL = 'mcp__acme__send_invoice'
+/** Only on the second company's own marketplace. Nobody else's catalogue has it. */
+const BETA_TOOL = 'mcp__beta__pay'
 
-function entry(installed: boolean): StoreEntry {
+function entry(name: string, marketplaceId: string, gatedTool: string, installed: boolean) {
   return {
     plugin: {
-      name: 'acme',
-      displayName: 'Acme',
-      description: 'Invoices',
+      name,
+      displayName: name,
+      description: 'An app',
       category: null,
       author: null,
       homepage: null,
       keywords: [],
-      source: { kind: 'marketplace-relative', path: 'acme' }
+      source: { kind: 'marketplace-relative' as const, path: name }
     },
-    marketplaceId: 'acme-market',
-    marketplaceLabel: 'Acme Market',
-    segment: 'business',
+    marketplaceId,
+    marketplaceLabel: marketplaceId,
+    segment: 'business' as const,
     curated: true,
-    overlay: { pluginName: 'acme', gate: { ask: [GATED_TOOL] } },
+    overlay: { pluginName: name, gate: { ask: [gatedTool] } },
     installed
-  }
+  } satisfies StoreEntry
 }
 
-function catalog(installed: boolean): StoreCatalog {
+/** What a company whose brain adds no marketplace of its own can see. */
+function bundledEntries(acmeInstalled: boolean): StoreEntry[] {
+  return [entry('acme', 'acme-market', ACME_TOOL, acmeInstalled)]
+}
+
+function catalog(acmeInstalled: boolean): StoreCatalog {
   return {
     ...EMPTY_STORE_CATALOG,
-    entries: [entry(installed)],
+    entries: bundledEntries(acmeInstalled),
     marketplaces: [
       {
         id: 'acme-market',
@@ -110,15 +121,26 @@ function askRules(repoPath: string): string[] {
 describe('installing an app gates every open company repo', () => {
   let firstCompany: string
   let secondCompany: string
+  let acmeInstalled: boolean
 
   beforeEach(() => {
     vi.clearAllMocks()
     resetCompanyRepoInitialization()
     firstCompany = mkdtempSync(path.join(tmpdir(), 'buildex-company-a-'))
     secondCompany = mkdtempSync(path.join(tmpdir(), 'buildex-company-b-'))
+    acmeInstalled = false
     mocks.readInstalledAppSummaries.mockReturnValue([])
     mocks.readInstalledPluginInventory.mockReturnValue([])
-    mocks.readAppStoreCatalog.mockReturnValue(catalog(false))
+    mocks.readAppStoreCatalog.mockImplementation(() => catalog(acmeInstalled))
+    // Why: a catalogue only carries the marketplaces it was given. The second
+    // company's brain adds one of its own, so its shelf holds an app the first
+    // company's shelf cannot see — which is exactly the case a shared rule set
+    // would silently un-gate.
+    mocks.readCompanyStoreEntries.mockImplementation((location?: BrainLocation | null) =>
+      location?.gitRoot === secondCompany
+        ? [...bundledEntries(acmeInstalled), entry('beta', 'beta-market', BETA_TOOL, true)]
+        : bundledEntries(acmeInstalled)
+    )
     mocks.installClaudePlugin.mockReturnValue({ ok: true } satisfies StoreInstallResult)
     registerBuildExStoreHandlers()
   })
@@ -128,56 +150,77 @@ describe('installing an app gates every open company repo', () => {
     rmSync(secondCompany, { recursive: true, force: true })
   })
 
-  it("writes the new app's ask rules into a second company opened this run", () => {
-    handler('buildex-store:catalog')(null, { repoPath: secondCompany })
-    handler('buildex-store:catalog')(null, { repoPath: firstCompany })
-    expect(askRules(secondCompany)).not.toContain(GATED_TOOL)
+  function openStoreFor(repoPath: string): void {
+    handler('buildex-store:catalog')(null, { repoPath })
+  }
 
-    mocks.readAppStoreCatalog.mockReturnValue(catalog(true))
-    const result = handler('buildex-store:install')(null, {
-      repoPath: firstCompany,
+  function installAcmeFrom(repoPath: string): unknown {
+    acmeInstalled = true
+    return handler('buildex-store:install')(null, {
+      repoPath,
       pluginName: 'acme',
       marketplaceId: 'acme-market'
     })
+  }
+
+  it("writes the new app's ask rules into a second company opened this run", () => {
+    openStoreFor(secondCompany)
+    openStoreFor(firstCompany)
+    expect(askRules(secondCompany)).not.toContain(ACME_TOOL)
+
+    const result = installAcmeFrom(firstCompany)
 
     expect(result).toMatchObject({ ok: true })
-    expect(askRules(firstCompany)).toContain(GATED_TOOL)
-    expect(askRules(secondCompany)).toContain(GATED_TOOL)
+    expect(askRules(firstCompany)).toContain(ACME_TOOL)
+    expect(askRules(secondCompany)).toContain(ACME_TOOL)
+  })
+
+  it('leaves a second company still gated on an app only its own marketplace carries', () => {
+    openStoreFor(secondCompany)
+    expect(askRules(secondCompany)).toContain(BETA_TOOL)
+
+    installAcmeFrom(firstCompany)
+
+    // The first company's catalogue has no `beta` entry at all. Gating the second
+    // company from it would retire a rule for an app it still has installed.
+    expect(askRules(secondCompany)).toContain(BETA_TOOL)
+    expect(askRules(firstCompany)).not.toContain(BETA_TOOL)
   })
 
   it('keeps the preset rules of a company the install never touched', () => {
-    handler('buildex-store:catalog')(null, { repoPath: secondCompany })
-    const presetRules = askRules(secondCompany)
-    expect(presetRules.length).toBeGreaterThan(0)
+    openStoreFor(secondCompany)
+    const before = askRules(secondCompany)
+    expect(before.length).toBeGreaterThan(0)
 
-    mocks.readAppStoreCatalog.mockReturnValue(catalog(true))
-    handler('buildex-store:install')(null, {
-      repoPath: firstCompany,
-      pluginName: 'acme',
-      marketplaceId: 'acme-market'
-    })
+    installAcmeFrom(firstCompany)
 
-    expect(askRules(secondCompany)).toEqual([...presetRules, GATED_TOOL])
+    expect(askRules(secondCompany)).toEqual([...before, ACME_TOOL])
+  })
+
+  it('does not resurrect a worktree the operator or an automation has removed', () => {
+    openStoreFor(secondCompany)
+    rmSync(secondCompany, { recursive: true, force: true })
+
+    installAcmeFrom(firstCompany)
+
+    expect(existsSync(secondCompany)).toBe(false)
+    expect(askRules(firstCompany)).toContain(ACME_TOOL)
   })
 
   it('uninstalling takes the rules back out of every open company', () => {
-    handler('buildex-store:catalog')(null, { repoPath: secondCompany })
-    mocks.readAppStoreCatalog.mockReturnValue(catalog(true))
-    handler('buildex-store:install')(null, {
-      repoPath: firstCompany,
-      pluginName: 'acme',
-      marketplaceId: 'acme-market'
-    })
-    expect(askRules(secondCompany)).toContain(GATED_TOOL)
+    openStoreFor(secondCompany)
+    installAcmeFrom(firstCompany)
+    expect(askRules(secondCompany)).toContain(ACME_TOOL)
 
     mocks.uninstallClaudePlugin.mockReturnValue({ ok: true } satisfies StoreInstallResult)
-    mocks.readAppStoreCatalog.mockReturnValue(catalog(false))
+    acmeInstalled = false
     handler('buildex-store:uninstall')(null, {
       repoPath: firstCompany,
       pluginName: 'acme',
       marketplaceId: 'acme-market'
     })
 
-    expect(askRules(secondCompany)).not.toContain(GATED_TOOL)
+    expect(askRules(secondCompany)).not.toContain(ACME_TOOL)
+    expect(askRules(secondCompany)).toContain(BETA_TOOL)
   })
 })

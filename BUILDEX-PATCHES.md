@@ -117,7 +117,7 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 | `src/main/buildex-repo-init.ts`, `buildex-worktree-init.ts` | **BuildEx-owned.** Everything a repo and a fresh checkout need before an agent works there |
 | `src/main/runtime/orca-runtime.ts` | 1 import + 1 `await prepareCompanyWorktree(created.path)` in `createManagedWorktree` |
 | `src/main/runtime/orca-runtime.test.ts` | 1 import + 1 `readFileSync` import member + 2 harness mocks + 1 test |
-| `src/main/ipc/pty.ts` | 2 imports + `applyBuildExPluginEnv` (installed plugins' keys into the agent's env) + 1 `gateCompanyWorktreeOnActivation(worktreePath)` in `beginPtySpawnForWorktree` |
+| `src/main/ipc/pty.ts` | 3 imports + `applyBuildExPluginEnv` (installed plugins' keys into the agent's env) + 1 `gateCompanyWorktreeOnActivation(worktreePath, connectionId)` in `beginPtySpawnForWorktree` |
 
 **Why the runtime is touched at all.** The automations engine creates a headless
 worktree and launches the startup agent in the same call, and `.claude/` is
@@ -142,6 +142,25 @@ for CLI, mobile and automations) and which already holds the worktree's absolute
 path. Gating there is synchronous and once per checkout per run; the context is
 deliberately *not* refreshed there, because that reads git and a spawn is no
 place to wait for it.
+
+**Remote worktrees are not gated on activation.** `splitWorktreeIdForFilesystem`
+returns a path with no host awareness, so for an SSH worktree it is the *remote*
+filesystem's path — and a local directory that happens to share it is a different
+directory. Writing there would gate something unrelated and still leave the real
+checkout ungated, so `beginPtySpawnForWorktree`'s `connectionId` (non-null ⇒ SSH,
+the same signal `pty.ts:1023` already keys host-loopback injection off) turns the
+call into a no-op. A remote checkout's gate still lands when a BuildEx surface
+touches the repo. **Gating remote worktrees needs a writer on the far side that
+BuildEx does not have yet — a known gap, not an oversight.**
+
+**A gate write is only ever as complete as the catalogue behind it.** The rules
+must come from the shelf *that company* sees — `readCompanyStoreEntries(location)`,
+bundled marketplaces plus the ones its own brain adds. Deriving them from another
+company's catalogue omits every app from a marketplace that catalogue never had,
+and `mergeList` then retires rules the app is still relying on. This is the same
+trap as syncing with no plugin rules at all, through a different door; it bit
+once via `initializeCompanyRepo` reading a repo-less catalogue, and once via the
+Store fanning one company's rules out to all of them.
 
 ### Branding the visible copy — Phase 6
 

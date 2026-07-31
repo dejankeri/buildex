@@ -128,6 +128,11 @@ Store was open.
 The context scan is awaited but bounded (`COMPANY_CONTEXT_DEADLINE_MS`): it
 spawns git, and no brain is worth failing to create a worktree over.
 
+Still outstanding: **a worktree on an SSH host is not gated on activation.** Its
+path belongs to the remote filesystem, and BuildEx has no writer on the far side,
+so activation skips it rather than writing into a local directory that happens to
+share the path. Remote checkouts are gated when a BuildEx surface touches them.
+
 ## Read before touching anything
 
 - **`BUILDEX-PATCHES.md`** — every upstream line this fork owns, the traps, the rebase procedure.

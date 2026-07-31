@@ -6,6 +6,7 @@ import type * as CompanyContextRefreshModule from './buildex-brain/company-conte
 
 const mocks = vi.hoisted(() => ({
   readInstalledAppSummaries: vi.fn(() => [] as unknown[]),
+  readCompanyStoreEntries: vi.fn(() => [] as unknown[]),
   /** Set by the deadline test: a scan that never comes back. */
   stallContextRefresh: false
 }))
@@ -16,6 +17,7 @@ vi.mock('electron', () => ({
 
 vi.mock('./buildex-store/store-catalog-source', () => ({
   readInstalledAppSummaries: mocks.readInstalledAppSummaries,
+  readCompanyStoreEntries: mocks.readCompanyStoreEntries,
   readAppStoreCatalog: vi.fn(() => ({ entries: [] }))
 }))
 
@@ -48,6 +50,7 @@ describe('prepareCompanyWorktree', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.readInstalledAppSummaries.mockReturnValue([])
+    mocks.readCompanyStoreEntries.mockReturnValue([])
     mocks.stallContextRefresh = false
     resetCompanyRepoInitialization()
     worktree = mkdtempSync(path.join(tmpdir(), 'buildex-worktree-'))
@@ -128,6 +131,7 @@ describe('gateCompanyWorktreeOnActivation', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.readCompanyStoreEntries.mockReturnValue([])
     resetCompanyRepoInitialization()
     worktree = mkdtempSync(path.join(tmpdir(), 'buildex-activated-'))
   })
@@ -151,12 +155,34 @@ describe('gateCompanyWorktreeOnActivation', () => {
     expect(existsSync(path.join(worktree, '.claude', 'company-context.md'))).toBe(false)
   })
 
-  it('leaves a bare shell and a worktree on another host alone', () => {
-    const elsewhere = path.join(worktree, 'on-another-host')
+  it('leaves a bare shell and a path this machine does not have alone', () => {
+    const elsewhere = path.join(worktree, 'not-on-this-disk')
 
     gateCompanyWorktreeOnActivation(undefined)
     gateCompanyWorktreeOnActivation(elsewhere)
 
     expect(existsSync(elsewhere)).toBe(false)
+  })
+
+  it('writes nothing for a worktree on another host, even when the path exists here', () => {
+    // Why: a remote worktree's path is the remote filesystem's. A local directory
+    // at the same path is a different directory, and gating it would leave the
+    // real checkout ungated while writing into something unrelated.
+    gateCompanyWorktreeOnActivation(worktree, 'ssh-connection-1')
+
+    expect(existsSync(path.join(worktree, '.claude'))).toBe(false)
+  })
+
+  it("gates from the company's own shelf, not one that cannot see its marketplaces", () => {
+    const privateTool = 'mcp__beta__pay'
+    mocks.readCompanyStoreEntries.mockImplementation((location?: { gitRoot?: string } | null) =>
+      location?.gitRoot === worktree
+        ? [{ installed: true, overlay: { gate: { ask: [privateTool] } } }]
+        : []
+    )
+
+    gateCompanyWorktreeOnActivation(worktree)
+
+    expect(askRules(worktree)).toContain(privateTool)
   })
 })

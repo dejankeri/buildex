@@ -4,6 +4,7 @@ import { app } from 'electron'
 import type {
   CompanyMarketplace,
   StoreCatalog,
+  StoreEntry,
   StoreRoster
 } from '../../shared/buildex-store-types'
 import type { BrainLocation } from '../../shared/buildex-brain-types'
@@ -132,9 +133,18 @@ export async function refreshAppStoreCatalog(
  * context would describe it as nothing at all.
  */
 export function readInstalledAppSummaries(location?: BrainLocation | null): InstalledAppSummary[] {
+  return readInstalledPluginInventory(homedir(), readCompanyStoreEntries(location))
+}
+
+/**
+ * The shelf as one company sees it: the bundled marketplaces plus the ones its
+ * brain adds.
+ *
+ * Reading it without the company's own marketplaces is not merely incomplete —
+ * an app installed from one is then absent from the entries, and anything
+ * deriving gate rules from them retires the rules that app is still relying on.
+ */
+export function readCompanyStoreEntries(location?: BrainLocation | null): StoreEntry[] {
   const companyMarketplaces = location ? readCompanyMarketplaces(location).entries : []
-  return readInstalledPluginInventory(
-    homedir(),
-    readAppStoreCatalog({ companyMarketplaces }).entries
-  )
+  return readAppStoreCatalog({ companyMarketplaces }).entries
 }

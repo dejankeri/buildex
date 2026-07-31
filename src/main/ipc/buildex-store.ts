@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { app, ipcMain } from 'electron'
 import type {
@@ -19,7 +20,11 @@ import { EMPTY_STORE_CATALOG } from '../../shared/buildex-store-types'
 import { readStoreRoster, setRosterEntry } from '../buildex-store/store-roster'
 import { readCompanyMarketplaces } from '../buildex-store/company-marketplaces'
 import { registerStoreMarketplaceHandlers } from './buildex-store-marketplaces'
-import { readAppStoreCatalog, refreshAppStoreCatalog } from '../buildex-store/store-catalog-source'
+import {
+  readAppStoreCatalog,
+  readCompanyStoreEntries,
+  refreshAppStoreCatalog
+} from '../buildex-store/store-catalog-source'
 import { installClaudePlugin, uninstallClaudePlugin } from '../buildex-store/claude-plugin-install'
 import { resolveClaudeBinary, runClaudeCommand } from '../buildex-store/claude-cli-runner'
 import { unsupportedInstallAgent } from '../buildex-store/store-agent-support'
@@ -104,12 +109,19 @@ function assembleCatalog(request?: StoreCatalogRequest): StoreCatalog {
  * this repo — the other companies' brains describe their own repos.
  */
 function syncRepoAfterChange(repoPath: string, entries: readonly StoreEntry[]): void {
-  const pluginRules = collectPluginGateRules(entries)
-  for (const companyPath of new Set([repoPath, ...initializedCompanyRepos()])) {
+  syncCompanyGate(repoPath, entries)
+  for (const companyPath of initializedCompanyRepos()) {
+    if (companyPath === repoPath) {
+      continue
+    }
     try {
-      syncGateSettings(companyPath, pluginRules)
+      // Why: read that company's own shelf rather than reusing this one's. A
+      // catalogue is scoped to the marketplaces it was given, so another company's
+      // private marketplace is absent from ours — and gating it from here would
+      // retire the rules of an app it still has installed.
+      syncCompanyGate(companyPath, readCompanyStoreEntries(requireBrainLocation(companyPath)))
     } catch {
-      // The plugin is installed; a gate we could not write is visible in the Store.
+      // One company's unreadable brain must not stop the others being gated.
     }
   }
   try {
@@ -117,6 +129,20 @@ function syncRepoAfterChange(repoPath: string, entries: readonly StoreEntry[]): 
     void refreshCompanyContext(repoPath, location, readInstalledPluginInventory(homedir(), entries))
   } catch {
     // A context we could not refresh reaches the agent on the next open.
+  }
+}
+
+/** One company's gate, from that company's own view of the shelf. */
+function syncCompanyGate(companyPath: string, entries: readonly StoreEntry[]): void {
+  // Why: `syncGateSettings` mkdirs its way to `.claude/`, and a discarded
+  // automation worktree must not be conjured back into existence by an install.
+  if (!existsSync(companyPath)) {
+    return
+  }
+  try {
+    syncGateSettings(companyPath, collectPluginGateRules(entries))
+  } catch {
+    // The plugin is installed; a gate we could not write is visible in the Store.
   }
 }
 
