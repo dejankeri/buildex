@@ -3232,6 +3232,7 @@ export type TopLevelView =
   // BuildEx: company-facing sections. Additive — see BUILDEX-PATCHES.md.
   | 'brain'
   | 'store'
+  | 'portfolio'
 
 export type PersistedUIState = {
   lastActiveRepoId: string | null

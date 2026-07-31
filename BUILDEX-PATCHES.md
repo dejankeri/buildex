@@ -20,6 +20,7 @@ src/renderer/src/components/right-sidebar/BrainPanel.tsx
 src/renderer/src/components/sidebar/BuildExNavEntries.tsx
 src/renderer/src/components/buildex-apps/AppsPage.tsx
 src/renderer/src/components/buildex-store/StorePage.tsx
+src/renderer/src/components/buildex-portfolio/*
 tests/e2e/buildex-surfaces.spec.ts
 config/scripts/verify-buildex-macos-release-env.mjs
 config/scripts/verify-packaged-asar-contents.cjs
@@ -355,16 +356,49 @@ reviewable diff instead of ~400 silent ones. Read it during each rebase.
 
 | File | Change |
 |---|---|
-| `src/shared/types.ts` | `'brain'` on `RightSidebarTab`; `'apps' \| 'store'` on `TopLevelView` |
+| `src/shared/types.ts` | `'brain'` on `RightSidebarTab`; `'brain' \| 'store' \| 'portfolio'` on `TopLevelView` |
 | `src/shared/top-level-view.ts` | `Record<TopLevelView, true>` entries |
 | `src/renderer/src/store/right-sidebar-route.ts` | `'brain'` in the runtime allowlist |
-| `src/renderer/src/store/slices/ui.ts` | 8 `previousViewBefore*` unions; `previousViewBeforeApps/Store` + 4 open/close actions |
+| `src/renderer/src/store/slices/ui.ts` | 7 upstream `previousViewBefore*` unions gain each new view; `previousViewBeforeBrain/Store/Portfolio` (`Exclude<>`, ours) + 6 open/close actions |
 | `src/renderer/src/hooks/resolve-zoom-target.ts` | `activeView` union |
+| `src/renderer/src/lib/right-sidebar-visibility.ts` | 3 members on `RIGHT_SIDEBAR_SUPPRESSED_VIEWS`. **Not typechecked** — the set is `Set<ActiveView>`, so a view left out silently keeps the file explorer beside a full-screen surface |
 | `src/renderer/src/components/right-sidebar/index.tsx` | `Brain` icon import + 1 activity item |
 | `src/renderer/src/components/right-sidebar/right-sidebar-panel-content.tsx` | lazy import + 1 render line |
 | `src/renderer/src/components/sidebar/SidebarNav.tsx` | **3 lines**: import + `<BuildExNavEntries />` |
-| `src/renderer/src/App.tsx` | 2 lazy imports + 2 render lines |
+| `src/renderer/src/App.tsx` | 3 lazy imports + 3 render lines |
 | `src/renderer/src/i18n/locales/{en,es,ja,ko,zh}.json` | the `buildex.*` keys — **generated**, never hand-edited. Count deliberately not stated: it grows with every BuildEx surface and a number here only rots. Run `pnpm run sync:localization-catalog` and take whatever it writes |
+
+**The Portfolio is a composition, not a subsystem.** `buildex-portfolio/*` adds
+no IPC and no main-process module: it enumerates the renderer's own `repos` and
+calls `buildexBrain.resolve`/`scan`, `buildexStore.catalog` and
+`automations.list`/`listRuns` once per business. `initializedCompanyRepos()` is
+**not** the enumeration source — it is a per-run in-memory set of repos this
+process has already touched, so on a fresh launch it is empty and the dashboard
+would be blank until the operator visited each business one at a time, which is
+the exact problem the page exists to remove.
+
+**A dashboard must not gate every repo in the sidebar.** `buildex-brain:scan` is
+what puts the gate, the skill links and the company context in order — right for
+a repo somebody runs a business out of, wrong for the other eleven. So the sweep
+probes first (`resolve`, then `fs.readDir` of the brain root, both side-effect
+free) and only scans repos that already hold a brain. A missing directory means
+"not a business"; **any other error means BuildEx could not look**, and that
+renders as a degraded row rather than dropping the business.
+
+**SSH repos are probed over their connection, never resolved locally.**
+`resolveBrainLocation` stats the local filesystem, so asking it about
+`/home/ubuntu/acme` answers about a local directory that merely shares the path.
+A remote business is listed and marked as readable only where it lives.
+
+**No divergence column.** The brief asked for a diverged flag on external
+brains; there is no read-only way to compute one from existing IPC.
+`buildexBrain.pull` fetches and fast-forwards (a mutation, fanned out over N
+companies), and `git:status` throws `Access denied` for any path that is not a
+registered worktree or repo root — which an external brain repo never is. The
+column reports **where the brain lives and whether this machine has it** instead
+(`In repo` / `Own repo` / `Shared` / `Not cloned here` / `Brain missing` /
+`Not a git repo`), which is true without a network call. Adding divergence needs
+a read-only ahead/behind IPC; that is a deliberate gap, not an oversight.
 
 ---
 
@@ -378,8 +412,9 @@ end-to-end launch caught it. **After adding a surface, always run
 `tests/e2e/buildex-surfaces.spec.ts`.**
 
 **2. `previousViewBefore*` are hand-duplicated unions, not `Exclude<>`.**
-Eight copies of `TopLevelView` minus one member. Every new BuildEx view costs 8
-edits. *Candidate refactor:* rewrite them as `Exclude<TopLevelView, 'x'>` to make
+Copies of `TopLevelView` minus one member. Every new BuildEx view costs one edit
+per upstream copy — 7 as of the Portfolio. (BuildEx's own three are written as
+`Exclude<>` and cost nothing.) *Candidate refactor:* rewrite them as `Exclude<TopLevelView, 'x'>` to make
 future views free — deferred because it rewrites upstream declarations, and the
 conflict cost of that rewrite may exceed the 8 edits it saves.
 

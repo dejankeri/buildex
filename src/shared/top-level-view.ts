@@ -12,7 +12,8 @@ const TOP_LEVEL_VIEW_LOOKUP: Record<TopLevelView, true> = {
   skills: true,
   mobile: true,
   brain: true,
-  store: true
+  store: true,
+  portfolio: true
 }
 
 export function isTopLevelView(value: unknown): value is TopLevelView {

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Brain, Store } from 'lucide-react'
+import { Brain, Building2, Store } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
@@ -47,10 +47,19 @@ export function BuildExNavEntries(): React.JSX.Element {
   const activeView = useAppStore((s) => s.activeView)
   const openBrainPage = useAppStore((s) => s.openBrainPage)
   const openStorePage = useAppStore((s) => s.openStorePage)
+  const openPortfolioPage = useAppStore((s) => s.openPortfolioPage)
 
-  // The company's two surfaces: what it knows, and what it can do.
+  // Portfolio leads: it is the only entry that is not about the repo the
+  // operator happens to be standing in. Below it, the company's two surfaces —
+  // what it knows, and what it can do.
   return (
     <>
+      <BuildExNavButton
+        active={activeView === 'portfolio'}
+        onClick={openPortfolioPage}
+        icon={Building2}
+        label={translate('buildex.sidebar.nav.portfolio', 'Portfolio')}
+      />
       <BuildExNavButton
         active={activeView === 'brain'}
         onClick={openBrainPage}

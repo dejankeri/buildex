@@ -15,7 +15,8 @@ const RIGHT_SIDEBAR_SUPPRESSED_VIEWS = new Set<ActiveView>([
   // beside them let the operator click a file and watch nothing happen — the
   // page stayed put and the editor opened behind it.
   'store',
-  'brain'
+  'brain',
+  'portfolio'
 ])
 
 export function canShowRightSidebarForView(activeView: ActiveView): boolean {

@@ -324,6 +324,7 @@ const MobilePage = lazy(() => import('./components/mobile/MobilePage'))
 // BuildEx: company surfaces. See BUILDEX-PATCHES.md.
 const BrainPage = lazy(() => import('./components/buildex-brain/BrainPage'))
 const StorePage = lazy(() => import('./components/buildex-store/StorePage'))
+const PortfolioPage = lazy(() => import('./components/buildex-portfolio/PortfolioPage'))
 const QuickOpen = lazy(() => import('./components/QuickOpen'))
 const WorktreeJumpPalette = lazy(() => import('./components/WorktreeJumpPalette'))
 const WorkspaceCleanupDialog = lazy(
@@ -2269,6 +2270,7 @@ function App(): React.JSX.Element {
                               {activeView === 'mobile' ? <MobilePage /> : null}
                               {activeView === 'brain' ? <BrainPage /> : null}
                               {activeView === 'store' ? <StorePage /> : null}
+                              {activeView === 'portfolio' ? <PortfolioPage /> : null}
                               {activeView === 'terminal' &&
                               creationLayoutActive &&
                               activePendingCreationId ? (

@@ -14,6 +14,7 @@ export function resolveZoomTarget(args: {
     | 'mobile'
     | 'brain'
     | 'store'
+    | 'portfolio'
   activeTabType: 'terminal' | 'editor' | 'browser' | 'simulator'
   activeElement: unknown
 }): 'terminal' | 'editor' | 'simulator' | 'ui' {

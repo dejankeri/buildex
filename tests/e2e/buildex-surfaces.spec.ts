@@ -327,6 +327,44 @@ test('the store opens from the sidebar and apps do not', async ({ orcaPage }) =>
   await orcaPage.screenshot({ path: proofPath('store-page.png') })
 })
 
+test('the portfolio lists a business the operator is not standing in', async ({
+  orcaPage,
+  testRepoPath
+}) => {
+  // Why: this is Trap 1 in BUILDEX-PATCHES.md. A new TopLevelView compiles,
+  // renders its button, and does nothing when a registration is missed — only a
+  // real launch catches it. It also proves the whole point of the page: the
+  // brain's numbers reach it without the Brain page ever being opened.
+  mkdirSync(path.join(testRepoPath, '.buildex', 'strategy'), { recursive: true })
+  writeFileSync(
+    path.join(testRepoPath, '.buildex', 'strategy', 'overview.md'),
+    '# Overview\n',
+    'utf8'
+  )
+
+  await orcaPage.getByRole('button', { name: 'Portfolio', exact: true }).click()
+  await expect(orcaPage.getByRole('heading', { name: 'Portfolio' })).toBeVisible()
+
+  // Read-only: the columns are a reading of the repo, and the row links back
+  // into the per-repo surfaces rather than acting on them here.
+  await expect(orcaPage.getByText('Business', { exact: true })).toBeVisible()
+  await expect(orcaPage.getByText('Last run', { exact: true })).toBeVisible()
+  await expect(orcaPage.getByText(/sections/).first()).toBeVisible()
+
+  await orcaPage.screenshot({ path: proofPath('portfolio-page.png') })
+})
+
+test('a portfolio cell opens the per-repo surface it summarises', async ({ orcaPage }) => {
+  await orcaPage.getByRole('button', { name: 'Portfolio', exact: true }).click()
+  await expect(orcaPage.getByRole('heading', { name: 'Portfolio' })).toBeVisible()
+
+  await orcaPage
+    .getByRole('button', { name: /brain$/ })
+    .first()
+    .click()
+  await expect(orcaPage.getByRole('heading', { name: 'Company Brain' })).toBeVisible()
+})
+
 test('the brain is a full-screen surface beside the store', async ({ orcaPage }) => {
   // Why: the Brain lives on the left rail next to the Store, not in the right
   // panel — and Orca's own right-sidebar tabs are left exactly as they were.

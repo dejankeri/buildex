@@ -14153,7 +14153,8 @@
       "nav": {
         "apps": "Apps",
         "store": "Store",
-        "brain": "Brain"
+        "brain": "Brain",
+        "portfolio": "Portfolio"
       }
     },
     "composer": {
@@ -14178,6 +14179,47 @@
       },
       "version": "BuildEx {{version}} — built on Orca",
       "viewUpstream": "View Orca"
+    },
+    "portfolio": {
+      "page": {
+        "title": "Portfolio",
+        "refresh": "Refresh"
+      },
+      "empty": {
+        "title": "No businesses yet",
+        "hint": "A repo becomes a business when you set up its company brain. Open Brain in a project to start one."
+      },
+      "footer": {
+        "one": "One business. Read-only — every cell opens the surface it summarises.",
+        "many": "{{value0}} businesses. Read-only — every cell opens the surface it summarises."
+      },
+      "placement": {
+        "inRepo": "In repo",
+        "separateRepo": "Own repo",
+        "shared": "Shared",
+        "notCloned": "Not cloned here",
+        "missing": "Brain missing",
+        "notARepo": "Not a git repo"
+      },
+      "degraded": {
+        "remote": "On a remote host — open this business to read its brain there.",
+        "unreadable": "BuildEx could not read this brain just now."
+      },
+      "brain": {
+        "notSetUp": "Not set up",
+        "summary": "{{value0}} docs · {{value1}}/{{value2}} sections"
+      },
+      "run": {
+        "never": "Never"
+      },
+      "column": {
+        "business": "Business",
+        "brain": "Brain",
+        "unsaved": "Unsaved",
+        "lastRun": "Last run",
+        "apps": "Apps",
+        "brainRepo": "Brain repo"
+      }
     }
   }
 }

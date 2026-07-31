@@ -613,6 +613,7 @@ export type UISlice = {
     | 'mobile'
     | 'brain'
     | 'store'
+    | 'portfolio'
   previousViewBeforeSettings:
     | 'terminal'
     | 'tasks'
@@ -623,6 +624,7 @@ export type UISlice = {
     | 'mobile'
     | 'brain'
     | 'store'
+    | 'portfolio'
   previousViewBeforeActivity:
     | 'terminal'
     | 'settings'
@@ -633,6 +635,7 @@ export type UISlice = {
     | 'mobile'
     | 'brain'
     | 'store'
+    | 'portfolio'
   previousViewBeforeAutomations:
     | 'terminal'
     | 'settings'
@@ -643,6 +646,7 @@ export type UISlice = {
     | 'mobile'
     | 'brain'
     | 'store'
+    | 'portfolio'
   previousViewBeforeSpace:
     | 'terminal'
     | 'settings'
@@ -653,6 +657,7 @@ export type UISlice = {
     | 'mobile'
     | 'brain'
     | 'store'
+    | 'portfolio'
   previousViewBeforeSkills:
     | 'terminal'
     | 'settings'
@@ -663,6 +668,7 @@ export type UISlice = {
     | 'mobile'
     | 'brain'
     | 'store'
+    | 'portfolio'
   previousViewBeforeMobile:
     | 'terminal'
     | 'settings'
@@ -673,13 +679,17 @@ export type UISlice = {
     | 'skills'
     | 'brain'
     | 'store'
+    | 'portfolio'
   // BuildEx: company surfaces. See BUILDEX-PATCHES.md.
   previousViewBeforeBrain: Exclude<TopLevelView, 'brain'>
   previousViewBeforeStore: Exclude<TopLevelView, 'store'>
+  previousViewBeforePortfolio: Exclude<TopLevelView, 'portfolio'>
   openBrainPage: () => void
   closeBrainPage: () => void
   openStorePage: () => void
   closeStorePage: () => void
+  openPortfolioPage: () => void
+  closePortfolioPage: () => void
   setActiveView: (view: UISlice['activeView']) => void
   taskPageData: {
     preselectedRepoId?: string
@@ -1251,6 +1261,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   previousViewBeforeMobile: 'terminal',
   previousViewBeforeBrain: 'terminal',
   previousViewBeforeStore: 'terminal',
+  previousViewBeforePortfolio: 'terminal',
   setActiveView: (view) => set({ activeView: view }),
   taskPageData: {},
   taskResumeState: undefined,
@@ -1526,6 +1537,16 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   closeStorePage: () =>
     set((state) => ({
       activeView: state.previousViewBeforeStore
+    })),
+  openPortfolioPage: () =>
+    set((state) => ({
+      activeView: 'portfolio',
+      previousViewBeforePortfolio:
+        state.activeView === 'portfolio' ? state.previousViewBeforePortfolio : state.activeView
+    })),
+  closePortfolioPage: () =>
+    set((state) => ({
+      activeView: state.previousViewBeforePortfolio
     })),
   setNewWorkspaceDraft: (draft) => set({ newWorkspaceDraft: draft }),
   clearNewWorkspaceDraft: () => set({ newWorkspaceDraft: null }),
