@@ -1,12 +1,17 @@
 import React, { useState } from 'react'
-import { GitCommitVertical, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, GitCommitVertical, Loader2 } from 'lucide-react'
 import { translate } from '@/i18n/i18n'
 import type { BrainHistoryResult } from '../../../../shared/buildex-brain-types'
+import BrainSaveDiff from './BrainSaveDiff'
 
 // The brain's history: `git log -- .buildex/`, rendered.
 //
 // No parallel record, no LLM — the repo is the source, so what this shows and
 // what a teammate sees after a pull cannot drift apart.
+//
+// A save opens into its own diff rather than the current documents. Scheduled
+// runs write here overnight, and "what did that night add" is not a question
+// today's version of the file can answer.
 
 /** Nothing to say (embedded, or shared fine), a brain with no remote, or a real failure. */
 type ShareState = null | { kind: 'local-only' } | { kind: 'failed'; detail: string }
@@ -56,6 +61,7 @@ export default function BrainHistory({
   // and a retry cannot change it.
   const [share, setShare] = useState<ShareState>(null)
   const [sharing, setSharing] = useState(false)
+  const [openHash, setOpenHash] = useState<string | null>(null)
   const now = Date.now()
 
   const save = async (): Promise<void> => {
@@ -125,15 +131,28 @@ export default function BrainHistory({
                 className="-ml-[1.4rem] mt-0.5 shrink-0 bg-background text-muted-foreground"
               />
               <div className="min-w-0 flex-1 pb-4">
-                <div className="flex items-baseline gap-2">
+                <button
+                  type="button"
+                  aria-expanded={openHash === save_.hash}
+                  onClick={() => setOpenHash(openHash === save_.hash ? null : save_.hash)}
+                  className="flex w-full items-baseline gap-2 rounded-md px-1 py-0.5 text-left hover:bg-accent"
+                >
+                  {openHash === save_.hash ? (
+                    <ChevronDown size={12} className="shrink-0 self-center text-muted-foreground" />
+                  ) : (
+                    <ChevronRight
+                      size={12}
+                      className="shrink-0 self-center text-muted-foreground"
+                    />
+                  )}
                   <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
                     {save_.subject}
                   </span>
                   <span className="shrink-0 text-[11px] text-muted-foreground">
                     {relativeTime(save_.timestamp, now)}
                   </span>
-                </div>
-                <div className="mt-0.5 flex flex-wrap gap-x-2 text-[11px] text-muted-foreground/70">
+                </button>
+                <div className="mt-0.5 flex flex-wrap gap-x-2 pl-[1.375rem] text-[11px] text-muted-foreground/70">
                   {save_.changedPaths.map((changedPath) => (
                     <button
                       key={changedPath}
@@ -145,6 +164,9 @@ export default function BrainHistory({
                     </button>
                   ))}
                 </div>
+                {openHash === save_.hash ? (
+                  <BrainSaveDiff repoPath={repoPath} hash={save_.hash} />
+                ) : null}
               </div>
             </li>
           ))}

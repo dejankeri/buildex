@@ -14125,6 +14125,20 @@
       },
       "attachment": {
         "open": "Open outside BuildEx"
+      },
+      "diff": {
+        "added": "added",
+        "modified": "changed",
+        "deleted": "deleted",
+        "renamed": "renamed",
+        "copied": "copied",
+        "changed": "changed",
+        "binary": "Not text — there is nothing to show line by line.",
+        "truncated": "Long diff — the rest is in the document.",
+        "loading": "Reading this save…",
+        "unavailable": "This save could not be read from git.",
+        "empty": "This save changed nothing in the brain.",
+        "moreFiles": "More files changed than are shown here."
       }
     },
     "sidebar": {

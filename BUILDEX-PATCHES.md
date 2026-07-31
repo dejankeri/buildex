@@ -111,8 +111,8 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 | `src/main/buildex-brain/*`, `src/main/buildex-store/*` | **BuildEx-owned** domain layers |
 | `src/main/ipc/buildex-brain.ts`, `buildex-brain-placement.ts`, `buildex-store.ts`, `buildex-automation-context.ts` | **BuildEx-owned** IPC modules |
 | `src/main/ipc/register-core-handlers.ts` | 4 imports + 4 registration calls |
-| `src/preload/index.ts` | 5 type imports + 5 api namespaces |
-| `src/preload/api-types.ts` | 5 type imports + 5 members on `PreloadApi` |
+| `src/preload/index.ts` | 5 type imports + 5 api namespaces (+2 type imports and 1 member for `buildexBrainSections.saveDiff`) |
+| `src/preload/api-types.ts` | 5 type imports + 5 members on `PreloadApi` (+2 type imports and 1 member for `saveDiff`) |
 | `resources/build/icon.{png,icns,ico}`, `resources/{icon,icon-dev}.png`, `resources/logo.svg` | BuildEx artwork |
 | `src/main/buildex-repo-init.ts`, `buildex-worktree-init.ts` | **BuildEx-owned.** Everything a repo and a fresh checkout need before an agent works there |
 | `src/main/buildex-company-identity.ts` | **BuildEx-owned.** Which business a path belongs to — the key everything stored per company is filed under |
@@ -207,6 +207,24 @@ lands in `pack-credentials/<companyKey>/`, which is why disconnecting is a
 every business, so removing it would disconnect companies the operator said
 nothing about, and leaving it unshadowed would reconnect the plugin the instant
 they disconnected it.
+
+**A brain diff reuses Orca's diff renderer, not its diff parser.**
+`BrainSaveDiff.tsx` renders through upstream's `NativeChatDiffView`, but the
+lines are classified in `brain-save-diff.ts` and arrive over the wire already
+typed as `NativeChatDiffLine`. Upstream's sibling parser, `diffFromText`, returns
+`null` below two changed lines — a chat heuristic for "is this text even a diff",
+and exactly wrong for a brain, where the commit that appends one bullet to
+`rules/operating.md` is the common case. Nothing in `src/shared/native-chat-diff.ts`
+or `NativeChatDiffView.tsx` is edited; both are imported as they are.
+
+**`git show` is pinned, not left to config.** `show --format= -M --no-color
+--no-ext-diff --no-textconv`, twice: once with `-z --name-status` for paths and
+rename detection, once with `--patch` for the lines, paired by position. Every
+flag predates Git 2.25. `-M` because `diff.renames=false` in an operator's config
+would otherwise turn a rename into an add plus a delete; `--no-ext-diff` and
+`--no-textconv` because a global diff driver would replace the patch with its own
+output. The commit argument is checked against `/^[0-9a-f]{7,40}$/` before it is
+passed, so no revision expression and no leading-dash option can reach git.
 
 **A gate write is only ever as complete as the catalogue behind it.** The rules
 must come from the shelf *that company* sees — `readCompanyStoreEntries(location)`,

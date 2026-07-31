@@ -27,7 +27,7 @@ const RECORD = '\x1e'
 
 // Embedded mode's pathspec is a prefix to strip; external's `.` already yields
 // brain-relative paths, and stripping there would eat the first path segment.
-function toBrainRelative(location: BrainLocation, repoRelative: string): string {
+export function toBrainRelative(location: BrainLocation, repoRelative: string): string {
   if (location.pathspec === '.') {
     return repoRelative
   }

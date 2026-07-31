@@ -60,6 +60,16 @@ test('a repo with no brain is offered setup rather than given one', async ({
   ).toContain('We help fitness coaches run their business.')
   expect(existsSync(path.join(testRepoPath, '.buildex', 'finance'))).toBe(false)
 
+  // The capture convention arrives with the brain, and reaches the agent: a
+  // skill nobody linked by hand is a skill the agent never sees.
+  expect(
+    readFileSync(
+      path.join(testRepoPath, '.buildex', 'skills', 'record-decision', 'SKILL.md'),
+      'utf8'
+    )
+  ).toContain('# Record a decision')
+  expect(existsSync(path.join(testRepoPath, '.claude', 'skills', 'record-decision'))).toBe(true)
+
   await orcaPage.screenshot({ path: proofPath('brain-setup.png') })
 })
 

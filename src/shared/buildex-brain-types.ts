@@ -2,6 +2,8 @@
 // is sorted, so scanning the same tree twice yields byte-identical output. No
 // model is involved at any point — this is a rendering of files on disk.
 
+import type { NativeChatDiffLine } from './native-chat-diff'
+
 export type BrainDocument = {
   /** Repo-relative POSIX path, e.g. `knowledge/method.md`. Stable node id. */
   id: string
@@ -206,6 +208,40 @@ export type BrainHistoryResult = {
   unavailable: boolean
   /** Brain-relative paths changed since the last save. */
   unsavedPaths: string[]
+}
+
+/** What one save did to one file. `changed` covers git's rarer letters (type change, unmerged). */
+export type BrainDiffStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'changed'
+
+export type BrainSaveDiffFile = {
+  /** Brain-relative path as of this save. */
+  path: string
+  /** Brain-relative path before it, when this save renamed or copied the file. */
+  previousPath?: string
+  status: BrainDiffStatus
+  /** Git holds this one as bytes: there is no text diff to show, and that is not an error. */
+  binary: boolean
+  /**
+   * The file's diff, already classified. Empty for a binary file and for a pure
+   * rename, both of which the renderer says in words instead.
+   */
+  lines: NativeChatDiffLine[]
+  /** True when this file's diff was cut short to keep the panel bounded. */
+  truncated: boolean
+}
+
+export type BrainSaveDiffRequest = {
+  repoPath: string
+  /** Full or abbreviated commit hash, from {@link BrainSave}. */
+  hash: string
+}
+
+export type BrainSaveDiffResult = {
+  files: BrainSaveDiffFile[]
+  /** True when files past the cap were dropped. */
+  truncated: boolean
+  /** Git could not produce this diff — no repo, or a hash it does not know. */
+  unavailable: boolean
 }
 
 export type BrainSaveRequest = {

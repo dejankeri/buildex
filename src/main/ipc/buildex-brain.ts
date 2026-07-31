@@ -10,6 +10,8 @@ import type {
   BrainHistoryRequest,
   BrainHistoryResult,
   BrainResolution,
+  BrainSaveDiffRequest,
+  BrainSaveDiffResult,
   BrainSaveRequest,
   BrainSaveResult,
   BrainScan,
@@ -31,6 +33,7 @@ import { createBrainEntity } from '../buildex-brain/brain-entity-create'
 import { embeddedLocation } from '../buildex-brain/brain-location'
 import { requireBrainLocation, resolveBrainLocation } from './authorized-brain-location'
 import { readBrainHistory, saveBrain } from '../buildex-brain/brain-history'
+import { readBrainSaveDiff } from '../buildex-brain/brain-save-diff'
 import { createBrainSkill, listBrainSkills } from '../buildex-brain/brain-skills'
 import { relinkBrainSkills } from '../buildex-brain/skill-link'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
@@ -90,6 +93,21 @@ export function registerBuildExBrainHandlers(): void {
         return { saves: [], unavailable: true, unsavedPaths: [] }
       }
       return readBrainHistory(location, request?.limit)
+    }
+  )
+
+  // Why: what a save changed, not what the documents say now. Agents write to
+  // the brain on scheduled runs, and reviewing that means reading the diff.
+  ipcMain.handle(
+    'buildex-brain:saveDiff',
+    async (_event, request?: BrainSaveDiffRequest): Promise<BrainSaveDiffResult> => {
+      const repoPath = request?.repoPath?.trim()
+      const hash = request?.hash?.trim()
+      const location = repoPath ? requireBrainLocation(repoPath) : null
+      if (!location || !hash) {
+        return { files: [], truncated: false, unavailable: true }
+      }
+      return readBrainSaveDiff(location, hash)
     }
   )
 

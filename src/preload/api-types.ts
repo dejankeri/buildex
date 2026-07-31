@@ -375,6 +375,8 @@ import type {
   BrainCreateEntityResult,
   BrainHistoryRequest,
   BrainHistoryResult,
+  BrainSaveDiffRequest,
+  BrainSaveDiffResult,
   BrainSaveRequest,
   BrainSaveResult,
   BrainSectionsResult,
@@ -2399,6 +2401,7 @@ export type PreloadApi = {
     createEntity: (request: BrainCreateEntityRequest) => Promise<BrainCreateEntityResult>
     history: (request: BrainHistoryRequest) => Promise<BrainHistoryResult>
     save: (request: BrainSaveRequest) => Promise<BrainSaveResult>
+    saveDiff: (request: BrainSaveDiffRequest) => Promise<BrainSaveDiffResult>
     skills: (request: BrainSkillsRequest) => Promise<BrainSkillsResult>
     createSkill: (request: BrainSkillCreateRequest) => Promise<BrainSkillCreateResult>
   }

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { BrainLocation } from '../../shared/buildex-brain-types'
+import { seedCaptureSkill } from './capture-skill-seed'
 
 // The shape a new company brain starts in.
 //
@@ -255,6 +256,14 @@ export function scaffoldCompanyBrain(
     } catch {
       // A section we cannot create is not worth failing the rest for.
     }
+  }
+
+  // Regardless of which sections were chosen: capture is how anything reaches
+  // any of them, and a brain set up without it depends on the operator saying
+  // where to write every time.
+  const skill = seedCaptureSkill(location)
+  if (skill) {
+    created.push(skill)
   }
 
   return { created: created.sort() }

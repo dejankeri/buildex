@@ -117,6 +117,8 @@ import type {
   BrainCreateEntityResult,
   BrainHistoryRequest,
   BrainHistoryResult,
+  BrainSaveDiffRequest,
+  BrainSaveDiffResult,
   BrainSaveRequest,
   BrainSaveResult,
   BrainSectionsResult,
@@ -2355,6 +2357,8 @@ const api = {
       ipcRenderer.invoke('buildex-brain:history', request),
     save: (request: BrainSaveRequest): Promise<BrainSaveResult> =>
       ipcRenderer.invoke('buildex-brain:save', request),
+    saveDiff: (request: BrainSaveDiffRequest): Promise<BrainSaveDiffResult> =>
+      ipcRenderer.invoke('buildex-brain:saveDiff', request),
     skills: (request: BrainSkillsRequest): Promise<BrainSkillsResult> =>
       ipcRenderer.invoke('buildex-brain:skills', request),
     createSkill: (request: BrainSkillCreateRequest): Promise<BrainSkillCreateResult> =>
