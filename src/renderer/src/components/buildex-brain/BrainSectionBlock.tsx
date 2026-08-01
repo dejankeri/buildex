@@ -287,15 +287,10 @@ function AddControl({
 }
 
 function countLabel(node: BrainNode): string {
-  // One unit per section, so the rail and this header never disagree: a section
-  // of entities is counted in entities, everything else in documents.
-  if (node.entityCount > 0) {
-    return node.entityCount === 1
-      ? translate('buildex.brain.sections.entityCountOne', '1 entity')
-      : translate('buildex.brain.sections.entityCount', '{{value0}} entities', {
-          value0: node.entityCount
-        })
-  }
+  // One unit everywhere, so the rail and this header never disagree — and one
+  // word. A section that counted itself in "entities" was the last place the
+  // retired taxonomy still spoke to the operator: twenty client folders read as
+  // "20 entities" while every other count in the app was documents.
   return node.documentCount === 1
     ? translate('buildex.brain.sections.documentCountOne', '1 document')
     : translate('buildex.brain.sections.documentCount', '{{value0}} documents', {

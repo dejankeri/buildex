@@ -73,8 +73,12 @@ function inspectLink(linkPath: string, targetPath: string): LinkState {
  *
  * Never replaces a real directory: if something other than our link is sitting
  * there, it is the operator's and the caller is told to leave it alone.
+ *
+ * Deliberately not exported. It is the fallback-free half of the job, and an
+ * entry point that links and gives up is exactly the shape of the hole this
+ * file just closed — every caller goes through `serveSkillInAgentDir`.
  */
-export function linkSkillIntoAgentDir(
+function linkSkillIntoAgentDir(
   repoPath: string,
   location: BrainLocation,
   skillName: string
@@ -113,15 +117,21 @@ export function linkSkillIntoAgentDir(
   }
 }
 
-export type CopyOutcome = 'copied' | 'occupied' | 'failed'
+export type CopyOutcome = 'copied' | 'already-copied' | 'failed'
 
 /**
  * Put the pack's files where a symlink could not go.
  *
- * Only ever writes into a free path. A directory already at that name is either
- * the operator's own skill or a copy an earlier sync made — in both cases the
- * agent already loads something there, and replacing it would either destroy
- * their work or silently rewrite files they may have edited.
+ * Only ever writes into a free path. A real directory already at that name is
+ * `already-copied`: on a machine that cannot symlink it is this function's own
+ * work from an earlier sync, and it is left exactly as it is rather than
+ * rewritten over files somebody may have edited. It is reported as **served**,
+ * not as a failure — a skill that loads is a skill that loads, and calling it
+ * unavailable would invert the one signal this whole fallback exists to give.
+ *
+ * The case it cannot tell apart is a skill the operator wrote by hand under a
+ * name the brain also uses. That one loads too, so nothing is broken; which of
+ * the two it is needs a receipt this deliberately does not keep.
  */
 export function copySkillIntoAgentDir(
   repoPath: string,
@@ -135,7 +145,7 @@ export function copySkillIntoAgentDir(
     const existing = lstatSync(destination)
     // A symlink here is one we could neither reuse nor remove; copying onto it
     // writes through to whatever it points at, which may be the brain itself.
-    return existing.isSymbolicLink() ? 'failed' : 'occupied'
+    return existing.isSymbolicLink() ? 'failed' : 'already-copied'
   } catch {
     // Nothing there — the only case this may write.
   }
@@ -149,7 +159,8 @@ export function copySkillIntoAgentDir(
   }
 }
 
-export type ServeOutcome = LinkOutcome | 'copied' | 'unavailable'
+/** Four ways a skill is loadable and one way it is not. `unavailable` is the only failure. */
+export type ServeOutcome = 'linked' | 'already-linked' | 'copied' | 'already-copied' | 'unavailable'
 
 /**
  * Make a skill loadable, whatever this machine can do.
@@ -157,6 +168,11 @@ export type ServeOutcome = LinkOutcome | 'copied' | 'unavailable'
  * The single place the fallback policy lives, because both callers — the sync
  * that walks the brain and the one that has just written a new skill — fail the
  * same silent way without it.
+ *
+ * The outcomes mirror each other on purpose: `linked`/`already-linked` and
+ * `copied`/`already-copied` each say "served, and here is whether work happened".
+ * Nothing reads these yet, and that is exactly why they have to be right — the
+ * first screen to render a warning from them inherits whatever they mean now.
  */
 export function serveSkillInAgentDir(
   repoPath: string,
@@ -167,9 +183,8 @@ export function serveSkillInAgentDir(
   if (outcome !== 'needs-copy') {
     return outcome
   }
-  return copySkillIntoAgentDir(repoPath, location, skillName) === 'copied'
-    ? 'copied'
-    : 'unavailable'
+  const copied = copySkillIntoAgentDir(repoPath, location, skillName)
+  return copied === 'failed' ? 'unavailable' : copied
 }
 
 /** Drop our link (never a real directory) when a pack goes away. */
@@ -253,10 +268,11 @@ export function unlinkBrainSkills(repoPath: string, location: BrainLocation): st
 }
 
 export type RelinkResult = {
+  /** Served by a symlink, made now or already there. */
   linked: string[]
-  /** Skills a symlink could not serve and a copy did. */
+  /** Served by a copy, made now or already there — the symlink-less machine's steady state. */
   copied: string[]
-  /** Skills neither could serve: the name is taken by something not ours, or the copy failed. */
+  /** Neither could serve it. The only failure bucket; empty is what healthy looks like. */
   unavailable: string[]
   pruned: string[]
 }
@@ -297,7 +313,7 @@ export function relinkBrainSkills(repoPath: string, location: BrainLocation): Re
     // was silently absent — no error, no empty state, just an agent that had
     // never heard of the company's packs.
     const outcome = serveSkillInAgentDir(repoPath, location, entry)
-    if (outcome === 'copied') {
+    if (outcome === 'copied' || outcome === 'already-copied') {
       copied.push(entry)
     } else if (outcome === 'unavailable') {
       unavailable.push(entry)

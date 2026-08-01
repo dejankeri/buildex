@@ -132,8 +132,11 @@ export default function BrainSections({
                 )}
               >
                 <span className="min-w-0 flex-1 truncate">{node.title}</span>
+                {/* Documents, like every other count in the app — the rail and
+                    the section header have to be the same number in the same
+                    unit, and "entities" was a unit only this screen used. */}
                 <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/60">
-                  {node.entityCount > 0 ? node.entityCount : node.documentCount}
+                  {node.documentCount}
                 </span>
               </button>
             </li>

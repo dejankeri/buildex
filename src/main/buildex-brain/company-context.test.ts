@@ -270,9 +270,9 @@ describe('renderCompanyContext', () => {
   })
 
   it('cuts a description harder for the map than for the tree', async () => {
-    // 160 is what a Brain row can afford. This file is read in
-    // full every session and takes half, so the same document reads longer in the
-    // app than it does in the agent's prompt — on purpose.
+    // 160 is what a Brain row can afford. This file is read in full every
+    // session and takes half, so the same document reads longer in the app
+    // than it does in the agent's prompt — on purpose.
     const long = `${'situation '.repeat(30)}end`
     write('decisions/pricing.md', `---\ndescription: ${long}\n---\n\n# Pricing\n`)
 

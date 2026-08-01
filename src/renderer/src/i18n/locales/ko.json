@@ -14027,12 +14027,10 @@
         "empty": "Nothing here yet",
         "nameIt": "Name it, then Enter",
         "add": "Add",
-        "entityCount": "{{value0}} entities",
         "documentCount": "{{value0}} documents",
         "createFailed": "Could not create it",
         "filter": "Filter",
         "noMatches": "Nothing matches that",
-        "entityCountOne": "1 entity",
         "documentCountOne": "1 document",
         "newDocument": "New document",
         "newFolder": "New folder"

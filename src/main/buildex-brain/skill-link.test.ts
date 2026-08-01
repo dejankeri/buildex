@@ -16,8 +16,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { embeddedLocation, externalLocation } from './brain-location'
 import {
   copySkillIntoAgentDir,
-  linkSkillIntoAgentDir,
   relinkBrainSkills,
+  serveSkillInAgentDir,
   skillsRoot,
   unlinkBrainSkills
 } from './skill-link'
@@ -68,7 +68,9 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-describe('linkSkillIntoAgentDir', () => {
+// The only entry point. `linkSkillIntoAgentDir` is private precisely because it
+// can give up, and nothing may reach the giving-up half on its own.
+describe('serveSkillInAgentDir', () => {
   it('replaces a link that resolves nowhere instead of refusing forever', () => {
     // Exactly what a migration leaves behind: the relative link an embedded
     // brain got, pointing at a `.buildex/` that has gone.
@@ -82,7 +84,7 @@ describe('linkSkillIntoAgentDir', () => {
 
     // Was 'needs-copy' — a dangling link is invisible to existsSync, so the
     // symlink call threw EEXIST and every later install failed the same way.
-    expect(linkSkillIntoAgentDir(repo, externalLocation(brain), 'slack-search')).toBe('linked')
+    expect(serveSkillInAgentDir(repo, externalLocation(brain), 'slack-search')).toBe('linked')
     expect(realpathSync(agentSkill('slack-search'))).toBe(
       realpathSync(path.join(brain, 'skills', 'slack-search'))
     )
@@ -93,7 +95,9 @@ describe('linkSkillIntoAgentDir', () => {
     writeFileSync(path.join(agentSkill('ours'), 'SKILL.md'), '# Ours\n', 'utf8')
     writeSkill(brain, 'ours')
 
-    expect(linkSkillIntoAgentDir(repo, externalLocation(brain), 'ours')).toBe('needs-copy')
+    // Served, because a skill loads at that name — and untouched, because which
+    // skill it is cannot be known without a receipt.
+    expect(serveSkillInAgentDir(repo, externalLocation(brain), 'ours')).toBe('already-copied')
     expect(readFileSync(path.join(agentSkill('ours'), 'SKILL.md'), 'utf8')).toBe('# Ours\n')
   })
 })
@@ -164,15 +168,22 @@ describe('a machine that cannot symlink', () => {
     ).toBe('# Tiers\n')
   })
 
-  it('leaves the copy alone on the next sync rather than rewriting it', () => {
+  it('keeps reporting a working copy as served, sync after sync', () => {
+    // The steady state on this machine, and the one that has to stay right:
+    // every later sync finds its own copy and must not call a loading skill
+    // unavailable. `unavailable` is the only failure signal there is, and the
+    // first screen to render from it inherits whatever it means here.
     writeSkill(brain, 'how-we-price')
     relinkBrainSkills(repo, externalLocation(brain))
     writeFileSync(path.join(agentSkill('how-we-price'), 'NOTES.md'), '# Local\n', 'utf8')
 
-    const result = relinkBrainSkills(repo, externalLocation(brain))
+    const second = relinkBrainSkills(repo, externalLocation(brain))
+    const third = relinkBrainSkills(repo, externalLocation(brain))
 
-    expect(result.copied).toEqual([])
-    expect(result.unavailable).toEqual(['how-we-price'])
+    expect(second.copied).toEqual(['how-we-price'])
+    expect(second.unavailable).toEqual([])
+    expect(third).toEqual(second)
+    // Served without being rewritten: the file added beside it survives.
     expect(readFileSync(path.join(agentSkill('how-we-price'), 'NOTES.md'), 'utf8')).toBe(
       '# Local\n'
     )
@@ -183,7 +194,7 @@ describe('a machine that cannot symlink', () => {
     writeFileSync(path.join(agentSkill('ours'), 'SKILL.md'), '# Ours\n', 'utf8')
     writeSkill(brain, 'ours')
 
-    expect(copySkillIntoAgentDir(repo, externalLocation(brain), 'ours')).toBe('occupied')
+    expect(copySkillIntoAgentDir(repo, externalLocation(brain), 'ours')).toBe('already-copied')
     expect(readFileSync(path.join(agentSkill('ours'), 'SKILL.md'), 'utf8')).toBe('# Ours\n')
   })
 

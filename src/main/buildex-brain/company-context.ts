@@ -98,10 +98,10 @@ function renderApps(apps: InstalledAppSummary[], location: BrainLocation): strin
 
 /**
  * What this file is allowed to spend, enforced here rather than trusted to the
- * data. `DESCRIPTION_LIMIT` is 160 because that is what a Brain tree row and an
- * folder row can afford; this file is read *in full* at the start of every
- * agent session, so it takes half. A brain of two hundred entities is the
- * difference between 25 kB of prompt and 12 kB.
+ * data. `DESCRIPTION_LIMIT` is 160 because that is what a Brain tree row can
+ * afford; this file is read *in full* at the start of every agent session, so
+ * it takes half. A brain of two hundred entities is the difference between
+ * 25 kB of prompt and 12 kB.
  *
  * The per-folder slice is the other half of the same guard. A line is not
  * bounded just because it is one line: a flat `decisions/` of five hundred
