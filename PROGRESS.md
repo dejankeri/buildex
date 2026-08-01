@@ -87,7 +87,7 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
 | Full unit suite | 37 014 tests; only the recorded upstream baseline fails |
 | BuildEx unit tests | 142 passed (brain, packs, gate, store) |
 | `tests/e2e/buildex-surfaces.spec.ts` | 10/10 in real headless Electron |
-| Rebase drills vs live upstream | 3× clean, zero conflicts |
+| Rebase drill vs live upstream | 388 commits / 5.2 days: **19 conflict stops, 26 files, 4 needing judgment** (the earlier "3× clean" drills were against days-old gaps and 1-2 commits) |
 
 The e2e run writes its screenshots to `.buildex-proofs/`; that directory is
 gitignored working output, not a checked-in record.

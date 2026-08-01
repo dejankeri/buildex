@@ -222,9 +222,11 @@ Rebase against upstream **weekly**:
 git fetch upstream && git rebase upstream/main
 ```
 
-At ~20 touch points of 1-3 lines each that is a ten-minute job; let it slide a month and the renderer
-will have moved underneath you. Note that upstream main is not green — gate on *no new failures*,
-never *all green*.
+Measured against a real gap (388 upstream commits, 5.2 days) that is **19 conflict stops across 26
+files**, four of which need a human — not the ten-minute job this file used to claim. See the drill in
+[`BUILDEX-PATCHES.md`](BUILDEX-PATCHES.md#drill-2026-08-01--the-first-one-against-a-real-gap) before
+you start. Let it slide a month and the renderer will have moved underneath you. Note that upstream
+main is not green — gate on *no new failures*, never *all green*.
 
 ## License
 

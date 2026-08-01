@@ -16,7 +16,6 @@ diff to **3 lines**. Do that every time.
 ## BuildEx-owned files (zero conflict risk)
 
 ```
-src/renderer/src/components/right-sidebar/BrainPanel.tsx
 src/renderer/src/components/sidebar/BuildExNavEntries.tsx
 src/renderer/src/components/buildex-apps/AppsPage.tsx
 src/renderer/src/components/buildex-store/StorePage.tsx
@@ -505,17 +504,23 @@ reviewable diff instead of ~400 silent ones. Read it during each rebase.
 
 | File | Change |
 |---|---|
-| `src/shared/types.ts` | `'brain'` on `RightSidebarTab`; `'brain' \| 'store' \| 'portfolio'` on `TopLevelView` |
+| `src/shared/types.ts` | `'brain' \| 'store' \| 'portfolio'` on `TopLevelView`; `collapsedBrainSections` on `PersistedUIState`; a **dead** `'brain'` on `RightSidebarTab` — see below |
 | `src/shared/top-level-view.ts` | `Record<TopLevelView, true>` entries |
-| `src/renderer/src/store/right-sidebar-route.ts` | `'brain'` in the runtime allowlist |
 | `src/renderer/src/store/slices/ui.ts` | 7 upstream `previousViewBefore*` unions gain each new view; `previousViewBeforeBrain/Store/Portfolio` (`Exclude<>`, ours) + 6 open/close actions |
 | `src/renderer/src/hooks/resolve-zoom-target.ts` | `activeView` union |
 | `src/renderer/src/lib/right-sidebar-visibility.ts` | 3 members on `RIGHT_SIDEBAR_SUPPRESSED_VIEWS`. **Not typechecked** — the set is `Set<ActiveView>`, so a view left out silently keeps the file explorer beside a full-screen surface |
-| `src/renderer/src/components/right-sidebar/index.tsx` | `Brain` icon import + 1 activity item |
-| `src/renderer/src/components/right-sidebar/right-sidebar-panel-content.tsx` | lazy import + 1 render line |
 | `src/renderer/src/components/sidebar/SidebarNav.tsx` | **3 lines**: import + `<BuildExNavEntries />` |
 | `src/renderer/src/App.tsx` | 3 lazy imports + 3 render lines |
 | `src/renderer/src/i18n/locales/{en,es,ja,ko,zh}.json` | the `buildex.*` keys. **Adding one is generated** — run `pnpm run sync:localization-catalog` and take whatever it writes. **Removing or rewording one is a hand-edit** (see below). Count deliberately not stated: it grows with every BuildEx surface and a number here only rots |
+
+**The Brain is a top-level view, not a right-sidebar panel.** It started as one;
+`BrainPanel.tsx`, the activity-bar item, the lazy import in
+`right-sidebar-panel-content.tsx` and the `'brain'` entry in
+`right-sidebar-route.ts`'s allowlist are all gone, and those three upstream files
+are byte-identical to the merge-base again. What is left behind is a **dead
+`| 'brain'` on `RightSidebarTab`** in `src/shared/types.ts`: nothing produces it,
+the runtime allowlist rejects it, and it is one line of upstream conflict surface
+buying nothing. Delete it the next time `types.ts` is open.
 
 **The sync adds; it never prunes and never rewords.** `verify-localization-catalog.mjs --fix`
 inserts keys the source references and repairs *parity* between `en.json` and the
@@ -609,8 +614,9 @@ a read-only ahead/behind IPC; that is a deliberate gap, not an oversight.
 `normalizeRightSidebarRoute()` validates the tab against a *runtime string
 allowlist* and silently rewrites unknown values to `'explorer'`. The Brain tab
 compiled, rendered its button, and quietly did nothing when clicked. Only an
-end-to-end launch caught it. **After adding a surface, always run
-`tests/e2e/buildex-surfaces.spec.ts`.**
+end-to-end launch caught it. The Brain has since moved to a top-level view, but
+the allowlist is still there and still unreachable from the type system.
+**After adding a surface, always run `tests/e2e/buildex-surfaces.spec.ts`.**
 
 **2. `previousViewBefore*` are hand-duplicated unions, not `Exclude<>`.**
 Copies of `TopLevelView` minus one member. Every new BuildEx view costs one edit
@@ -619,10 +625,11 @@ per upstream copy — 7 as of the Portfolio. (BuildEx's own three are written as
 future views free — deferred because it rewrites upstream declarations, and the
 conflict cost of that rewrite may exceed the 8 edits it saves.
 
-**3. Brain must not be the first activity item.**
-`resolveRightSidebarEffectiveTab` falls back to `visibleItems[0]`. Leading with
-Brain would displace Explorer as the default and degrade the developer workflow
-this fork intends to keep.
+**3. Never lead the right sidebar's activity bar.**
+`resolveRightSidebarEffectiveTab` falls back to `visibleItems[0]`, so a BuildEx
+item placed first displaces Explorer as the default and degrades the developer
+workflow this fork intends to keep. (Cost the Brain its sidebar slot; it is a
+top-level view now, and the rule stands for whatever goes there next.)
 
 **4. E2E specs are CJS.** Use `__dirname`, not `import.meta.dirname`.
 
@@ -671,10 +678,151 @@ underneath you.
 **Current surface: 102 modified upstream files** (`git diff --name-only
 --diff-filter=M $(git merge-base HEAD upstream/main) HEAD | wc -l`), down from
 213 before WP-7 reverted the visible-copy rebrand. 56 carry structural or
-identity diffs; the other 46 are test files whose expectations read branded
-catalog output through the interceptor.
+identity diffs; the other 46 are **test files whose expectations read branded
+catalog output through the interceptor**. Those 46 are a *floor*, not a backlog:
+they have no source diff to mirror, so they cannot be unbranded without dropping
+`brandedTranslate` itself. Any target below ~56 files is arithmetically
+unreachable while the interceptor lives.
 
-Drill result 2026-07-26: rebased 2 commits across 1 upstream commit — **clean, zero conflicts**.
+### Drill, 2026-08-01 — the first one against a real gap
+
+The previous note here read "rebased 2 commits across 1 upstream commit — clean,
+zero conflicts", and README extrapolated a **ten-minute job** from it. Both were
+measuring a days-old gap and 2 commits. Measured properly:
+
+| | |
+|---|---|
+| Gap | **388 upstream commits over 5.2 days** — merge-base `a1a78da878` (2026-07-26) to `16c5526dfd` (2026-08-01) |
+| Replayed | **99 fork commits** |
+| Upstream rate | **1 795 commits in the preceding 4 weeks** (~450/week), so "weekly" means a ~450-commit gap |
+| **Conflict stops** | **19** |
+| **Distinct conflicted files** | **26** (38 file-conflict events — one file conflicts repeatedly as the replay walks past it; `electron-builder.config.cjs` stopped the rebase 5 times) |
+| Needing real judgment | **4 stops** |
+| Machine time | **9.2 s** — the clock is not the cost; the 19 decision points are |
+
+**Quote the stop count, not the file count.** A rebase stops once per *commit*
+that conflicts, so one hot file bills once per fork commit that touches it.
+
+**The conflicts that need a human.** Everything else was an adjacent-line
+insertion on both sides.
+
+| File | Why it is semantic |
+|---|---|
+| `UpdateCard.tsx` | Upstream moved release-URL construction into a new `src/shared/release-channel.ts` (channel-aware: `stablyai/orca` vs `orca-hourly`). The fork's local `releaseUrlForVersion` has **no upstream anchor left** — it must be re-expressed against the new module, not merged |
+| `package.json` `scripts.build:mac{,:release}` | Upstream added `config/scripts/build-mac-local.mjs` and its own verify step *inside the same lines* the fork rewrote. Correct resolution keeps upstream's new step **and** the BuildEx verifier |
+| `package.json` identity block | `name`/`version`/`description`/`homepage`/`author` — always ours, every rebase, forever. Cheap but unavoidable |
+| `SkillFreshnessUpdateDialog.test.tsx` | An interceptor-floor test whose upstream expectations moved underneath the branded ones |
+
+**The registration-only rule holds where it is followed.** `pty.ts`,
+`register-core-handlers.ts` and `App.tsx` — the dual-touched files this drill
+existed to stress — **did not conflict once** across 388 upstream commits.
+`preload/index.ts` and `api-types.ts` conflicted once each, mechanically. The
+files that hurt are the ones carrying *logic* the fork rewrote: build config,
+release URLs, `package.json`.
+
+**Replaying history costs more than reconciling trees.** A single 3-way merge of
+the same two tips conflicts in **19 files with no repetition**:
+
+```bash
+git merge-tree --write-tree HEAD upstream/main   # read-only; lists conflicts
+```
+
+Under `rebase`, five files conflict *twice* because the branch replays the Phase
+6 rebrand **and then WP-7's revert of it** — work whose net diff at HEAD is zero.
+Before the next rebase, consider whether the branch's history is worth replaying
+at all.
+
+**Seven of the 26 conflicted files carry no net fork diff at HEAD** —
+`feature-tips.ts`, `remote-runtime-client.ts`, `browser-search.ts`,
+`AiVaultSessionDropLayer.tsx`, `right-sidebar-panel-content.tsx`,
+`buildex-brain{,-placement}.ts`. They are pure replay artifacts, and **five of
+them ended the drill worse than they started**: the obvious "keep both sides"
+resolution re-introduced reverted rebrand copy and grew the surface from 102 to
+**107**. `feature-tips.ts` came out with a duplicate `title`/`description` pair —
+valid TypeScript, dead keys, no error anywhere. `right-sidebar-panel-content.tsx`
+came out importing `./BrainPanel`, a file that no longer exists.
+
+**A rebase that finishes is not a rebase that is correct.** Git's exit code says
+nothing; the gates above are the check. Two cheap post-rebase assertions worth
+running before the suite: the modified-file count should not have *grown*, and
+`git diff --diff-filter=M` should not list a file that WP-7 reverted.
+
+## Fork exit criteria
+
+The fork is the substrate because nothing else can hold the two load-bearing
+pieces: **PTY env injection at spawn** (`pty.ts`, `applyCompanyPluginEnv` inside
+`buildPtyHostEnv`) and **per-repo gate sync at activation and worktree
+creation**. Both run *before* an agent starts, inside the main process, with the
+checkout's absolute path in hand. A Claude Code skill runs after that, in the
+agent, with none of it.
+
+That is a statement about today's substrate, not a permanent one. The trigger to
+re-evaluate is **upstream's plugin kernel reaching parity with what Brain and
+Store actually need**.
+
+### Where the kernel stands
+
+Upstream landed it in `97e4776dfe` (2026-07-27) — kernel, content packs,
+sandboxed iframe panels, forked worker hosts, marketplace v0, behind a settings
+flag, with `examples/plugins/hello-orca` and `examples/plugins/hostile-panel`.
+It is **ahead of this fork's merge-base and not in HEAD's history**; the first
+rebase past 2026-07-27 brings it in. Its first visible effect is already in the
+drill: `src/shared/types.ts` conflicts because upstream added
+`` | `plugin:${string}` `` to `RightSidebarTab` at the exact line the Brain tab
+is registered on.
+
+### What Brain and Store would need from it
+
+Read against `plugin-capabilities.ts`, `plugin-events.ts` and
+`plugin-host-api.ts` at `upstream/main`. v0 grants a closed set —
+`workspace:read`, `terminal:send`, `notifications:show`, `storage`, `secrets`,
+`events:subscribe`, `settings:own` — and a host API of `workspace.*`,
+`terminal.send`, `notifications.show`, `storage.*`, `secrets.*`, `settings.*`,
+`events.subscribe`. Evaluate the gap against these five, in order of how hard
+they are to fake:
+
+1. **A hook that runs before the agent does.** The gate and the env have to land
+   between "a checkout is chosen" and "the process spawns". v0 has three events
+   — `worktree.created`, `worktree.removed`, `agent.status.changed` — all
+   fire-and-forget notifications after the fact, and none at spawn. **Parity
+   means an awaited pre-spawn hook that can contribute environment**, not an
+   event that arrives afterwards.
+2. **Filesystem write into the operator's checkout.** The gate is
+   `.claude/settings.json` *in the repo*; the brain is `.buildex/` in the repo.
+   `workspace:read` is scoped to "name, branch, and terminal list" and
+   `storage`/`secrets` are the plugin's own private folders. There is no
+   `fs:write`, scoped or otherwise.
+3. **Running git.** Context refresh, brain history, save diffs and convergence
+   are all `git` invocations against arbitrary checkouts. `process:exec` is
+   documented as deferred to a later phase.
+4. **Full-window views, not sidebar panels.** Brain, Store and Portfolio are
+   `TopLevelView`s. `contributes.panels` are sandboxed iframes in the right
+   sidebar. Parity needs either a top-level surface contribution or an honest
+   decision to live in the sidebar.
+5. **SSH-host reach.** BuildEx already fails closed on remote checkouts (see
+   "Remote worktrees are not gated on activation"). A plugin API that only ever
+   runs on the desktop machine does not make that worse — but it does not fix it
+   either, so it is not a reason to move.
+
+(1) through (3) are the real gate. When a released Orca grants a pre-spawn hook
+plus scoped filesystem and process capabilities, prototype the Brain against
+`examples/plugins/hello-orca` before assuming it fits — the panel sandbox and the
+worker host are separate trust boundaries and the Brain needs both.
+
+### Why the decision stays reversible
+
+Everything load-bearing is already in BuildEx-owned files and transfers
+**byte-for-byte** to a plugin: `buildex-repo-init.ts`, `buildex-worktree-init.ts`,
+`buildex-company-identity.ts`, the gate writer, the credential store, the brain
+and store domain layers. The fork's *own* share is registration lines — 1-3 lines
+per upstream file — and the drill shows those cost almost nothing (`pty.ts`,
+`register-core-handlers.ts` and `App.tsx` survived 388 upstream commits without
+one conflict).
+
+So the exit is not a rewrite; it is deleting registrations and adding a manifest.
+That asymmetry is exactly why shrinking the surface now is low-risk and why
+waiting for the kernel to leave experimental is the cheaper bet than moving
+early.
 
 ## Traps found while shipping the catalog and the gate
 
