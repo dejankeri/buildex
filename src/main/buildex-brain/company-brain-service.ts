@@ -9,7 +9,7 @@ import type {
   BrainWantedPage
 } from '../../shared/buildex-brain-types'
 import { listChangedDocumentIds } from './company-brain-changed-docs'
-import { embeddedLocation } from './brain-location'
+import { embeddedBrainCheckout, embeddedLocation } from './brain-location'
 import { readDocumentFrontmatter } from './brain-document-frontmatter'
 import { listRecentlyChangedDocuments } from './brain-recent-documents'
 import { resolveDocumentLinks } from './company-brain-links'
@@ -183,7 +183,7 @@ export async function scanCompanyBrain(
     // Why: independent of which location this resolved to — the renderer
     // cannot stat the filesystem itself, and needs this to choose migrate
     // (something embedded to move) over bind (nothing to move) at setup time.
-    embeddedBrainPresent: existsSync(embeddedLocation(repoPath).root),
+    embeddedBrainPresent: existsSync(embeddedLocation(embeddedBrainCheckout(repoPath)).root),
     documents,
     folders,
     tree,

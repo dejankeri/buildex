@@ -111,7 +111,7 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 | `src/shared/buildex-brain-types.ts`, `buildex-store-types.ts`, `buildex-automation-context-types.ts` | **BuildEx-owned** wire contracts |
 | `src/main/buildex-brain/*`, `src/main/buildex-store/*` | **BuildEx-owned** domain layers |
 | `src/renderer/src/components/buildex-brain/*`, `buildex-apps/*`, `buildex-store/*`, `buildex-brand/*` | **BuildEx-owned** surfaces. Upstream has no Brain, Apps or Store, so nothing here can conflict |
-| `src/main/ipc/buildex-brain.ts`, `buildex-brain-placement.ts`, `buildex-store.ts`, `buildex-automation-context.ts` | **BuildEx-owned** IPC modules |
+| `src/main/ipc/buildex-brain.ts`, `buildex-brain-placement.ts`, `buildex-store.ts`, `buildex-automation-context.ts`, `authorized-brain-location.ts` | **BuildEx-owned** IPC modules |
 | `src/main/ipc/register-core-handlers.ts` | 4 imports + 4 registration calls |
 | `src/preload/index.ts` | 5 type imports + 5 api namespaces (+2 type imports and 1 member for `buildexBrainSections.saveDiff`) |
 | `src/preload/api-types.ts` | 5 type imports + 5 members on `PreloadApi` (+2 type imports and 1 member for `saveDiff`) |
@@ -238,6 +238,35 @@ expression and no user string reaches the command line — the only variable is 
 location's own pathspec. Every failure path returns an empty list: a repo with no
 commits, a folder workspace that is no repo, an SSH host without git. A brain
 with no history is still a brain, and it must never cost a scan.
+
+**An embedded brain belongs to the company, not to the branch.** `.buildex/` is
+branch content, so a worktree left to itself read the snapshot its branch was cut
+from and saved onto that branch — the brain fragmented the moment the operator
+parallelised. Every checkout now converges on the **primary checkout's**
+`.buildex/` through `embeddedBrainCheckout`, which is `worktree-primary-checkout.ts`
+again — the same resolver the pointer, the binding and `resolveCompanyIdentity`
+already use. A second identity mechanism would disagree with the first on the day
+it matters. The location carries that path as its `gitRoot`, so **every** consumer
+converges by construction rather than by remembering to: the scan, the save, the
+history, the skill links, the removal and the migration all read it from there.
+Three shapes and only three: a primary checkout keeps its own, a linked worktree
+takes the primary's, and anything with no primary checkout — a folder workspace,
+a worktree of a bare repo, a worktree whose main clone has moved off this machine
+— keeps its own rather than being pointed at a guess.
+
+Two consequences worth knowing before touching the save path. First, an embedded
+location can now name a path *outside* the repo the renderer asked about, so
+`authorizeBrainLocation` authorizes that root — the one case; an embedded brain
+in the very path asked about still needs nothing and widening it would hand out
+access it never needed. Second, **git will not make a partial commit during a
+merge, rebase, cherry-pick or revert**, but the `git add` in front of one will
+happily succeed — so an unguarded save leaves the brain staged inside somebody's
+conflicted index and their merge commit sweeps it up, which is pathspec scoping
+defeated through the back door. `checkout-in-progress-operation.ts` reads the
+target checkout's own git dir (each checkout has one, which is why it can answer
+per checkout) and the save and removal handlers refuse before running anything.
+Migrate does not check; it is a one-shot, dialog-driven action whose git failures
+are already caught and reported, and its `git rm` is per-file.
 
 **A gate write is only ever as complete as the catalogue behind it.** The rules
 must come from the shelf *that company* sees — `readCompanyStoreEntries(location)`,

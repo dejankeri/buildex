@@ -15,8 +15,20 @@ import { authorizeExternalPath } from './filesystem-auth'
 
 type BrainResolveOptions = { bindingsFile?: string }
 
-export function authorizeBrainLocation<T extends BrainLocation | null>(location: T): T {
-  if (location && location.mode === 'external') {
+export function authorizeBrainLocation<T extends BrainLocation | null>(
+  location: T,
+  repoPath?: string
+): T {
+  if (!location) {
+    return location
+  }
+  // An embedded brain resolved from a worktree lives in the primary checkout, so
+  // the repo root that allows it there does not allow it from here. Only the
+  // converged case: an embedded brain in the very path asked about still needs
+  // nothing, and widening it would hand out access it never needed.
+  const converged =
+    location.mode === 'embedded' && repoPath !== undefined && location.gitRoot !== repoPath
+  if (location.mode === 'external' || converged) {
     // Every document, skill and pack file is under the root, and the allow-list
     // matches descendants. Authorizing on each resolve rather than once at
     // setup: the set is in-memory and LRU-evicted, so it does not survive.
@@ -29,7 +41,7 @@ export function requireBrainLocation(
   repoPath: string,
   options: BrainResolveOptions = {}
 ): BrainLocation | null {
-  return authorizeBrainLocation(requireLocation(repoPath, options))
+  return authorizeBrainLocation(requireLocation(repoPath, options), repoPath)
 }
 
 export function resolveBrainLocation(
@@ -38,7 +50,7 @@ export function resolveBrainLocation(
 ): BrainResolution {
   const resolution = resolveLocation(repoPath, options)
   if (resolution.status === 'ready') {
-    authorizeBrainLocation(resolution.location)
+    authorizeBrainLocation(resolution.location, repoPath)
   }
   return resolution
 }

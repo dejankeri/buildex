@@ -29,6 +29,10 @@ import {
   requireBrainLocation,
   resolveBrainLocation
 } from './authorized-brain-location'
+import {
+  inProgressOperationMessage,
+  readInProgressGitOperation
+} from '../buildex-brain/checkout-in-progress-operation'
 import { pullBrain, pushBrain, reportPush } from '../buildex-brain/brain-sync'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { readInstalledAppSummaries } from '../buildex-store/store-catalog-source'
@@ -62,6 +66,16 @@ export function registerBuildExBrainPlacementHandlers(): void {
       const location = requireBrainLocation(repoPath)
       if (!location) {
         return { ok: false, committed: false, error: BRAIN_UNRESOLVED }
+      }
+      // Same reason as the save handler: removal commits too, so a checkout
+      // mid-merge would take the staged deletion into somebody's merge commit.
+      const blocking = await readInProgressGitOperation(location.gitRoot)
+      if (blocking) {
+        return {
+          ok: false,
+          committed: false,
+          error: inProgressOperationMessage(blocking, location.gitRoot)
+        }
       }
       // External brains are shared across repos, so this deletes nothing for
       // one: removeBrain refuses any mode but embedded on its own. Detaching

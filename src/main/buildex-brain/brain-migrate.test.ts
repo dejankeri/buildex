@@ -227,3 +227,28 @@ describe('migrateBrainToExternal', () => {
     rmSync(result.backupPath ?? '', { recursive: true, force: true })
   })
 })
+
+describe('migrating from a linked worktree', () => {
+  it("moves the primary checkout's brain, and points that checkout at it", async () => {
+    // The brain a worktree shows is the primary checkout's, so that is the one
+    // the button is offering to move. Looking in the worktree instead would
+    // report "there is no brain here to move" over a page full of documents.
+    const worktree = path.join(realpathSync(dir), 'api-feature')
+    git(repo, 'worktree', 'add', '--quiet', '-b', 'feature', worktree)
+    const primary = realpathSync(repo)
+
+    const result = await migrateBrainToExternal(
+      { repoPath: worktree, brainPath: brain, writePointer: false, bindingsFile },
+      1_700_000_000_000
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.movedPaths).toEqual(['decisions/pricing.md'])
+    expect(readFileSync(path.join(brain, 'decisions', 'pricing.md'), 'utf8')).toBe('# Pricing\n')
+    expect(existsSync(path.join(repo, '.buildex', 'decisions'))).toBe(false)
+    // The binding names the checkout the brain actually left, so every worktree
+    // of this repo resolves to it through the same primary-checkout fallback.
+    expect(JSON.parse(readFileSync(bindingsFile, 'utf8')).brainByRepo[primary]).toBe(brain)
+    rmSync(result.backupPath ?? '', { recursive: true, force: true })
+  })
+})

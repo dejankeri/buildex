@@ -30,7 +30,11 @@ import { BRAIN_SECTIONS, scaffoldCompanyBrain } from '../buildex-brain/brain-sca
 import { buildAgentView } from '../buildex-brain/agent-view'
 import { createBrainDocument } from '../buildex-brain/brain-document-create'
 import { createBrainEntity } from '../buildex-brain/brain-entity-create'
-import { embeddedLocation } from '../buildex-brain/brain-location'
+import { embeddedBrainCheckout, embeddedLocation } from '../buildex-brain/brain-location'
+import {
+  inProgressOperationMessage,
+  readInProgressGitOperation
+} from '../buildex-brain/checkout-in-progress-operation'
 import { requireBrainLocation, resolveBrainLocation } from './authorized-brain-location'
 import { readBrainHistory, saveBrain } from '../buildex-brain/brain-history'
 import { readBrainSaveDiff } from '../buildex-brain/brain-save-diff'
@@ -121,6 +125,17 @@ export function registerBuildExBrainHandlers(): void {
       if (!location) {
         return { ok: false, savedPaths: [], error: BRAIN_UNRESOLVED }
       }
+      // Checked before the save runs, not left to git: `git add` would succeed
+      // and the partial commit behind it would fail, leaving the brain staged in
+      // a conflicted index the operator is about to commit.
+      const blocking = await readInProgressGitOperation(location.gitRoot)
+      if (blocking) {
+        return {
+          ok: false,
+          savedPaths: [],
+          error: inProgressOperationMessage(blocking, location.gitRoot)
+        }
+      }
       return saveBrain(location, request?.message ?? '')
     }
   )
@@ -205,7 +220,7 @@ export function registerBuildExBrainHandlers(): void {
           ...EMPTY_BRAIN_SCAN,
           repoPath,
           resolution,
-          embeddedBrainPresent: existsSync(embeddedLocation(repoPath).root)
+          embeddedBrainPresent: existsSync(embeddedLocation(embeddedBrainCheckout(repoPath)).root)
         }
       }
       const { location } = resolution

@@ -9,6 +9,7 @@ import { bindRepoToBrain, rememberClone } from './brain-bindings'
 import { commitBrain } from './brain-history'
 import {
   BRAIN_POINTER_RELATIVE_PATH,
+  embeddedBrainCheckout,
   embeddedLocation,
   externalLocation,
   writeBrainPointer
@@ -36,7 +37,11 @@ export async function migrateBrainToExternal(
   request: BrainMigrationRequest,
   now: number
 ): Promise<BrainMigrationResult> {
-  const source = embeddedLocation(request.repoPath)
+  // The embedded brain a worktree shows is the primary checkout's, so that is
+  // the one being moved — and the checkout every git command, the pointer and
+  // the binding below must name. Asked once here so they cannot disagree.
+  const repoPath = embeddedBrainCheckout(request.repoPath)
+  const source = embeddedLocation(repoPath)
   const target = externalLocation(request.brainPath, request.remote)
 
   // Checked before anything else is computed: a scan of a brain that isn't
@@ -49,7 +54,7 @@ export async function migrateBrainToExternal(
 
   let backupPath: string
   try {
-    backupPath = path.join(BACKUP_ROOT, `${path.basename(request.repoPath)}-${backupStamp(now)}`)
+    backupPath = path.join(BACKUP_ROOT, `${path.basename(repoPath)}-${backupStamp(now)}`)
     mkdirSync(backupPath, { recursive: true })
     cpSync(source.root, backupPath, { recursive: true })
   } catch (error) {
@@ -83,7 +88,7 @@ export async function migrateBrainToExternal(
     // operator never saved would otherwise fail the whole command, and none of
     // the tracked ones would be staged for removal.
     await gitExecFileAsync(['rm', '-r', '-f', '--ignore-unmatch', '--quiet', '--', ...pathspecs], {
-      cwd: request.repoPath
+      cwd: repoPath
     })
   } catch {
     // No git here at all: the plain removal below still applies.
@@ -99,17 +104,17 @@ export async function migrateBrainToExternal(
 
   try {
     if (request.writePointer && request.remote) {
-      writeBrainPointer(request.repoPath, request.remote)
+      writeBrainPointer(repoPath, request.remote)
       rememberClone(request.remote, request.brainPath, request.bindingsFile)
       try {
         await gitExecFileAsync(['add', '--', BRAIN_POINTER_RELATIVE_PATH], {
-          cwd: request.repoPath
+          cwd: repoPath
         })
       } catch {
         // The pointer is on disk either way; an uncommitted one still resolves.
       }
     } else {
-      bindRepoToBrain(request.repoPath, request.brainPath, request.bindingsFile)
+      bindRepoToBrain(repoPath, request.brainPath, request.bindingsFile)
     }
   } catch (error) {
     // The files have already moved, so the one thing the operator must not be
@@ -126,7 +131,7 @@ export async function migrateBrainToExternal(
     // Committed either way: `git rm` only staged the removal, and the code
     // repo's HEAD must lose the brain even when the operator declined a pointer.
     await gitExecFileAsync(['commit', '-m', MIGRATION_MESSAGE, '--', source.pathspec], {
-      cwd: request.repoPath
+      cwd: repoPath
     })
   } catch {
     // No git, or nothing staged for this pathspec: the files are gone from
@@ -134,8 +139,11 @@ export async function migrateBrainToExternal(
   }
 
   // Every link in `.claude/skills/` pointed into the folder just emptied, and a
-  // dangling one is invisible to the agent and to every later install.
-  relinkBrainSkills(request.repoPath, target)
+  // dangling one is invisible to the agent and to every later install. Both
+  // checkouts hold their own `.claude/`, and only one of them is on screen.
+  for (const checkout of new Set([request.repoPath, repoPath])) {
+    relinkBrainSkills(checkout, target)
+  }
 
   return { ok: true, backupPath, movedPaths }
 }

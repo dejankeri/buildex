@@ -69,6 +69,26 @@ export function embeddedLocation(repoPath: string): BrainLocation {
   }
 }
 
+/**
+ * The one checkout whose `.buildex/` is this company's embedded brain.
+ *
+ * `.buildex/` is branch content, so N parallel agent worktrees would otherwise
+ * each see whatever snapshot their branch was cut from and save onto that
+ * branch — the brain fragments exactly when the operator parallelises, which is
+ * the point of the tool. So every checkout of a repo converges on the primary
+ * one, the same aliasing `resolveBrainLocation` already applies to pointers and
+ * bindings. One rule, one resolver.
+ *
+ * A folder workspace that is no checkout, and a worktree of a bare repo, have no
+ * primary checkout and keep their own — there is nothing to converge on.
+ */
+export function embeddedBrainCheckout(checkoutPath: string): string {
+  const primary = primaryCheckoutPath(checkoutPath)
+  // A primary this machine cannot see is a worktree whose main clone moved or
+  // went: converging there would point the brain at nothing at all.
+  return primary && existsSync(primary) ? primary : checkoutPath
+}
+
 export function externalLocation(brainPath: string, remote?: string): BrainLocation {
   return {
     root: brainPath,
@@ -135,9 +155,10 @@ export function resolveBrainLocation(
     return checkExternal(bound)
   }
 
-  // Embedded stays this checkout's own: `.buildex/` is branch content, and a
-  // worktree editing another checkout's copy would write to the wrong branch.
-  return { status: 'ready', location: embeddedLocation(repoPath) }
+  // Embedded converges on the primary checkout — see `embeddedBrainCheckout`.
+  // The location carries that path as its `gitRoot`, so a save from a worktree
+  // stages and commits there rather than on the feature branch.
+  return { status: 'ready', location: embeddedLocation(embeddedBrainCheckout(repoPath)) }
 }
 
 /** The location, or null when the brain cannot be used until the operator acts. */

@@ -166,12 +166,94 @@ describe('resolveBrainLocation', () => {
     })
   })
 
-  it("keeps an embedded brain the worktree's own", () => {
+  it('converges an embedded brain on the primary checkout from a worktree', () => {
     makeGitRepo(repo)
     const worktree = makeWorktree(repo, path.join(dir, 'api-feature'), 'api-feature')
 
-    // `.buildex/` is branch content: a worktree writing the primary checkout's
-    // copy would put the company's documents on the wrong branch.
+    // `.buildex/` is branch content, so N parallel worktrees would each see the
+    // snapshot their branch was cut from and save onto it. One brain per
+    // company: every checkout resolves to the primary one's.
+    expect(resolveBrainLocation(worktree, { bindingsFile })).toEqual({
+      status: 'ready',
+      location: {
+        root: path.join(repo, '.buildex'),
+        gitRoot: repo,
+        pathspec: '.buildex',
+        mode: 'embedded'
+      }
+    })
+  })
+
+  it('gives two worktrees of one repo the same embedded brain', () => {
+    makeGitRepo(repo)
+    const one = makeWorktree(repo, path.join(dir, 'api-one'), 'api-one')
+    const two = makeWorktree(repo, path.join(dir, 'api-two'), 'api-two')
+
+    expect(resolveBrainLocation(one, { bindingsFile })).toEqual(
+      resolveBrainLocation(two, { bindingsFile })
+    )
+  })
+
+  it('keeps a folder workspace that is no checkout on its own embedded brain', () => {
+    // G5: a folder workspace is not a git worktree and has no primary checkout.
+    // Nothing to converge on, and nowhere to guess at.
+    const folder = path.join(dir, 'notes')
+    mkdirSync(folder, { recursive: true })
+
+    expect(resolveBrainLocation(folder, { bindingsFile })).toEqual({
+      status: 'ready',
+      location: {
+        root: path.join(folder, '.buildex'),
+        gitRoot: folder,
+        pathspec: '.buildex',
+        mode: 'embedded'
+      }
+    })
+  })
+
+  it('keeps a worktree of a bare repo on its own — a bare repo has no checkout', () => {
+    const bare = path.join(dir, 'api.git')
+    mkdirSync(path.join(bare, 'worktrees', 'feature'), { recursive: true })
+    const worktree = path.join(dir, 'api-feature')
+    mkdirSync(worktree, { recursive: true })
+    writeFileSync(
+      path.join(worktree, '.git'),
+      `gitdir: ${path.join(bare, 'worktrees', 'feature')}\n`,
+      'utf8'
+    )
+
+    expect(resolveBrainLocation(worktree, { bindingsFile })).toEqual({
+      status: 'ready',
+      location: {
+        root: path.join(worktree, '.buildex'),
+        gitRoot: worktree,
+        pathspec: '.buildex',
+        mode: 'embedded'
+      }
+    })
+  })
+
+  it('keeps the primary checkout itself on its own embedded brain', () => {
+    makeGitRepo(repo)
+
+    expect(resolveBrainLocation(repo, { bindingsFile })).toEqual({
+      status: 'ready',
+      location: {
+        root: path.join(repo, '.buildex'),
+        gitRoot: repo,
+        pathspec: '.buildex',
+        mode: 'embedded'
+      }
+    })
+  })
+
+  it('keeps a worktree whose primary checkout is no longer on this machine on its own', () => {
+    // A main clone that moved leaves the `.git` file naming a path that is gone;
+    // converging there would point the brain at nothing at all.
+    const gone = path.join(dir, 'moved-away')
+    const worktree = makeWorktree(gone, path.join(dir, 'api-feature'), 'f')
+    rmSync(gone, { recursive: true, force: true })
+
     expect(resolveBrainLocation(worktree, { bindingsFile })).toEqual({
       status: 'ready',
       location: {

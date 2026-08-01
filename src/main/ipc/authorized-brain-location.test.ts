@@ -74,6 +74,27 @@ describe('authorized brain location', () => {
     expect(isPathAllowed(document, makeStore())).toBe(false)
   })
 
+  it("authorizes the primary checkout's brain when a worktree converged on it", () => {
+    bindings({})
+    const worktree = path.join(dir, 'api-feature')
+    mkdirSync(worktree, { recursive: true })
+    mkdirSync(path.join(repoPath, '.git', 'worktrees', 'api-feature'), { recursive: true })
+    writeFileSync(
+      path.join(worktree, '.git'),
+      `gitdir: ${path.join(repoPath, '.git', 'worktrees', 'api-feature')}\n`,
+      'utf8'
+    )
+    const document = path.join(repoPath, '.buildex', 'decisions', 'pricing.md')
+    expect(isPathAllowed(document, makeStore())).toBe(false)
+
+    // The brain a worktree resolves to sits outside the path the renderer asked
+    // about, so the worktree's own root does not allow reading it.
+    const location = requireBrainLocation(worktree, { bindingsFile })
+
+    expect(location?.gitRoot).toBe(repoPath)
+    expect(isPathAllowed(document, makeStore())).toBe(true)
+  })
+
   it('authorizes nothing when a pointer has no clone yet', () => {
     mkdirSync(path.join(repoPath, '.buildex'), { recursive: true })
     writeFileSync(

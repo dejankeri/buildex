@@ -131,6 +131,51 @@ path belongs to the remote filesystem, and BuildEx has no writer on the far side
 so activation skips it rather than writing into a local directory that happens to
 share the path. Remote checkouts are gated when a BuildEx surface touches them.
 
+## One brain per company, across N worktrees
+
+An embedded `.buildex/` is **branch content**. Left alone, N parallel agent
+worktrees each read the snapshot their branch was cut from and each saved onto
+that branch — so the brain fragmented exactly when the operator parallelised,
+which is the whole point of running businesses side by side.
+
+The rule now: **from any checkout, an embedded brain is the primary checkout's
+`.buildex/`.** One resolver answers it (`embeddedBrainCheckout` in
+`brain-location.ts`, over `worktree-primary-checkout.ts` — the same aliasing
+pointers and bindings already used), so two worktrees read the same documents
+and a save from either lands as a commit on the **primary checkout's** branch,
+never on a feature branch that may never merge.
+
+Three shapes, and all three are tested:
+
+- **Primary checkout** — its own `.buildex/`, unchanged.
+- **Linked worktree** — the primary checkout's.
+- **Folder workspace that is no checkout** — its own. There is no primary
+  checkout to converge on and nothing is guessed at. Same answer for a worktree
+  of a bare repo, and for one whose main clone has moved off this machine.
+
+Saving is still **pathspec-scoped**: `git add -- .buildex` then
+`git commit -- .buildex`, which is a partial commit, so half-written code in the
+primary checkout stays uncommitted and anything else the operator had staged
+stays staged. That guarantee matters more now, not less, because the commit
+lands in a checkout they are not looking at.
+
+One thing git will not do: a partial commit **during a merge, rebase,
+cherry-pick or revert**. The `git add` in front of it does not refuse, so an
+unguarded save would leave the brain's files staged inside a conflicted index
+and the commit finishing that merge would sweep them up. So a save (and a brain
+removal) checks the target checkout first and refuses with the operation and the
+path, rather than half-running. `checkout-in-progress-operation.ts`.
+
+**If you run many worktrees at once, prefer an external brain.** Convergence
+makes embedded mode correct, not free: every save serialises on one checkout, it
+is blocked whenever that checkout is mid-rebase, and the brain's history is
+interleaved with the company's code history on one branch. A brain in its own
+repo (*Move brain to its own repo*, or *In a separate brain repo* at setup) has
+none of those: it is outside every branch, so no worktree can be looking at a
+stale copy, saves never touch the code repo's index, and it can be shared by
+every repo the business opens. Embedded remains the right default for one
+checkout and one operator.
+
 ## Read before touching anything
 
 - **`BUILDEX-PATCHES.md`** — every upstream line this fork owns, the traps, the rebase procedure.
