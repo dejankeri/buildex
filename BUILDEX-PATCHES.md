@@ -62,7 +62,8 @@ BUILDEX-PATCHES.md
 | `src/main/computer/macos-computer-use-permissions.ts` | computer-use bundle ID |
 | `config/scripts/{run-electron-vite-dev,build-notification-status-macos,build-computer-macos}.mjs` | bundle IDs |
 | `native/computer-use-macos/.../main.swift` | sidecar peer allowlist |
-| `src/main/window/createMainWindow.ts` | window title ×2 |
+| `src/main/window/createMainWindow.ts` | window title ×2 (the `BrowserWindow` title and the notification title) |
+| `src/main/window/dashboard-popout-window.ts` | the third title site — the popout's own `BrowserWindow` title. Moves with the other two: they sit side by side in the OS Window menu, and reverting one alone reads "BuildEx" beside "Orca Agent Dashboard" |
 | `src/main/tray/system-tray.ts` | tray label |
 | `src/main/attribution/terminal-attribution.ts` | PR/issue footers (written into *other people's* repos) |
 | `src/main/index.ts` | do not call `starNag.start()` |
@@ -348,7 +349,8 @@ largest rebase tax. WP-7 reverted ~110 upstream files' worth of it.
 | `src/main/window/createMainWindow.ts`, `dashboard-popout-window.ts` | window titles |
 | `src/main/tray/system-tray.ts` | tray label |
 | `src/shared/orca-attribution.ts`, `src/main/attribution/terminal-attribution.ts` | commit trailer + PR/issue footers, written into *other people's* repos |
-| 46 upstream test files | expectations that read **catalog** output through the live interceptor. Not editable by hand: the interceptor brands them at runtime with no source diff to mirror |
+| 39 upstream test files | expectations that read **catalog** output through the live interceptor. Not editable by hand: the interceptor brands them at runtime with no source diff to mirror |
+| 7 more upstream test files | on the surface for **identity or structure**, not the catalog — release-feed URLs (`updater.test.ts`, `updater-prerelease-feed{,-readiness}.test.ts`, `UpdateCard.error-card.test.tsx`), the dev userData path (`configure-process.test.ts`), packaging (`electron-builder-config.test.mjs`), and one structural change with no brand string at all (`local-pty-provider.test.ts`) |
 
 **No unlocalized literal is branded.** The 33 direct edits Phase 6 made
 (`notification-settings-copy.ts`, `delete-worktree-dialog-copy.ts`,
@@ -360,6 +362,30 @@ touching them broke the fork's own "plumbing untouched" rule.
 **The dispatch preamble is upstream's again.** `orca-dispatch-status-prompt.ts`
 and `orchestration/preamble.ts` both say "You are working inside Orca" because
 the prefix is a **protocol handshake** between them, not display copy.
+
+### Known artifacts of "brand only what the catalog renders"
+
+Branding a chokepoint and nothing else means the seam is *inside the sentence*,
+not at a module boundary. Two places in the UI show both names at once. Both are
+the accepted cost of the rule, **not bugs** — do not "fix" them by rebranding the
+literal, which is how the 110-file rebase tax was built the first time.
+
+- **`ProjectViewWrapper.tsx`, the unsupported-view hover card.** The paragraph
+  opens with the plain literal `unsupportedMessage` — "Orca doesn't support Board
+  project views yet." — and continues with a `translate()` call the interceptor
+  renders as "Switch to a Table view to work with this project in **BuildEx**."
+  One `<p>`, two product names. The tab's `title` is a full catalog string, so
+  hovering the tab and hovering the card give the same sentence under different
+  brands.
+- **The host-setup labels, in two panes.** `project-host-setup-options.ts` has
+  `'Orca server version is incompatible'` and `'Update Orca on this host to set
+  up projects'` as literals; the same two sentences exist as
+  `auto.components.settings.RepositoryPane.hostSetupBlockedVersion` and
+  `.hostSetupMissingCapability`, which render as BuildEx. Same label, two panes,
+  two names.
+
+The general shape: **a literal beside a catalog string in the same rendered
+block.** If a third one turns up, add it here rather than editing the literal.
 
 **Why an interceptor and not a find-and-replace.** `en.json` is *generated*:
 `verify-localization-catalog.mjs` parses the source with the TypeScript API and
