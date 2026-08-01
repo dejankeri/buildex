@@ -12,7 +12,8 @@ import type { StoreApiKey, StoreGateRules, StoreOverlay } from '../../shared/bui
 // about itself, which is the deliberate treatment for the long tail.
 //
 // These files ship with the app, so they are ours; they are still validated,
-// because a gate rule the evaluator cannot parse is worse than no rule at all.
+// because a gate rule the agent runtime cannot parse is worse than no rule at
+// all.
 
 const PLUGIN_NAME_RE = /^[a-z0-9]+(?:[-_.][a-z0-9]+)*$/i
 const ENV_KEY_RE = /^[A-Z][A-Z0-9_]*$/

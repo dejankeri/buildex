@@ -149,13 +149,17 @@ corepack pnpm@10.24.0 run dev
 
 ## Upgrading from an earlier build
 
-Pre-1.0, BuildEx does **not** carry per-version migration shims. Three of them
-were deleted in WP-8 because nothing has written their inputs for releases, and
-a shim that runs on every sync forever costs more than the one-off tidy it
-saves. A brain written by an earlier build still opens, scans, saves and syncs
-exactly as before; what changed is only what BuildEx cleans up on its way past.
+Pre-1.0, BuildEx does **not** carry per-version migration shims. Three of them,
+plus an unreachable settings key, were deleted in WP-8 because nothing has
+written their inputs for releases, and a shim that runs on every sync forever
+costs more than the one-off tidy it saves. Reading, editing, saving and syncing
+a brain are unchanged. What did change: two leftover files are no longer cleaned
+up and are no longer hidden, so they now count as ordinary brain content, and a
+hand-edited machine-wide default is no longer honoured.
 
-If a company repo predates these, clean it up once by hand:
+Clean each up once by hand.
+
+**In a company repo:**
 
 - `.buildex/company-context.md` — the agent context used to be generated here
   before it moved to `.claude/`. It is no longer deleted on sync, and it is no
@@ -168,6 +172,23 @@ If a company repo predates these, clean it up once by hand:
 
 Neither file is touched automatically, in either direction — an operator's own
 file that happens to share the name is theirs (invariant 8).
+
+**On this machine:**
+
+- `defaultBrainPath` in `<userData>/buildex-brains.json` — a machine-wide
+  fallback brain for any repo with no pointer and no binding of its own. No
+  surface ever wrote it, so only a hand edit can have set it. It is now ignored:
+  a repo that relied on it resolves to its own embedded `.buildex/`
+  instead, which means the real brain silently stops appearing there and setup
+  is offered as though the repo had none. **This fails quietly — there is no
+  error.** Point each affected repo at the brain explicitly: on that setup
+  screen pick *In a separate brain repo* and give it *Path to the brain repo*,
+  which binds this repo alone, or add a remote as well so the pointer is
+  committed to `.buildex/brain.json` and every checkout and teammate finds it.
+
+  The key is also dropped on read, so the next write of that file removes it —
+  copy the path out before reinstalling an older build, because reverting the
+  app will not bring it back.
 
 ## Blocked on you
 
