@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { StoreEntry, StoreSegment } from '../../../../shared/buildex-store-types'
-import { matchesStoreQuery, splitStoreEntriesBySegment } from './store-entry-search'
+import { filterStoreEntries, matchesStoreQuery } from './store-entry-search'
 
 function entry(overrides: {
   name: string
@@ -19,7 +19,7 @@ function entry(overrides: {
       author: null,
       homepage: null,
       keywords: overrides.keywords ?? [],
-      source: { kind: 'marketplace-relative', path: `./plugins/${overrides.name}` }
+      source: { url: null, path: `./plugins/${overrides.name}` }
     },
     marketplaceId: 'official',
     marketplaceLabel: 'Official',
@@ -69,9 +69,12 @@ describe('matchesStoreQuery', () => {
   })
 })
 
-describe('splitStoreEntriesBySegment', () => {
-  it('keeps both shelves populated so the tab counts can say where a match landed', () => {
-    const shelves = splitStoreEntriesBySegment(
+describe('filterStoreEntries', () => {
+  it('reaches every segment at once, because there is one shelf', () => {
+    // Our stripe is the operator's and stripe/ai's is the developer's; a search
+    // for one name has to surface both without the operator having to know
+    // which shelf either used to sit on.
+    const matches = filterStoreEntries(
       [
         entry({ name: 'stripe-lookup', segment: 'business', description: 'stripe invoices' }),
         entry({ name: 'stripe-docs', segment: 'software', description: 'stripe api' }),
@@ -79,7 +82,19 @@ describe('splitStoreEntriesBySegment', () => {
       ],
       'stripe'
     )
-    expect(shelves.business.map((match) => match.plugin.name)).toEqual(['stripe-lookup'])
-    expect(shelves.software.map((match) => match.plugin.name)).toEqual(['stripe-docs'])
+
+    expect(matches.map((match) => match.plugin.name)).toEqual(['stripe-lookup', 'stripe-docs'])
+  })
+
+  it('keeps the order main sorted the catalog into', () => {
+    const entries = [
+      entry({ name: 'zebra', segment: 'business' }),
+      entry({ name: 'alpha', segment: 'software' })
+    ]
+
+    expect(filterStoreEntries(entries, '').map((match) => match.plugin.name)).toEqual([
+      'zebra',
+      'alpha'
+    ])
   })
 })

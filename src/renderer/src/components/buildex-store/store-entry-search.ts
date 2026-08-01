@@ -1,4 +1,4 @@
-import type { StoreEntry, StoreSegment } from '../../../../shared/buildex-store-types'
+import type { StoreEntry } from '../../../../shared/buildex-store-types'
 
 // Search is the only workable way through a shelf this size — the official
 // marketplace alone carries hundreds of plugins, so browsing without it is not a
@@ -39,20 +39,7 @@ export function matchesStoreQuery(entry: StoreEntry, query: string): boolean {
   return tokens.every((token) => haystack.includes(token))
 }
 
-/**
- * Both shelves in one pass. The Store needs both even while showing one, because
- * the tab counts are what tell an operator their search hit the other shelf —
- * the same app legitimately sits on both.
- */
-export function splitStoreEntriesBySegment(
-  entries: StoreEntry[],
-  query: string
-): Record<StoreSegment, StoreEntry[]> {
-  const shelves: Record<StoreSegment, StoreEntry[]> = { business: [], software: [] }
-  for (const entry of entries) {
-    if (matchesStoreQuery(entry, query)) {
-      shelves[entry.segment].push(entry)
-    }
-  }
-  return shelves
+/** The shelf as the query leaves it, in the order main already sorted it. */
+export function filterStoreEntries(entries: StoreEntry[], query: string): StoreEntry[] {
+  return entries.filter((entry) => matchesStoreQuery(entry, query))
 }

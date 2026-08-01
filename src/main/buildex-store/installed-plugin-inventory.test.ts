@@ -61,7 +61,7 @@ function plugin(name: string, description = `${name} description`): StorePlugin 
     author: null,
     homepage: null,
     keywords: [],
-    source: { kind: 'git', url: `https://example.test/${name}` }
+    source: { url: `https://example.test/${name}` }
   }
 }
 

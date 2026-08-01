@@ -44,7 +44,7 @@ function entry(
       author: null,
       homepage: null,
       keywords: [],
-      source: { kind: 'marketplace-relative', path: `plugins/${name}` }
+      source: { url: null, path: `plugins/${name}` }
     },
     marketplaceId: 'buildex-packs',
     marketplaceLabel: 'BuildEx',

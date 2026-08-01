@@ -30,7 +30,7 @@ const STRIPE: StoreEntry = {
     author: null,
     homepage: null,
     keywords: [],
-    source: { kind: 'marketplace-relative', path: 'plugins/stripe' }
+    source: { url: null, path: 'plugins/stripe' }
   },
   marketplaceId: 'buildex-packs',
   marketplaceLabel: 'BuildEx',

@@ -5,13 +5,12 @@ import type { StoreEntry, StoreRequirement } from '../../../../shared/buildex-st
 import StoreEntryCard from './StoreEntryCard'
 import { storeEntryKey } from './store-entry-search'
 
-// One shelf's worth of cards, plus the two ways a shelf can be empty: the
-// indexes never loaded, or the search matched nothing here. They need different
-// copy — the first is a failure, the second is a normal search.
+// The shelf, plus the two ways it can be empty: the indexes never loaded, or the
+// search matched nothing. They need different copy — the first is a failure, the
+// second is a normal search.
 
 export default function StoreShelf({
   entries,
-  header,
   query,
   catalogEmpty,
   fetchingIndexes,
@@ -25,8 +24,6 @@ export default function StoreShelf({
   onChanged
 }: {
   entries: StoreEntry[]
-  /** Rendered above the grid — the roster summary on the business shelf. */
-  header?: React.ReactNode
   query: string
   catalogEmpty: boolean
   /** True while the indexes are being fetched for the first time. */
@@ -76,20 +73,14 @@ export default function StoreShelf({
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
         <SearchX className="size-7 text-muted-foreground/40" />
         <p className="text-[13px] text-muted-foreground">
-          {query
-            ? translate(
-                'buildex.store.shelf.noMatches',
-                'Nothing on this shelf matches “{{value0}}”',
-                {
-                  value0: query
-                }
-              )
-            : translate('buildex.store.shelf.empty', 'Nothing on this shelf yet')}
+          {translate('buildex.store.shelf.noMatches', 'Nothing matches “{{value0}}”', {
+            value0: query
+          })}
         </p>
         <p className="max-w-sm text-[12px] text-muted-foreground/70">
           {translate(
-            'buildex.store.shelf.otherShelfHint',
-            'The other shelf holds the same marketplaces read for a different job — check its count.'
+            'buildex.store.shelf.noMatchesHint',
+            'Search runs over every marketplace this company reads. Add another one to widen it.'
           )}
         </p>
       </div>
@@ -98,7 +89,6 @@ export default function StoreShelf({
 
   return (
     <div className="scrollbar-sleek min-h-0 flex-1 overflow-y-auto p-4">
-      {header}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
         {entries.map((entry) => (
           <StoreEntryCard

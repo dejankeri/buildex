@@ -13901,7 +13901,8 @@
         "searchLabel": "Search apps",
         "clearSearch": "Clear search",
         "refreshIndexes": "Refresh apps",
-        "refreshIndexesHint": "Fetch the latest apps from the marketplaces."
+        "refreshIndexesHint": "Fetch the latest apps from the marketplaces.",
+        "count": "{{value0}} apps"
       },
       "connect": {
         "connected": "Connected",
@@ -13923,7 +13924,8 @@
         "uninstallHint": "Removes the plugin through the agent that installed it.",
         "ungatedHint": "Installs ungated — nothing waits for you.",
         "required": "Required",
-        "suggested": "Suggested"
+        "suggested": "Suggested",
+        "curated": "Curated"
       },
       "segment": {
         "business": "Run your business",
@@ -13932,11 +13934,10 @@
       "shelf": {
         "catalogEmptyTitle": "No marketplaces could be read",
         "catalogEmptyHint": "The indexes that ship with BuildEx could not be read and no refresh has landed. Reinstall the app, or add a marketplace your company hosts.",
-        "noMatches": "Nothing on this shelf matches “{{value0}}”",
-        "empty": "Nothing on this shelf yet",
-        "otherShelfHint": "The other shelf holds the same marketplaces read for a different job — check its count.",
+        "noMatches": "Nothing matches “{{value0}}”",
         "fetchingTitle": "Fetching apps…",
-        "fetchingHint": "Reading the marketplaces for the first time on this machine."
+        "fetchingHint": "Reading the marketplaces for the first time on this machine.",
+        "noMatchesHint": "Search runs over every marketplace this company reads. Add another one to widen it."
       },
       "ungated": {
         "title": "Install {{value0}} ungated?",

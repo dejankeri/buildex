@@ -1,31 +1,16 @@
 import React, { useMemo, useRef, useState } from 'react'
-import {
-  Briefcase,
-  Code2,
-  Library,
-  Loader2,
-  RefreshCw,
-  Search,
-  ShieldCheck,
-  Store,
-  X
-} from 'lucide-react'
+import { Library, Loader2, RefreshCw, Search, ShieldCheck, Store, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 import { Input } from '@/components/ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type {
-  StoreEntry,
-  StoreRequirement,
-  StoreSegment
-} from '../../../../shared/buildex-store-types'
+import type { StoreEntry, StoreRequirement } from '../../../../shared/buildex-store-types'
 import StoreMarketplacesDialog from './StoreMarketplacesDialog'
 import StoreNotices from './StoreNotices'
 import StoreRosterBanner from './StoreRosterBanner'
 import StoreShelf from './StoreShelf'
 import UngatedInstallDialog from './UngatedInstallDialog'
-import { splitStoreEntriesBySegment, storeEntryKey } from './store-entry-search'
+import { filterStoreEntries, storeEntryKey } from './store-entry-search'
 import { resolveRosterStatus } from './store-roster-status'
 import { useCompanyMarketplaces } from './use-company-marketplaces'
 import { useRosterBulkInstall } from './use-roster-bulk-install'
@@ -34,15 +19,19 @@ import { useStoreWorkspaceNotices } from './use-store-workspace-notices'
 
 // The Store: a client of the plugin marketplaces each coding agent already has.
 //
-// Two shelves, because they are two products for two people — someone running a
-// business and someone building software — and the same app can honestly sit on
-// both. Installing is the agent's own plugin mechanism; what BuildEx adds is the
+// One shelf. The split into "run your business" and "build software" was two
+// products for two people, and there is one person here running N businesses —
+// it cost a tab click and an is-it-on-the-other-shelf doubt to say something the
+// card's own badge says better. The segment survives as the shelf's order, so an
+// operator still meets business apps before dev tooling.
+//
+// Installing is the agent's own plugin mechanism; what BuildEx adds is the
 // ask-first gate, the credential, and the company-context line, and it adds them
 // only where it has an overlay. Everything else installs ungated and says so.
 //
-// The one shared thing is the roster: which apps the company expects. It is a
-// git-tracked file in the brain, so it is the only part of the Store a teammate
-// inherits by cloning.
+// The roster leads the page, above the search: it is the one shared thing — a
+// git-tracked file in the brain — so a teammate who has just cloned should be
+// one click from having the company's apps, with browsing underneath it.
 
 export default function StorePage(): React.JSX.Element {
   useTranslation()
@@ -58,7 +47,6 @@ export default function StorePage(): React.JSX.Element {
   const { gateRuleCount, sharedBrain } = useStoreWorkspaceNotices(repoPath)
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
   const searchRef = useRef<HTMLInputElement>(null)
-  const [segment, setSegment] = useState<StoreSegment>('business')
   const [query, setQuery] = useState('')
   const [busyEntryKey, setBusyEntryKey] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -68,10 +56,7 @@ export default function StorePage(): React.JSX.Element {
   const bulk = useRosterBulkInstall(repoPath, refresh)
   const marketplaces = useCompanyMarketplaces(repoPath, refresh)
 
-  const shelves = useMemo(
-    () => splitStoreEntriesBySegment(catalog.entries, query),
-    [catalog.entries, query]
-  )
+  const shelf = useMemo(() => filterStoreEntries(catalog.entries, query), [catalog.entries, query])
   const rosterStatus = useMemo(() => resolveRosterStatus(catalog), [catalog])
 
   // Installing is delegated, so an agent with no plugin system BuildEx can drive
@@ -210,90 +195,74 @@ export default function StorePage(): React.JSX.Element {
         unsupportedAgent={catalog.unsupportedAgent}
       />
 
-      <Tabs
-        value={segment}
-        onValueChange={(next) => setSegment(next as StoreSegment)}
-        className="min-h-0 flex-1 gap-0"
-      >
-        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-2">
-          <TabsList>
-            <TabsTrigger value="business" className="text-[13px]">
-              <Briefcase />
-              {translate('buildex.store.segment.business', 'Run your business')}
-              <span className="text-muted-foreground">{shelves.business.length}</span>
-            </TabsTrigger>
-            <TabsTrigger value="software" className="text-[13px]">
-              <Code2 />
-              {translate('buildex.store.segment.software', 'Build software')}
-              <span className="text-muted-foreground">{shelves.software.length}</span>
-            </TabsTrigger>
-          </TabsList>
+      {/* Why above the search: on a fresh clone the company's own apps are the
+          reason the page was opened, and browsing 276 plugins is not. */}
+      {rosterStatus ? (
+        <StoreRosterBanner
+          status={rosterStatus}
+          bulk={bulk}
+          installDisabled={installDisabled}
+          onInstallAll={(missing) => void bulk.run(missing)}
+        />
+      ) : null}
 
-          {/* Why: hundreds of plugins per shelf, so search is the way through and
-              gets the focus the moment the page opens. */}
-          <div className="relative ml-auto w-full min-w-[200px] sm:w-64">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              ref={searchRef}
-              autoFocus
-              type="text"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape' && query) {
-                  event.stopPropagation()
-                  setQuery('')
-                }
-              }}
-              placeholder={translate('buildex.store.page.search', 'Search apps')}
-              aria-label={translate('buildex.store.page.searchLabel', 'Search apps')}
-              className="h-8 pr-8 pl-8 text-[13px]"
-            />
-            {query ? (
-              <button
-                type="button"
-                aria-label={translate('buildex.store.page.clearSearch', 'Clear search')}
-                onClick={() => {
-                  setQuery('')
-                  searchRef.current?.focus()
-                }}
-                className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="size-3.5" />
-              </button>
-            ) : null}
-          </div>
-        </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-2">
+        <span className="text-[12px] text-muted-foreground">
+          {translate('buildex.store.page.count', '{{value0}} apps', {
+            value0: String(shelf.length)
+          })}
+        </span>
 
-        {(['business', 'software'] as StoreSegment[]).map((value) => (
-          <TabsContent key={value} value={value} className="flex min-h-0 flex-col">
-            <StoreShelf
-              entries={shelves[value]}
-              header={
-                value === 'business' && rosterStatus ? (
-                  <StoreRosterBanner
-                    status={rosterStatus}
-                    bulk={bulk}
-                    installDisabled={installDisabled}
-                    onInstallAll={(missing) => void bulk.run(missing)}
-                  />
-                ) : null
+        {/* Why: hundreds of plugins on the shelf, so search is the way through
+            and gets the focus the moment the page opens. */}
+        <div className="relative ml-auto w-full min-w-[200px] sm:w-64">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            ref={searchRef}
+            autoFocus
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && query) {
+                event.stopPropagation()
+                setQuery('')
               }
-              query={query}
-              catalogEmpty={catalog.entries.length === 0}
-              fetchingIndexes={refreshingIndexes}
-              worktreeId={activeWorktreeId}
-              busyEntryKey={busyEntryKey}
-              installDisabled={installDisabled}
-              rosterDisabled={!repoPath || bulk.running}
-              onInstall={onInstall}
-              onUninstall={(entry) => void runInstall(entry, 'uninstall')}
-              onSetRequirement={(entry, requirement) => void setRequirement(entry, requirement)}
-              onChanged={refresh}
-            />
-          </TabsContent>
-        ))}
-      </Tabs>
+            }}
+            placeholder={translate('buildex.store.page.search', 'Search apps')}
+            aria-label={translate('buildex.store.page.searchLabel', 'Search apps')}
+            className="h-8 pr-8 pl-8 text-[13px]"
+          />
+          {query ? (
+            <button
+              type="button"
+              aria-label={translate('buildex.store.page.clearSearch', 'Clear search')}
+              onClick={() => {
+                setQuery('')
+                searchRef.current?.focus()
+              }}
+              className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <StoreShelf
+        entries={shelf}
+        query={query}
+        catalogEmpty={catalog.entries.length === 0}
+        fetchingIndexes={refreshingIndexes}
+        worktreeId={activeWorktreeId}
+        busyEntryKey={busyEntryKey}
+        installDisabled={installDisabled}
+        rosterDisabled={!repoPath || bulk.running}
+        onInstall={onInstall}
+        onUninstall={(entry) => void runInstall(entry, 'uninstall')}
+        onSetRequirement={(entry, requirement) => void setRequirement(entry, requirement)}
+        onChanged={refresh}
+      />
 
       <StoreMarketplacesDialog
         open={marketplacesOpen}

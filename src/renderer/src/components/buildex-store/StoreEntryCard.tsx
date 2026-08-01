@@ -33,7 +33,13 @@ function RequirementBadge({ requirement }: { requirement: StoreRequirement }): R
   )
 }
 
-function TrustBadge({ entry }: { entry: StoreEntry }): React.JSX.Element | null {
+/**
+ * Every card carries one, because one shelf mixes the seven apps BuildEx vetted
+ * into the 276 it has not and the badge is now the only thing that separates
+ * them. `Ask-first` outranks `Curated`: both mean vetted, and only one of them
+ * also says the agent will stop and ask.
+ */
+function TrustBadge({ entry }: { entry: StoreEntry }): React.JSX.Element {
   if (!entry.curated) {
     return (
       <Badge variant="outline" className="px-1.5 text-[10px] text-muted-foreground">
@@ -42,12 +48,14 @@ function TrustBadge({ entry }: { entry: StoreEntry }): React.JSX.Element | null 
       </Badge>
     )
   }
-  return entry.overlay?.gate ? (
+  return (
     <Badge variant="secondary" className="px-1.5 text-[10px]">
       <ShieldCheck />
-      {translate('buildex.store.card.gated', 'Ask-first')}
+      {entry.overlay?.gate
+        ? translate('buildex.store.card.gated', 'Ask-first')
+        : translate('buildex.store.card.curated', 'Curated')}
     </Badge>
-  ) : null
+  )
 }
 
 export default function StoreEntryCard({
@@ -73,7 +81,6 @@ export default function StoreEntryCard({
 }): React.JSX.Element {
   const name = storeEntryDisplayName(entry)
   const author = entry.plugin.author
-  const hasTrustBadge = !entry.curated || Boolean(entry.overlay?.gate)
 
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-3 shadow-xs">
@@ -97,12 +104,10 @@ export default function StoreEntryCard({
         <StoreRequirementMenu entry={entry} disabled={rosterDisabled} onSet={onSetRequirement} />
       </div>
 
-      {entry.requirement || hasTrustBadge ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {entry.requirement ? <RequirementBadge requirement={entry.requirement} /> : null}
-          <TrustBadge entry={entry} />
-        </div>
-      ) : null}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {entry.requirement ? <RequirementBadge requirement={entry.requirement} /> : null}
+        <TrustBadge entry={entry} />
+      </div>
 
       {/* Why: the reason is the operator's own sentence, so it reads as prose
           under the chip that frames it rather than as another chip. */}

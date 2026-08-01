@@ -50,19 +50,34 @@ describe('readStoreCatalog', () => {
     const catalog = readStoreCatalog({
       marketplaces: [
         source('claude-plugins-official', root),
-        source('buildex-packs', root, 'business')
+        source('buildex-packs', root, 'software')
       ],
       overlays: [],
       installed: new Set()
     })
 
-    // Nothing is curated here, so the shelf is one alphabetical list rather than
-    // one block per marketplace — a company should not have to know which
-    // marketplace an app came from to find it.
+    // Nothing is curated here and both are on the same segment, so the shelf is
+    // one alphabetical list rather than one block per marketplace — a company
+    // should not have to know which marketplace an app came from to find it.
     expect(catalog.entries.map((entry) => [entry.plugin.name, entry.marketplaceId])).toEqual([
       ['clickhouse', 'claude-plugins-official'],
       ['stripe', 'buildex-packs']
     ])
+  })
+
+  it('leads with what an operator runs a business on, not with dev tooling', () => {
+    // Why: one shelf now, so the segment orders it instead of splitting it.
+    const root = indexRoot({
+      official: marketplace('official', [plugin('aaa-lint', 'development'), plugin('zzz-crm')])
+    })
+
+    const catalog = readStoreCatalog({
+      marketplaces: [source('official', root, 'business')],
+      overlays: [],
+      installed: new Set()
+    })
+
+    expect(catalog.entries.map((entry) => entry.plugin.name)).toEqual(['zzz-crm', 'aaa-lint'])
   })
 
   it('reads installed state in the plugin@marketplace form the agent records', () => {
@@ -135,11 +150,32 @@ describe('readStoreCatalog', () => {
 
     const catalog = readStoreCatalog({
       marketplaces: [source('official', root)],
-      overlays: [{ pluginName: 'zzz-last' }],
+      overlays: [{ pluginName: 'zzz-last', summary: 'BuildEx says what this is' }],
       installed: new Set()
     })
 
     expect(catalog.entries.map((entry) => entry.plugin.name)).toEqual(['zzz-last', 'aaa-first'])
+  })
+
+  it('does not read a placement overlay as a vetting one', () => {
+    // Why: an overlay that carries only a segment moves a plugin to the shelf it
+    // belongs on. Counting that as curation would light the badge and skip the
+    // ungated-install warning for the whole long tail we file by hand.
+    const root = indexRoot({
+      official: marketplace('official', [plugin('code-review', 'productivity')])
+    })
+
+    const catalog = readStoreCatalog({
+      marketplaces: [source('official', root, 'business')],
+      overlays: [{ pluginName: 'code-review', segment: 'software' }],
+      installed: new Set()
+    })
+
+    expect(catalog.entries[0].segment).toBe('software')
+    expect(catalog.entries[0].curated).toBe(false)
+    // Still handed to the card, because the card needs the icon and the summary
+    // from the ones that do carry them.
+    expect(catalog.entries[0].overlay?.pluginName).toBe('code-review')
   })
 
   it('still lists a marketplace that has never been fetched, and fills the rest', () => {

@@ -6,7 +6,12 @@ import type { StoreEntry } from '../../../../shared/buildex-store-types'
 import type { RosterBulkInstall } from './use-roster-bulk-install'
 import type { StoreRosterStatus } from './store-roster-status'
 
-// What the company runs on, at the top of the shelf a teammate opens first.
+// What the company runs on — the first thing on the page, above the search.
+//
+// A cloned company repo arrives with a roster and none of it installed, so the
+// operator's first action here is "install all of it", not "browse 276 plugins".
+// A page-level band rather than a card, because it is chrome for the shelf below
+// and not one more item on it.
 //
 // A summary and one action, not a second copy of the cards: the rostered apps
 // already lead the grid below, so repeating them here would make the same app
@@ -26,7 +31,7 @@ export default function StoreRosterBanner({
   const missingCount = status.missing.length
 
   return (
-    <div className="mb-3 flex flex-col gap-2 rounded-xl border border-border bg-card p-3 shadow-xs">
+    <div className="flex shrink-0 flex-col gap-2 border-b border-border bg-card px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <Building2 className="size-4 shrink-0 text-muted-foreground" />
         <h2 className="flex-1 text-[13px] font-medium">
@@ -34,7 +39,7 @@ export default function StoreRosterBanner({
         </h2>
         {missingCount > 0 ? (
           <Button
-            size="xs"
+            size="sm"
             disabled={installDisabled || bulk.running}
             onClick={() => onInstallAll(status.missing)}
           >

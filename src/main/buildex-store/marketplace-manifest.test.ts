@@ -45,19 +45,14 @@ describe('parseMarketplaceManifest', () => {
 
     expect(parsed?.plugins.map((plugin) => plugin.source)).toEqual([
       {
-        kind: 'git',
         url: 'https://github.com/stripe/ai.git',
         path: 'providers/claude/plugin',
-        ref: 'main',
-        sha: '84c364c'
+        // The sha outranks the ref: an entry carrying both is pinned to the sha.
+        pin: '84c364c'
       },
-      {
-        kind: 'git',
-        url: 'https://github.com/SalesforceAIResearch/agentforce-adlc.git',
-        sha: '74e7c25'
-      },
-      { kind: 'git', url: 'https://github.com/fullstorydev/fullstory-skills.git', sha: 'b20614e' },
-      { kind: 'marketplace-relative', path: 'plugins/agent-sdk-dev' }
+      { url: 'https://github.com/SalesforceAIResearch/agentforce-adlc.git', pin: '74e7c25' },
+      { url: 'https://github.com/fullstorydev/fullstory-skills.git', pin: 'b20614e' },
+      { url: null, path: 'plugins/agent-sdk-dev' }
     ])
   })
 
@@ -111,23 +106,12 @@ describe('parseMarketplaceManifest', () => {
     expect(parsed?.plugins.map((plugin) => plugin.name)).toEqual(['good', 'also-good'])
   })
 
-  it('refuses a source that escapes the marketplace repo', () => {
-    // Why: a relative source becomes a path the agent's CLI reads from inside the
-    // cloned marketplace. `..` would reach whatever sits beside it on disk.
-    const parsed = parseMarketplaceManifest(
-      manifest([
-        { name: 'escape', description: 'x', source: '../../etc' },
-        { name: 'absolute', description: 'x', source: '/etc/passwd' },
-        { name: 'fine', description: 'x', source: './plugins/fine' }
-      ])
-    )
-
-    expect(parsed?.plugins.map((plugin) => plugin.name)).toEqual(['fine'])
-  })
-
   it('refuses a git source that is not http(s)', () => {
-    // Same reasoning as the pack manifest's app face: a manifest must not be able
-    // to smuggle file:// or a custom scheme into something that gets executed.
+    // Why: this URL is the one field of a source that this process acts on — the
+    // provenance line offers to open it — so a manifest must not be able to
+    // smuggle file:// or a custom scheme into `shell.openUrl`. The rest of a
+    // source is only ever resolved by the agent's CLI, out of a clone it made
+    // itself, and is deliberately not validated.
     const parsed = parseMarketplaceManifest(
       manifest([
         { name: 'local', description: 'x', source: { source: 'url', url: 'file:///etc' } },
@@ -156,17 +140,6 @@ describe('parseMarketplaceManifest', () => {
     )
 
     expect(parsed?.plugins[0]).toMatchObject({ name: 'odd', homepage: null })
-  })
-
-  it('rejects a github source with a repo that is not owner/name', () => {
-    const parsed = parseMarketplaceManifest(
-      manifest([
-        { name: 'bad', description: 'x', source: { source: 'github', repo: '../../evil' } },
-        { name: 'fine', description: 'x', source: { source: 'github', repo: 'a/b' } }
-      ])
-    )
-
-    expect(parsed?.plugins.map((plugin) => plugin.name)).toEqual(['fine'])
   })
 
   it('keeps the last entry when a marketplace lists a name twice', () => {

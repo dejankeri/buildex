@@ -7,11 +7,11 @@ import type {
 // Parsing for a marketplace.json. The index is fetched from a git repo BuildEx
 // does not own — Anthropic's, a vendor's, or whatever URL a company pasted — so
 // every field is untrusted. A malformed entry is skipped rather than emptying a
-// 276-row shelf, and anything that would become a path or a URL is checked
-// before it can be either.
+// 276-row shelf, and the two fields this process itself acts on — the plugin
+// name it asks the CLI to install, and any URL it may be asked to open — are
+// checked before they can be either.
 
 const PLUGIN_NAME_RE = /^[a-z0-9]+(?:[-_.][a-z0-9]+)*$/i
-const REPO_SLUG_RE = /^[\w.-]+\/[\w.-]+$/
 
 function asString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
@@ -51,73 +51,33 @@ function parseKeywords(value: unknown): string[] {
 }
 
 /**
- * A path inside the marketplace repo. Anything absolute or reaching upward is
- * rejected: the agent's CLI resolves this against the cloned marketplace, so
- * `..` would point it at whatever sits beside the clone on disk.
+ * Where the plugin's bytes come from, flattened for display.
+ *
+ * Deliberately not validated as a path: no code here ever resolves it. Installing
+ * hands `claude plugin install <name>@<marketplace>` a name and a marketplace
+ * repo, and the CLI reads the source out of the clone it made itself, so a `..`
+ * in this string reaches nothing of ours. The URL is still required to be
+ * http(s), because that one *is* acted on here — the provenance line offers to
+ * open it.
  */
-function parseRelativePath(raw: string): string | null {
-  const trimmed = raw.replace(/^\.\//, '').replace(/\/+$/, '')
-  if (!trimmed || trimmed.startsWith('/') || /(^|\/)\.\.(\/|$)/.test(trimmed)) {
-    return null
-  }
-  // A Windows-style absolute path is equally not a subdirectory of the repo.
-  if (/^[a-z]:[\\/]/i.test(trimmed) || trimmed.includes('\\')) {
-    return null
-  }
-  return trimmed
-}
-
 function parseSource(value: unknown): StorePluginSource | null {
   // The bare-string spelling: a subdirectory of the marketplace repo itself.
   const inline = asString(value)
   if (inline) {
-    const path = parseRelativePath(inline)
-    return path ? { kind: 'marketplace-relative', path } : null
+    return { url: null, path: inline.replace(/^\.\//, '').replace(/\/+$/, '') }
   }
   if (!isRecord(value)) {
     return null
   }
-  const kind = asString(value.source)
-
-  // `github` names a repo rather than a URL; everything else carries one.
-  if (kind === 'github') {
-    const repo = asString(value.repo)
-    if (!repo || !REPO_SLUG_RE.test(repo)) {
-      return null
-    }
-    const source: StorePluginSource = { kind: 'git', url: `https://github.com/${repo}.git` }
-    const sha = asString(value.sha) ?? asString(value.commit)
-    if (sha) {
-      source.sha = sha
-    }
-    return source
-  }
-
-  if (kind !== 'git-subdir' && kind !== 'url') {
-    return null
-  }
-  const url = asHttpUrl(value.url)
+  // The `github` spelling names a repo; the other two carry a URL.
+  const repo = asString(value.repo)
+  const url = repo ? `https://github.com/${repo}.git` : asHttpUrl(value.url)
   if (!url) {
     return null
   }
-  const source: StorePluginSource = { kind: 'git', url }
   const subPath = asString(value.path)
-  if (subPath) {
-    const relative = parseRelativePath(subPath)
-    if (!relative) {
-      return null
-    }
-    source.path = relative
-  }
-  const ref = asString(value.ref)
-  if (ref) {
-    source.ref = ref
-  }
-  const sha = asString(value.sha)
-  if (sha) {
-    source.sha = sha
-  }
-  return source
+  const pin = asString(value.sha) ?? asString(value.commit) ?? asString(value.ref)
+  return { url, ...(subPath ? { path: subPath } : {}), ...(pin ? { pin } : {}) }
 }
 
 function parsePlugin(value: unknown): StorePlugin | null {

@@ -17,16 +17,25 @@
 export type StoreSegment = 'business' | 'software'
 
 /**
- * Where a plugin's bytes come from. Upstream spells this four ways and every one
- * resolves to git plus a pin, except a bare relative path which means a
- * subdirectory of the marketplace repo itself.
+ * Where a plugin's bytes come from, kept only to be shown.
  *
- * BuildEx never fetches these — the agent's own plugin CLI does. They are kept
- * because provenance is the only trust signal an unvetted plugin carries.
+ * Upstream spells this four ways and all four flatten to a repo plus a pin,
+ * except a bare relative path which means a subdirectory of the marketplace repo
+ * itself and so has no repo of its own.
+ *
+ * Nothing in this process ever resolves it: installing hands the agent's plugin
+ * CLI a name and a marketplace, and the CLI reads the source out of its own
+ * clone. It is kept because provenance is the only trust signal an unvetted
+ * plugin carries.
  */
-export type StorePluginSource =
-  | { kind: 'git'; url: string; path?: string; ref?: string; sha?: string }
-  | { kind: 'marketplace-relative'; path: string }
+export type StorePluginSource = {
+  /** The repo the CLI clones, or null when the marketplace hosts the plugin. */
+  url: string | null
+  /** Subdirectory inside that repo, when the entry names one. */
+  path?: string
+  /** The commit or ref the entry pins to. */
+  pin?: string
+}
 
 export type StorePlugin = {
   /** Unique within its marketplace; the id the agent's CLI installs by. */

@@ -3,8 +3,9 @@ import path from 'node:path'
 import type { StoreApiKey, StoreGateRules, StoreOverlay } from '../../shared/buildex-store-types'
 
 // What BuildEx adds to a plugin the marketplace does not carry: the ask-first
-// gate, the credential its MCP server needs, and the system-of-record line the
-// brain tells the agent.
+// gate, the credential its MCP server needs, the system-of-record line the brain
+// tells the agent, and — for the long tail nobody has vetted — nothing but the
+// shelf it belongs on.
 //
 // Keyed by plugin name rather than bundled into the plugin, so it survives that
 // plugin being re-pinned, moved to another repo, or updated by its vendor. A
@@ -132,6 +133,22 @@ export function parseStoreOverlay(json: string): StoreOverlay | null {
     overlay.gate = gate
   }
   return overlay
+}
+
+/** Fields that only say where a plugin sits, not what BuildEx thinks of it. */
+const PLACEMENT_KEYS: ReadonlySet<string> = new Set(['pluginName', 'marketplaceId', 'segment'])
+
+/**
+ * Whether an overlay vouches for the app or merely files it.
+ *
+ * Placement is not vetting. An overlay carrying nothing but a segment moves a
+ * plugin to the shelf it belongs on and claims nothing about BuildEx having
+ * reviewed it, so it must not light the curated badge or skip the ungated
+ * install warning — which is exactly the mistake a plain `Boolean(overlay)`
+ * would make.
+ */
+export function isCuratedOverlay(overlay: StoreOverlay | null): boolean {
+  return overlay ? Object.keys(overlay).some((key) => !PLACEMENT_KEYS.has(key)) : false
 }
 
 /**

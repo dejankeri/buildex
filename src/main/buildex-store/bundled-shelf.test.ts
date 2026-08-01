@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { KNOWN_MARKETPLACES, overlaysRootFrom, readStoreCatalog } from './marketplace-catalog'
-import { readStoreOverlays } from './store-overlay'
+import { isCuratedOverlay, readStoreOverlays } from './store-overlay'
 
 // The curation that actually ships, read through the real parsers.
 //
@@ -19,8 +19,17 @@ function overlays(): ReturnType<typeof readStoreOverlays> {
   return readStoreOverlays(overlaysRootFrom(resourceRoot))
 }
 
-/** The shelf those overlays produce over a stand-in index. */
-function shelfFor(pluginNames: Record<string, string[]>): ReturnType<typeof readStoreCatalog> {
+/**
+ * The shelf those overlays produce over a stand-in index.
+ *
+ * `category` is upstream's own, and it matters: it is what the shelf falls back
+ * to when no overlay names a plugin, so a placement test that left it out would
+ * pass on the marketplace default alone.
+ */
+function shelfFor(
+  pluginNames: Record<string, string[]>,
+  category: string | null = null
+): ReturnType<typeof readStoreCatalog> {
   return readStoreCatalog({
     marketplaces: KNOWN_MARKETPLACES.map((marketplace) => ({
       ...marketplace,
@@ -29,6 +38,7 @@ function shelfFor(pluginNames: Record<string, string[]>): ReturnType<typeof read
         plugins: (pluginNames[marketplace.id] ?? []).map((name) => ({
           name,
           description: `${name} from ${marketplace.id}`,
+          ...(category ? { category } : {}),
           source: `./plugins/${name}`
         }))
       })
@@ -38,10 +48,27 @@ function shelfFor(pluginNames: Record<string, string[]>): ReturnType<typeof read
   })
 }
 
+/** The plugins upstream files under a business category that are dev tooling. */
+const PLACED_AS_SOFTWARE = [
+  'claude-code-setup',
+  'claude-md-management',
+  'code-review',
+  'code-simplifier',
+  'coderabbit',
+  'commit-commands',
+  'cwc-makers',
+  'desktop-commander',
+  'exa',
+  'github',
+  'gitlab',
+  'hookify'
+]
+
 describe('the shipped overlays', () => {
   it('curate exactly the apps BuildEx wrote an overlay for', () => {
     expect(
       overlays()
+        .filter((overlay) => isCuratedOverlay(overlay))
         .map((overlay) => `${overlay.pluginName}@${overlay.marketplaceId}`)
         .sort()
     ).toEqual([
@@ -53,6 +80,22 @@ describe('the shipped overlays', () => {
       'protocol-crm@protocol',
       'stripe@buildex-packs'
     ])
+  })
+
+  it('file upstream’s dev tooling on the software shelf without vouching for it', () => {
+    // Upstream files every one of these under `productivity`, next to asana and
+    // notion, so the category map alone puts `code-review` at the top of an
+    // operator's shelf. The correction is data — one overlay per exception —
+    // and it must stay placement only: a placed plugin is still unvetted, still
+    // installs ungated, and must not wear the curated badge.
+    const shelf = shelfFor({ 'claude-plugins-official': PLACED_AS_SOFTWARE }, 'productivity')
+
+    for (const name of PLACED_AS_SOFTWARE) {
+      const entry = shelf.entries.find((candidate) => candidate.plugin.name === name)
+      expect(entry, name).toBeDefined()
+      expect(entry?.segment, name).toBe('software')
+      expect(entry?.curated, name).toBe(false)
+    }
   })
 
   it('names every curated app the way an operator would say it', () => {

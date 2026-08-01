@@ -11,7 +11,7 @@ import type {
 } from '../../shared/buildex-store-types'
 import { parseMarketplaceManifest } from './marketplace-manifest'
 import { segmentForPlugin } from './store-segments'
-import { findOverlay } from './store-overlay'
+import { findOverlay, isCuratedOverlay } from './store-overlay'
 import { rosterIndex } from './store-roster'
 
 // Assembling the shelf: marketplace indexes, plus the overlays that say what
@@ -133,6 +133,11 @@ function requirementRank(entry: StoreEntry): number {
   return entry.requirement ? REQUIREMENT_RANK[entry.requirement] : 2
 }
 
+/** One shelf, so the segment is what orders it rather than what splits it. */
+function segmentRank(entry: StoreEntry): number {
+  return entry.segment === 'business' ? 0 : 1
+}
+
 function readIndex(source: StoreMarketplaceSource): ReturnType<typeof parseMarketplaceManifest> {
   // A marketplace never fetched, or whose cached body is unusable, contributes
   // nothing. The others still fill the shelf.
@@ -164,9 +169,9 @@ export function readStoreCatalog(input: StoreCatalogInput): StoreCatalog {
         marketplaceLabel: source.label,
         segment: segmentForPlugin(plugin, source.defaultSegment, overlay),
         // Curation is what BuildEx has said about a plugin — the gate, the
-        // credential, the system-of-record line. Everything else is long tail
-        // and is labelled as such.
-        curated: Boolean(overlay),
+        // credential, the system-of-record line. An overlay that only files it
+        // on a shelf is not that. Everything else is long tail and labelled so.
+        curated: isCuratedOverlay(overlay),
         overlay,
         installed: input.installed.has(key),
         ...(expected
@@ -179,13 +184,15 @@ export function readStoreCatalog(input: StoreCatalogInput): StoreCatalog {
     }
   }
 
-  // What the company expects first, then what BuildEx curated, then by name: a
-  // teammate opening the Store after a clone should see this company's apps
-  // before the 276 plugins nobody vetted.
+  // What the company expects first, then what BuildEx curated, then what an
+  // operator runs a business on, then by name: a teammate opening the Store
+  // after a clone should see this company's apps before the 276 plugins nobody
+  // vetted, and dev tooling last of all.
   entries.sort(
     (a, b) =>
       requirementRank(a) - requirementRank(b) ||
       Number(b.curated) - Number(a.curated) ||
+      segmentRank(a) - segmentRank(b) ||
       a.plugin.displayName.localeCompare(b.plugin.displayName, undefined, {
         sensitivity: 'base'
       }) ||

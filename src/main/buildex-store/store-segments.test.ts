@@ -11,7 +11,7 @@ function plugin(name: string, category: string | null = null): StorePlugin {
     author: null,
     homepage: null,
     keywords: [],
-    source: { kind: 'marketplace-relative', path: `plugins/${name}` }
+    source: { url: null, path: `plugins/${name}` }
   }
 }
 
@@ -22,16 +22,17 @@ describe('segmentForPlugin', () => {
     expect(segmentForPlugin(plugin('browser-use', 'automation'), 'software', null)).toBe('business')
   })
 
-  it('keeps developer tooling off the business shelf despite its upstream category', () => {
-    // Upstream files all of these under `productivity`, which is why the map
-    // alone is not enough.
-    expect(segmentForPlugin(plugin('github', 'productivity'), 'software', null)).toBe('software')
-    expect(segmentForPlugin(plugin('code-review', 'productivity'), 'software', null)).toBe(
-      'software'
-    )
-    expect(segmentForPlugin(plugin('commit-commands', 'productivity'), 'software', null)).toBe(
-      'software'
-    )
+  it('takes a placement overlay that carries nothing else', () => {
+    // Upstream files github and code-review under `productivity`, which is why
+    // the category map alone is not enough. The exceptions are overlay files
+    // now, so this is the only mechanism that has to work — which plugins use it
+    // is asserted against the shipped files in bundled-shelf.test.ts.
+    expect(
+      segmentForPlugin(plugin('github', 'productivity'), 'business', {
+        pluginName: 'github',
+        segment: 'software'
+      })
+    ).toBe('software')
   })
 
   it('sends the developer categories to the software shelf', () => {

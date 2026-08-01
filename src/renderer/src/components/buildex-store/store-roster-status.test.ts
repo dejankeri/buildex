@@ -17,7 +17,7 @@ function entry(name: string, installed: boolean, requirement?: StoreRequirement)
       author: null,
       homepage: null,
       keywords: [],
-      source: { kind: 'marketplace-relative', path: `./plugins/${name}` }
+      source: { url: null, path: `./plugins/${name}` }
     },
     marketplaceId: 'buildex',
     marketplaceLabel: 'BuildEx',

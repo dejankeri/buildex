@@ -70,7 +70,7 @@ function entry(name: string, marketplaceId: string, gatedTool: string, installed
       author: null,
       homepage: null,
       keywords: [],
-      source: { kind: 'marketplace-relative' as const, path: name }
+      source: { url: null, path: name }
     },
     marketplaceId,
     marketplaceLabel: marketplaceId,

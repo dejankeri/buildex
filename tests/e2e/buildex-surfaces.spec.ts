@@ -204,38 +204,32 @@ test('the store fills from the marketplace indexes this machine has fetched', as
   await expect(orcaPage.getByText('Protocol', { exact: true }).first()).toBeVisible()
   await expect(orcaPage.getByText('Stripe', { exact: true }).first()).toBeVisible()
 
-  await orcaPage.screenshot({ path: proofPath('store-business-shelf.png') })
+  await orcaPage.screenshot({ path: proofPath('store-shelf.png') })
 })
 
-test('the two shelves are two products, and the same app can sit on both', async ({ orcaPage }) => {
+test('one shelf, and the badge is what separates vetted from not', async ({ orcaPage }) => {
   await orcaPage.getByRole('button', { name: 'Store', exact: true }).click()
 
-  const business = orcaPage.getByRole('tab', { name: /Run your business/ })
-  const software = orcaPage.getByRole('tab', { name: /Build software/ })
-  await expect(business).toBeVisible()
-  await expect(software).toBeVisible()
-
-  // Searching one name reaches both shelves: our Stripe is the operator's, and
-  // stripe/ai's is the developer's. Counts rather than an exact number — other
-  // apps legitimately mention Stripe in their description.
+  // No tabs to choose between: searching one name reaches every marketplace at
+  // once. Our Stripe is the operator's and stripe/ai's is the developer's, and
+  // both are on the same shelf.
   await orcaPage.getByRole('textbox', { name: 'Search apps' }).fill('stripe')
-  await expect(business).not.toContainText('0')
-  await expect(software).not.toContainText('0')
 
-  // Ours leads the business shelf, named the way an operator says it.
+  // Ours leads, named the way an operator says it and marked as vetted. It
+  // gates nothing, so `Curated` is the badge that has to carry that — the whole
+  // reason a curated app needed one once the shelves merged.
   await expect(orcaPage.getByText('Stripe', { exact: true }).first()).toBeVisible()
-
-  await software.click()
+  await expect(orcaPage.getByText('Curated').first()).toBeVisible()
+  // Upstream's sits below it, on the same shelf, saying it is not.
   await expect(orcaPage.getByText('Unverified').first()).toBeVisible()
 
-  await orcaPage.screenshot({ path: proofPath('store-software-shelf.png') })
+  await orcaPage.screenshot({ path: proofPath('store-shelf-badges.png') })
 })
 
 test('a plugin nobody vetted says so before it is installed', async ({ orcaPage }) => {
   // Why: uncurated plugins install ungated, and that is a deliberate decision.
   // It has to be visible on the card rather than discovered afterwards.
   await orcaPage.getByRole('button', { name: 'Store', exact: true }).click()
-  await orcaPage.getByRole('tab', { name: /Build software/ }).click()
   await orcaPage.getByRole('textbox', { name: 'Search apps' }).fill('clickhouse')
 
   await expect(orcaPage.getByText('Unverified').first()).toBeVisible()
@@ -272,6 +266,14 @@ test('a teammate sees what this company runs on, first', async ({ orcaPage, test
     await expect(orcaPage.getByText('What your company runs on')).toBeVisible()
     await expect(orcaPage.getByText('Required').first()).toBeVisible()
     await expect(orcaPage.getByText('Every client lives here.')).toBeVisible()
+
+    // Why: a cloned company repo's first action is getting its apps, not
+    // browsing. The bulk install sits above the search rather than inside the
+    // shelf, and it is the page's only default-weight button.
+    const installAll = orcaPage.getByRole('button', { name: /Install all/ })
+    await expect(installAll).toBeVisible()
+    // Not clicked: installing shells out to `claude plugin install`, which would
+    // reach the network and change the plugins on whatever machine runs this.
 
     await orcaPage.screenshot({ path: proofPath('store-company-roster.png') })
   } finally {
