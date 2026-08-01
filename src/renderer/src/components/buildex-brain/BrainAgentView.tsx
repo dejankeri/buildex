@@ -19,8 +19,11 @@ import { EMPTY_AGENT_VIEW } from '../../../../shared/buildex-brain-types'
 // if it decides it needs them. Showing the two halves apart is the difference
 // between trusting the system and guessing at it.
 //
-// Rendered from files on disk with no model involved, and no key is ever read:
-// an MCP entry shows the variable its key comes from, never a value.
+// Rendered from files on disk with no model involved. Memory files are shown
+// verbatim and their `@` lines are shown as written — this screen says nothing
+// about what an import contains, because it never reads one. A connected app is
+// its name and its host or program; no header, env value or argument is ever
+// carried here, so there is no value left to mask.
 
 const KIND_ICON = { skill: Sparkles, mcp: Plug, document: FileText } as const
 
@@ -97,7 +100,7 @@ export default function BrainAgentView({
               <p className="mt-1 text-[11px] text-muted-foreground">
                 {translate(
                   'buildex.brain.agentView.loadedHint',
-                  'Read in full at the start of every new chat — about {{value0}} characters.',
+                  'Read in full at the start of every new chat — {{value0}} characters in the files below. An @ line is listed exactly as written; open it to read it yourself.',
                   { value0: view.loadedCharacters.toLocaleString() }
                 )}
               </p>
@@ -111,18 +114,54 @@ export default function BrainAgentView({
                   </p>
                 ) : (
                   view.alwaysLoaded.map((file) => (
-                    <details key={file.path} className="rounded-md border border-border">
-                      <summary className="cursor-pointer px-3 py-2 text-[12px]">
-                        <span className="font-mono">{file.path}</span>
-                        <span className="ml-2 text-[11px] text-muted-foreground">
-                          {file.reason}
-                        </span>
-                      </summary>
-                      <pre className="scrollbar-sleek max-h-72 overflow-auto border-t border-border px-3 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                        {file.body ||
-                          translate('buildex.brain.agentView.notShown', 'Not shown here.')}
-                      </pre>
-                    </details>
+                    // Imports sit outside the disclosure on purpose: what a
+                    // memory file pulls in is half the answer, and it should not
+                    // need reading the whole file to find.
+                    <div key={file.path} className="rounded-md border border-border">
+                      <div className="px-3 py-2">
+                        <p className="font-mono text-[12px]">{file.path}</p>
+                        {file.imports.length > 0 ? (
+                          <>
+                            <p className="mt-1.5 text-[11px] font-medium text-muted-foreground">
+                              {translate('buildex.brain.agentView.imports', 'Imports')}
+                            </p>
+                            <ul className="mt-0.5 space-y-0.5">
+                              {file.imports.map((entry, index) => {
+                                const openTarget = entry.absolutePath
+                                return (
+                                  <li
+                                    key={`${entry.target}:${index}`}
+                                    className="font-mono text-[11px] text-muted-foreground"
+                                  >
+                                    {openTarget ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => void window.api.shell.openPath(openTarget)}
+                                        className="underline underline-offset-2 hover:text-foreground"
+                                      >
+                                        @{entry.target}
+                                      </button>
+                                    ) : (
+                                      <span>@{entry.target}</span>
+                                    )}
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          </>
+                        ) : null}
+                      </div>
+                      {file.body ? (
+                        <details className="border-t border-border">
+                          <summary className="cursor-pointer px-3 py-2 text-[11px] text-muted-foreground">
+                            {translate('buildex.brain.agentView.contents', 'Contents')}
+                          </summary>
+                          <pre className="scrollbar-sleek max-h-72 overflow-auto border-t border-border px-3 py-2 text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                            {file.body}
+                          </pre>
+                        </details>
+                      ) : null}
+                    </div>
                   ))
                 )}
               </div>

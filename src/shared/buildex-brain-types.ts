@@ -354,15 +354,24 @@ export type BrainSkillCreateResult = {
   error?: string
 }
 
+/**
+ * An `@` line as the file writes it. Listed, never followed: what it resolves to
+ * is Claude Code's business, and a second answer to that question here would
+ * eventually be a wrong one.
+ */
+export type AgentContextImport = {
+  /** The text after `@`, exactly as written. */
+  target: string
+  /** Absolute path to open, present only when this machine has a file there. */
+  absolutePath?: string
+}
+
 /** One file the agent reads in full at the start of every session. */
 export type AgentContextFile = {
   /** Repo-relative POSIX path. */
   path: string
-  /** Why it is in front of the agent, in one line. */
-  reason: string
   body: string
-  /** True when this file is here because another one `@`-imported it. */
-  imported: boolean
+  imports: AgentContextImport[]
 }
 
 /**

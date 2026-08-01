@@ -389,7 +389,10 @@ WP-9 hit this: collapsing the Store's two shelves into one left
 `buildex.store.shelf.otherShelfHint` ("check the other shelf's count") and
 `shelf.empty` referenced by nothing, and changed `shelf.noMatches` from "Nothing
 on this shelf matches" to "Nothing matches". The sync reported success and would
-have shipped all three.
+have shipped all three. WP-10 hit it again from the other side: dropping the
+agent view's `notShown` and rewording `loadedHint` needed the same three steps,
+and the reword is the half nothing checks — the old sentence renders from the
+catalog with a green sync even after the fallback in the source has changed.
 
 **The Portfolio is a composition, not a subsystem.** `buildex-portfolio/*` adds
 no IPC and no main-process module: it enumerates the renderer's own `repos` and

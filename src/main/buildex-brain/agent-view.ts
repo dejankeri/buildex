@@ -1,43 +1,41 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
 import path from 'node:path'
 import type {
   AgentContextFile,
+  AgentContextImport,
   AgentReachableItem,
   AgentView,
   BrainLocation,
   BrainScan
 } from '../../shared/buildex-brain-types'
 import { listBrainSkills } from './brain-skills'
-import { readMcpServers, describeMcpServer } from './agent-view-mcp'
 
 // What the agent is actually looking at when a chat starts.
 //
-// This exists because the honest answer is not one file. The agent reads its
-// project memory in full, follows the `@` imports in it, and is separately told
-// the NAMES of skills, MCP servers and documents it may choose to open. Those
-// two halves feel the same to an operator and are not: a skill's instructions
-// are not in the conversation until the agent decides to read them.
+// The honest answer has two halves that feel identical to an operator and are
+// not: project memory is in the conversation before they type, while a skill, a
+// connected app or a document is only NAMED — its contents arrive only if the
+// agent decides to open it.
 //
-// Rendered from files on disk with no model in the loop (invariant 9), and it
-// never reads a credential — an MCP entry's key is a variable reference here and
-// stays one (invariant 4).
+// Memory files are listed verbatim and their `@` lines are listed as written.
+// Nothing here *follows* an import: a line is resolved far enough to offer a
+// link and never far enough to say what is on the other end. Claude Code owns
+// those semantics — depth, cycles, home-relative paths — and a second
+// implementation of them in the one dialog whose entire value is being true
+// would sooner or later state something false. Rendered from files on disk with
+// no model in the loop (invariant 9).
 
 /** Project memory, in the order the agent picks it up. */
 const MEMORY_FILES = ['CLAUDE.md', '.claude/CLAUDE.md']
 
-// Deep enough for anything real; a cap at all is what stops a pair of files that
-// import each other from hanging the dialog.
-const MAX_IMPORT_DEPTH = 3
-
-function toPosix(value: string): string {
-  return value.split(path.sep).join('/')
-}
+const MCP_CONFIG_FILE = '.mcp.json'
 
 /**
- * The `@path` imports in a memory file.
+ * The `@path` lines in a memory file.
  *
- * Only at the start of a line, and never inside a fenced code block — a document
- * quoting an import as an example is not an import.
+ * Only a line that is nothing but `@target`, and never inside a fenced code
+ * block — a document quoting an import as an example is not writing one.
  */
 export function findImports(body: string): string[] {
   const found: string[] = []
@@ -58,68 +56,91 @@ export function findImports(body: string): string[] {
   return found
 }
 
-function readIfPresent(absolute: string): string | null {
+function readFileIfPresent(absolute: string): string | null {
   try {
-    return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null
+    return statSync(absolute).isFile() ? readFileSync(absolute, 'utf8') : null
   } catch {
     return null
   }
 }
 
+/**
+ * Where an `@` line points, when this machine can open it.
+ *
+ * The plain reading of the text — a path relative to the file holding the line —
+ * and only when it turns out to be a file, so the dialog never offers a link
+ * that opens nothing or launches an application bundle. Absent is a fine answer:
+ * the line is still shown, just not as a link.
+ */
+function resolveImportTarget(fromFile: string, target: string): string | undefined {
+  const expanded = /^~[/\\]/.test(target) ? path.join(homedir(), target.slice(2)) : target
+  const absolute = path.resolve(path.dirname(fromFile), expanded)
+  try {
+    return statSync(absolute).isFile() ? absolute : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function collectMemory(repoPath: string): AgentContextFile[] {
   const files: AgentContextFile[] = []
-  const seen = new Set<string>()
-
-  const visit = (target: string, depth: number, importedBy: string | null): void => {
-    // `~/…` is a home-relative import. Resolving it as a path would quietly turn
-    // it into a folder literally named `~` inside the repo, and the import would
-    // disappear from this view rather than be reported as external.
-    const external = target.startsWith('~')
-    const absolute = external ? target : path.resolve(target)
-    const relative = external ? target : toPosix(path.relative(repoPath, absolute))
-    if (seen.has(relative) || depth > MAX_IMPORT_DEPTH) {
-      return
-    }
-    // Why: an import that leaves the repo is real — the agent does load it — but
-    // it is not this company's file, and reading someone's home directory to
-    // show it here is not BuildEx's business.
-    if (external || relative.startsWith('..') || path.isAbsolute(relative)) {
-      seen.add(relative)
-      files.push({
-        path: relative,
-        reason: 'Imported from outside this repo — BuildEx does not read it.',
-        body: '',
-        imported: true
-      })
-      return
-    }
-    const body = readIfPresent(absolute)
-    if (body === null) {
-      return
-    }
-    seen.add(relative)
-    files.push({
-      path: relative,
-      reason: importedBy
-        ? `Imported by ${importedBy}, so it loads with it.`
-        : 'Project instructions, read in full at the start of every session.',
-      body,
-      imported: Boolean(importedBy)
-    })
-    for (const target of findImports(body)) {
-      // Per the import rules, relative to the file holding the line.
-      visit(
-        target.startsWith('~') ? target : path.resolve(path.dirname(absolute), target),
-        depth + 1,
-        relative
-      )
-    }
-  }
-
   for (const relative of MEMORY_FILES) {
-    visit(path.join(repoPath, ...relative.split('/')), 0, null)
+    const absolute = path.join(repoPath, ...relative.split('/'))
+    const body = readFileIfPresent(absolute)
+    if (body === null) {
+      continue
+    }
+    const imports: AgentContextImport[] = findImports(body).map((target) => {
+      const absolutePath = resolveImportTarget(absolute, target)
+      return absolutePath ? { target, absolutePath } : { target }
+    })
+    files.push({ path: relative, body, imports })
   }
   return files
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** Servers in `.mcp.json`, sorted, so the dialog reads the same way every time. */
+function readMcpServers(repoPath: string): [string, Record<string, unknown>][] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(path.join(repoPath, MCP_CONFIG_FILE), 'utf8'))
+  } catch {
+    return []
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.mcpServers)) {
+    return []
+  }
+  return Object.entries(parsed.mcpServers)
+    .filter((pair): pair is [string, Record<string, unknown>] => isRecord(pair[1]))
+    .sort((a, b) => a[0].localeCompare(b[0]))
+}
+
+/**
+ * How the agent reaches a server, said in the one way that cannot carry a key.
+ *
+ * `headers`, `env` and `args` are never read at all — a value that is never
+ * rendered cannot be imperfectly masked. A URL is cut to scheme and host because
+ * hosted MCP services routinely put the operator's secret in the path
+ * (`/api/mcp/s/<secret>/mcp`), a query or the userinfo; a command is cut to its
+ * program name for the same reason plus one more — an install path carries the
+ * operator's home directory into a dialog people screenshot.
+ */
+function describeMcpServer(entry: Record<string, unknown>): string {
+  const url = typeof entry.url === 'string' ? entry.url : ''
+  if (url) {
+    try {
+      const parsed = new URL(url)
+      return `${parsed.protocol}//${parsed.host}`
+    } catch {
+      return ''
+    }
+  }
+  const command = typeof entry.command === 'string' ? entry.command : ''
+  return command.split(/[/\\]/).at(-1) ?? ''
 }
 
 /**
@@ -151,7 +172,7 @@ function collectReachable(repoPath: string, scan: BrainScan): AgentReachableItem
   }
 
   for (const [name, entry] of readMcpServers(repoPath)) {
-    items.push({ kind: 'mcp', name, detail: describeMcpServer(entry), path: '.mcp.json' })
+    items.push({ kind: 'mcp', name, detail: describeMcpServer(entry), path: MCP_CONFIG_FILE })
   }
 
   for (const document of scan.documents) {

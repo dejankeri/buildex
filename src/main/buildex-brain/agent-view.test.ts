@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { BrainResolution } from '../../shared/buildex-brain-types'
 import { EMPTY_BRAIN_SCAN } from '../../shared/buildex-brain-types'
 import { buildAgentView, findImports } from './agent-view'
-import { describeSecret } from './agent-view-mcp'
 import { scanCompanyBrain } from './company-brain-service'
 import { embeddedLocation, externalLocation } from './brain-location'
 
@@ -49,18 +48,74 @@ describe('findImports', () => {
 })
 
 describe('buildAgentView', () => {
-  it('reads project instructions and follows their imports', async () => {
+  it('shows project instructions verbatim and does not follow their imports', () => {
+    // Why: what an import resolves to is Claude Code's business. This view says
+    // what the file says, and offers to open it — nothing about its contents.
     write('.claude/CLAUDE.md', '# House rules\n\n@./company-context.md\n')
     write('.claude/company-context.md', '# Company context\n\nOne document.\n')
 
     const view = buildAgentView(repo, EMPTY_BRAIN_SCAN)
 
-    expect(view.alwaysLoaded.map((file) => file.path)).toEqual([
-      '.claude/CLAUDE.md',
-      '.claude/company-context.md'
+    expect(view.alwaysLoaded.map((file) => file.path)).toEqual(['.claude/CLAUDE.md'])
+    expect(view.alwaysLoaded[0].body).toBe('# House rules\n\n@./company-context.md\n')
+    expect(view.alwaysLoaded[0].imports).toEqual([
+      {
+        target: './company-context.md',
+        absolutePath: path.join(repo, '.claude', 'company-context.md')
+      }
     ])
-    expect(view.alwaysLoaded[1].imported).toBe(true)
-    expect(view.alwaysLoaded[1].body).toContain('One document.')
+    expect(JSON.stringify(view)).not.toContain('One document.')
+  })
+
+  it('lists both memory files when the repo has both', () => {
+    write('CLAUDE.md', '# Repo rules\n')
+    write('.claude/CLAUDE.md', '# Agent rules\n')
+
+    expect(buildAgentView(repo, EMPTY_BRAIN_SCAN).alwaysLoaded.map((file) => file.path)).toEqual([
+      'CLAUDE.md',
+      '.claude/CLAUDE.md'
+    ])
+  })
+
+  it('opens a nested import from the file that wrote the line', () => {
+    write('.claude/CLAUDE.md', '@./context/inbox/today.md\n')
+    write('.claude/context/inbox/today.md', '# Today\n')
+
+    expect(buildAgentView(repo, EMPTY_BRAIN_SCAN).alwaysLoaded[0].imports[0]).toEqual({
+      target: './context/inbox/today.md',
+      absolutePath: path.join(repo, '.claude', 'context', 'inbox', 'today.md')
+    })
+  })
+
+  it('opens an import that walks back out of the folder it was written in', () => {
+    write('.claude/CLAUDE.md', '@../docs/handbook.md\n')
+    write('docs/handbook.md', '# Handbook\n')
+
+    expect(buildAgentView(repo, EMPTY_BRAIN_SCAN).alwaysLoaded[0].imports[0]).toEqual({
+      target: '../docs/handbook.md',
+      absolutePath: path.join(repo, 'docs', 'handbook.md')
+    })
+  })
+
+  it('still lists an import it cannot open here, exactly as written', () => {
+    // Why: the line is in the file whether or not this machine has the target.
+    // Saying nothing would hide it; inventing a link would be worse.
+    write('.claude/CLAUDE.md', '@~/.buildex-no-such-dir-9d1f/personal.md\n')
+
+    expect(buildAgentView(repo, EMPTY_BRAIN_SCAN).alwaysLoaded[0].imports).toEqual([
+      { target: '~/.buildex-no-such-dir-9d1f/personal.md' }
+    ])
+  })
+
+  it('does not offer to open something that is not a file', () => {
+    // Why: on macOS an application is a directory, and a one-click launcher is
+    // not what "open the import" should ever mean.
+    write('.claude/CLAUDE.md', '@./Thing.app\n')
+    mkdirSync(path.join(repo, '.claude', 'Thing.app'), { recursive: true })
+
+    expect(buildAgentView(repo, EMPTY_BRAIN_SCAN).alwaysLoaded[0].imports).toEqual([
+      { target: './Thing.app' }
+    ])
   })
 
   it('counts what is loaded before the operator types', () => {
@@ -69,21 +124,11 @@ describe('buildAgentView', () => {
     expect(buildAgentView(repo, EMPTY_BRAIN_SCAN).loadedCharacters).toBe(5)
   })
 
-  it('does not read a file imported from outside the repo', () => {
-    // Why: the agent really does load it, so saying nothing would be a lie — but
-    // reading somebody's home directory to display it here is not our business.
-    write('.claude/CLAUDE.md', '@~/.claude/personal.md\n')
-
-    const outside = buildAgentView(repo, EMPTY_BRAIN_SCAN).alwaysLoaded.at(-1)
-    expect(outside?.body).toBe('')
-    expect(outside?.reason).toContain('outside this repo')
-  })
-
-  it('survives two files that import each other', () => {
+  it('cannot be made to recurse by two files that import each other', () => {
     write('.claude/CLAUDE.md', '@./a.md\n')
     write('.claude/a.md', '@./CLAUDE.md\n')
 
-    expect(buildAgentView(repo, EMPTY_BRAIN_SCAN).alwaysLoaded).toHaveLength(2)
+    expect(buildAgentView(repo, EMPTY_BRAIN_SCAN).alwaysLoaded).toHaveLength(1)
   })
 
   it('separates documents the agent must open from context it already has', async () => {
@@ -101,16 +146,12 @@ describe('buildAgentView', () => {
     })
   })
 
-  it('lists a connected app by where its key comes from, never its value', () => {
+  it('lists a connected app by the host it reaches, never by its address', () => {
     write(
       '.mcp.json',
       JSON.stringify({
         mcpServers: {
-          slack: {
-            type: 'http',
-            url: 'https://slack.example/mcp',
-            headers: { Authorization: 'Bearer ${BUILDEX_SLACK_API_KEY}' }
-          }
+          slack: { type: 'http', url: 'https://slack.example:8443/mcp/s/abc/mcp' }
         }
       })
     )
@@ -118,7 +159,53 @@ describe('buildAgentView', () => {
     const server = buildAgentView(repo, EMPTY_BRAIN_SCAN).reachable.find(
       (item) => item.kind === 'mcp'
     )
-    expect(server?.detail).toBe('https://slack.example/mcp · key from $BUILDEX_SLACK_API_KEY')
+    expect(server?.name).toBe('slack')
+    expect(server?.detail).toBe('https://slack.example:8443')
+  })
+
+  it('lists a local connected app by its program, not its install path', () => {
+    // Why: an install path carries the operator's home directory into a dialog
+    // people screenshot, and answers nothing the program name does not.
+    write(
+      '.mcp.json',
+      JSON.stringify({
+        mcpServers: { notes: { command: '/Users/someone/.local/bin/notes-mcp' } }
+      })
+    )
+
+    expect(
+      buildAgentView(repo, EMPTY_BRAIN_SCAN).reachable.find((item) => item.kind === 'mcp')?.detail
+    ).toBe('notes-mcp')
+  })
+
+  it('cannot put a secret on screen, wherever the operator put it', () => {
+    // The whole point of the rewrite: `headers`, `env` and `args` are never read,
+    // and a URL is cut to scheme and host — hosted MCP services put the key in
+    // the path, the query or the userinfo. A value that never reaches the view
+    // cannot be imperfectly masked. This must fail if anyone re-adds one.
+    const token = 'sk-ant-api03-notarealkey'
+    write(
+      '.mcp.json',
+      JSON.stringify({
+        mcpServers: {
+          headerLeak: {
+            url: 'https://a.example/mcp',
+            headers: { Authorization: `Bearer ${token}` }
+          },
+          envLeak: { command: 'npx', args: ['--token', token], env: { API_KEY: token } },
+          pathLeak: { url: `https://b.example/api/mcp/s/${token}/mcp?key=${token}` },
+          userInfoLeak: { url: `https://operator:${token}@c.example/mcp` }
+        }
+      })
+    )
+
+    const view = buildAgentView(repo, EMPTY_BRAIN_SCAN)
+
+    expect(JSON.stringify(view)).not.toContain(token)
+    // Sorted by server name: envLeak, headerLeak, pathLeak, userInfoLeak.
+    expect(view.reachable.filter((item) => item.kind === 'mcp').map((item) => item.detail)).toEqual(
+      ['npx', 'https://a.example', 'https://b.example', 'https://c.example']
+    )
   })
 })
 
@@ -175,26 +262,5 @@ describe('buildAgentView with an external brain', () => {
         expect(item.path).not.toContain(path.join(repo, '.buildex'))
       }
     }
-  })
-})
-
-describe('describeSecret', () => {
-  it('names the variable a key comes from', () => {
-    expect(describeSecret('${BUILDEX_SLACK_API_KEY}')).toBe('$BUILDEX_SLACK_API_KEY')
-  })
-
-  it('keeps the scheme word in front of a reference readable', () => {
-    expect(describeSecret('Bearer ${TOKEN}')).toBe('$TOKEN')
-  })
-
-  it('masks a token somebody pasted in by hand', () => {
-    // Why: BuildEx never writes a literal here, but `.mcp.json` is the
-    // operator's file too, and this dialog is the kind of thing people
-    // screenshot.
-    expect(describeSecret('Bearer sk-ant-api03-notarealkey')).toBe('••••')
-  })
-
-  it('masks a literal hiding behind a reference', () => {
-    expect(describeSecret('${PREFIX}sk-ant-api03-notarealkey')).toBe('••••')
   })
 })
