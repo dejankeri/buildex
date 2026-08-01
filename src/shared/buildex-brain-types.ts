@@ -88,7 +88,7 @@ export type BrainScan = {
   /**
    * False until the operator sets a brain up here. BuildEx no longer scaffolds
    * on sight, so this is what tells the Brain screen to offer setup instead of
-   * showing nine empty sections nobody asked for.
+   * showing ten empty sections nobody asked for.
    */
   initialized: boolean
   /** How this repo's brain was resolved. Null only when there is no repo. */

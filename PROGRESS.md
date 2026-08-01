@@ -386,6 +386,21 @@ do it. **When you fix it, delete this paragraph and the matching one in
 `BUILDEX-PATCHES.md` in the same commit** — both say "still live at HEAD", and a
 survivor becomes a false claim the moment the copy is right.
 
+**The context file's `## Apps` block still describes the pre-marketplace Store —
+to the agent.** `renderApps` in `company-context.ts:68-87` writes three statements
+that stopped being true when installing moved to the plugin CLI: it calls the
+apps "capability packs"; it tells the agent their skills "live in `.buildex/skills/`
+and are linked into `.claude/skills/`", when the apps it is listing come from
+`readInstalledPluginInventory` and their skills are in the agent's own plugin
+cache; and it names `.claude/mcp.json` for an unconnected app, a path nothing
+reads or writes, two lines above naming `.mcp.json` for a connected one. This is
+worse than a stale comment — it is text BuildEx writes into
+`.claude/company-context.md` and the agent reads at every session start, pointing
+it at a directory that does not hold what it is told to look for. **Not fixed
+here:** the right replacement is a product decision (a plugin's skills load from
+the cache on their own, so the honest answer may be to name no path at all), not
+a typo repair, and it wants its own task with `company-context.test.ts` in view.
+
 **`reviews/weekly-review.md` describes itself as the destination** in its HTML
 comment while its seeded prompt writes a new dated file in `reviews/`. Harmless —
 the prompt is the half the agent reads — but it is wrong prose in a shipped seed.

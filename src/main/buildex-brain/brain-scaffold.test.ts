@@ -220,9 +220,10 @@ describe('isBrainInitialized', () => {
   })
 
   it('stays false when the only thing there is a skill the Store installed', () => {
-    // Why: installing an app writes skills into `.buildex/`. If that counted as
-    // a brain, the operator would never be offered setup and would be left with
-    // a brain that is nothing but somebody else's skills.
+    // Why: an older BuildEx installed apps by writing their skills into
+    // `.buildex/`, and those repos still exist. If that counted as a brain, the
+    // operator would never be offered setup and would be left with a brain that
+    // is nothing but somebody else's skills.
     mkdirSync(path.join(repo, '.buildex', 'skills', 'slack-search'), { recursive: true })
 
     expect(isBrainInitialized(location())).toBe(false)

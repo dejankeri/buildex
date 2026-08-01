@@ -11,7 +11,7 @@ import { filterBrainTree } from './brain-tree-filter'
 // Browsing the brain, and adding to it.
 //
 // Sections stack full width rather than sitting in a card grid, because a grid
-// gave a company's nine areas and its twenty clients the same weight and the
+// gave a company's ten areas and its twenty clients the same weight and the
 // same size. The rail is how a long page stays navigable; collapse is how it
 // stays short.
 
