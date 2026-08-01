@@ -83,9 +83,12 @@ export function initializedCompanyRepos(): string[] {
  * brain adds is missing from a catalogue read without it, and the sync would then
  * retire the very rules that app is still gated by (BUILDEX-PATCHES.md).
  *
+ * Exported because every caller of `syncGateSettings` owes it these rules — a
+ * bare sync retires whatever the last install wrote.
+ *
  * Empty rather than throwing: an unreadable shelf must not cost the gate.
  */
-function installedPluginGateRules(repoPath: string): { ask: string[]; deny: string[] } {
+export function installedPluginGateRules(repoPath: string): { ask: string[]; deny: string[] } {
   try {
     return collectPluginGateRules(readCompanyStoreEntries(requireBrainLocation(repoPath)))
   } catch {

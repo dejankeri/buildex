@@ -161,8 +161,9 @@ export function readInstalledAppSummaries(
  */
 export function readCompanyStoreEntries(
   location?: BrainLocation | null,
-  companyKey?: string | null
+  companyKey?: string | null,
+  userDataPath?: string
 ): StoreEntry[] {
   const companyMarketplaces = location ? readCompanyMarketplaces(location).entries : []
-  return readAppStoreCatalog({ companyMarketplaces, companyKey }).entries
+  return readAppStoreCatalog({ companyMarketplaces, companyKey, userDataPath }).entries
 }

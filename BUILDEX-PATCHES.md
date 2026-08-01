@@ -956,6 +956,14 @@ plugin rules, so merely opening a surface took an installed app's `ask` rules
 back out of `.claude/settings.json`. Whatever calls `syncGateSettings` must pass
 `collectPluginGateRules` for what is installed.
 
+It bit a **third** time, in the one caller with no test file: `buildex-gate:sync`
+synced bare, and the Store page fires that channel from an effect on every mount
+and every workspace switch — so opening the Store retired every installed
+plugin's rules. There are exactly three callers (`buildex-repo-init.ts`,
+`buildex-store.ts`, `ipc/buildex-gate.ts`); `installedPluginGateRules` is
+exported from `buildex-repo-init.ts` so none of them has to re-derive it. Grep
+for `syncGateSettings(` before adding a fourth.
+
 **Hook state is global and shared with the operator's real Orca.** Managed hooks
 install to `~/.orca/agent-hooks/` and `~/.claude/settings.json` — not to
 userData. Anything this fork does with agent hooks reaches the Orca they run

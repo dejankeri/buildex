@@ -107,6 +107,10 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
   is no button — a context someone has to remember to refresh is a context that is
   usually wrong. Both files sit in `.claude/`, git-excluded: this is derived
   machine state, so committing it would churn the company's history for nothing.
+  It is read in full at every session start, so it has a hard **20 000-character
+  ceiling enforced in the renderer** (`MAP_CHARACTER_CEILING`): over it, document
+  descriptions narrow and then go before any path does, and the file says which
+  happened. A map that quietly stopped would tell the agent a folder is not there.
 - **The gate** — the allow/ask/deny preset is written into the company repo's
   `.claude/settings.json`, so the agent's own runtime enforces it. Wide
   autonomy: reading, editing, searching, shell and web run without interruption;
@@ -386,21 +390,6 @@ do it. **When you fix it, delete this paragraph and the matching one in
 `BUILDEX-PATCHES.md` in the same commit** — both say "still live at HEAD", and a
 survivor becomes a false claim the moment the copy is right.
 
-**The context file's `## Apps` block still describes the pre-marketplace Store —
-to the agent.** `renderApps` in `company-context.ts:68-87` writes three statements
-that stopped being true when installing moved to the plugin CLI: it calls the
-apps "capability packs"; it tells the agent their skills "live in `.buildex/skills/`
-and are linked into `.claude/skills/`", when the apps it is listing come from
-`readInstalledPluginInventory` and their skills are in the agent's own plugin
-cache; and it names `.claude/mcp.json` for an unconnected app, a path nothing
-reads or writes, two lines above naming `.mcp.json` for a connected one. This is
-worse than a stale comment — it is text BuildEx writes into
-`.claude/company-context.md` and the agent reads at every session start, pointing
-it at a directory that does not hold what it is told to look for. **Not fixed
-here:** the right replacement is a product decision (a plugin's skills load from
-the cache on their own, so the honest answer may be to name no path at all), not
-a typo repair, and it wants its own task with `company-context.test.ts` in view.
-
 **`reviews/weekly-review.md` describes itself as the destination** in its HTML
 comment while its seeded prompt writes a new dated file in `reviews/`. Harmless —
 the prompt is the half the agent reads — but it is wrong prose in a shipped seed.
@@ -453,7 +442,7 @@ Neither file is touched automatically, in either direction — an operator's own
 file that happens to share the name is theirs. That is one application of
 **invariant 8 — *nothing is ever lost***, which the code cites by number without
 ever defining it: `brain-remove.ts:20` for the removal backups, `BrainDocument.tsx:15`
-for saving on ⌘S, Back and unmount, and `company-context.test.ts:586` and
+for saving on ⌘S, Back and unmount, and `company-context.test.ts:677` and
 `gate-settings.ts:125` for this one, an operator's own file being theirs whatever
 it is called. (Orca's source-control code uses a separate numbering; its "design
 invariant 8" is unrelated.)

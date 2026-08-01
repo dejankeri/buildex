@@ -2,10 +2,15 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { checkoutCommitBlockMessage, readCheckoutCommitBlock } from './checkout-commit-block'
 import { commitBrain } from './brain-history'
 import { embeddedLocation } from './brain-location'
+
+// Every case here shells out to real `git`, repeatedly. Vitest's 5s default is a
+// budget for pure functions, and under full-suite load these are the files that
+// turn a loaded box into a red suite — the noise that hides a real regression.
+vi.setConfig({ testTimeout: 60_000 })
 
 let dir = ''
 let repo = ''

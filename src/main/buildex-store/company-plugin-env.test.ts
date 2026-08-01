@@ -2,8 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { StoreCatalog, StoreEntry } from '../../shared/buildex-store-types'
-import { EMPTY_STORE_CATALOG } from '../../shared/buildex-store-types'
+import type { StoreEntry } from '../../shared/buildex-store-types'
 
 vi.mock('electron', () => ({
   safeStorage: { isEncryptionAvailable: () => false, encryptString: (v: string) => Buffer.from(v) }
@@ -11,8 +10,16 @@ vi.mock('electron', () => ({
 
 // The shelf itself is somebody else's test: what matters here is which company's
 // keys are read for it, and whether it is consulted at all.
-const readAppStoreCatalog = vi.fn<() => StoreCatalog>()
-vi.mock('./store-catalog-source', () => ({ readAppStoreCatalog: () => readAppStoreCatalog() }))
+//
+// Through `readCompanyStoreEntries` rather than `readAppStoreCatalog`, because
+// only the former is given a brain — and a shelf read without one is missing
+// every plugin installed from a marketplace the company added.
+const readCompanyStoreEntries =
+  vi.fn<(location: unknown, companyKey?: string | null, userDataPath?: string) => StoreEntry[]>()
+vi.mock('./store-catalog-source', () => ({
+  readCompanyStoreEntries: (location: unknown, companyKey?: string | null, userData?: string) =>
+    readCompanyStoreEntries(location, companyKey, userData)
+}))
 
 const { applyCompanyPluginEnv, companyWorkspacePathForSpawn } = await import('./company-plugin-env')
 const { resolveCompanyIdentity } = await import('../buildex-company-identity')
@@ -40,11 +47,25 @@ const STRIPE: StoreEntry = {
   installed: true
 }
 
+/** Only on a marketplace this company's brain adds. No bundled shelf carries it. */
+const BETA: StoreEntry = {
+  ...STRIPE,
+  plugin: {
+    ...STRIPE.plugin,
+    name: 'beta',
+    displayName: 'Beta',
+    source: { url: null, path: 'beta' }
+  },
+  marketplaceId: 'acme-private',
+  marketplaceLabel: 'Acme Private',
+  overlay: { pluginName: 'beta', apiKey: { transport: 'mcp-bearer' } }
+}
+
 beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'buildex-company-env-'))
   userDataPath = path.join(dir, 'userData')
-  readAppStoreCatalog.mockReset()
-  readAppStoreCatalog.mockReturnValue({ ...EMPTY_STORE_CATALOG, entries: [STRIPE] })
+  readCompanyStoreEntries.mockReset()
+  readCompanyStoreEntries.mockReturnValue([STRIPE])
 })
 
 afterEach(() => {
@@ -128,7 +149,7 @@ describe('applyCompanyPluginEnv', () => {
     preCompanyKey('sk_legacy')
 
     expect(envFor(undefined)).toEqual({})
-    expect(readAppStoreCatalog).not.toHaveBeenCalled()
+    expect(readCompanyStoreEntries).not.toHaveBeenCalled()
   })
 
   it('gives a workspace this machine cannot see nothing, which is what a remote one is', () => {
@@ -138,7 +159,7 @@ describe('applyCompanyPluginEnv', () => {
     preCompanyKey('sk_legacy')
 
     expect(envFor(path.join(dir, 'not-here', 'deep'))).toEqual({})
-    expect(readAppStoreCatalog).not.toHaveBeenCalled()
+    expect(readCompanyStoreEntries).not.toHaveBeenCalled()
   })
 
   it('falls back to a pre-company key for a business that has none of its own', () => {
@@ -157,9 +178,31 @@ describe('applyCompanyPluginEnv', () => {
     expect(env).toEqual({ BUILDEX_STRIPE_API_KEY: 'sk_from_shell' })
   })
 
+  it("emits the key of a plugin only this company's own marketplace carries", () => {
+    // The failure this replaces was silent in both directions: the Store reads
+    // the shelf *with* the brain, so the badge said Connected, while the terminal
+    // read it without and the MCP server got an unset `${VAR}`.
+    const acme = company('acme', 'sk_acme')
+    const companyKey = resolveCompanyIdentity(acme)!.key
+    expect(savePluginCredential({ userDataPath, companyKey }, 'beta', 'sk_beta').ok).toBe(true)
+    readCompanyStoreEntries.mockImplementation((location) => (location ? [STRIPE, BETA] : [STRIPE]))
+
+    expect(envFor(acme)).toEqual({
+      BUILDEX_STRIPE_API_KEY: 'sk_acme',
+      BUILDEX_BETA_API_KEY: 'sk_beta'
+    })
+    // Asked for as this company, in this userData — a shelf read as anyone else
+    // reports the wrong plugins and the wrong keys.
+    expect(readCompanyStoreEntries).toHaveBeenCalledWith(
+      expect.objectContaining({ gitRoot: acme }),
+      companyKey,
+      userDataPath
+    )
+  })
+
   it('opens the terminal anyway when the shelf cannot be read', () => {
     const acme = company('acme', 'sk_acme')
-    readAppStoreCatalog.mockImplementation(() => {
+    readCompanyStoreEntries.mockImplementation(() => {
       throw new Error('no catalog')
     })
 

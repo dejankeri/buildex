@@ -1,13 +1,18 @@
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BrainResolution, BrainScan } from '../../shared/buildex-brain-types'
 import { EMPTY_BRAIN_SCAN } from '../../shared/buildex-brain-types'
 import { DESCRIPTION_LIMIT } from './brain-document-frontmatter'
 import { renderCompanyContext, syncCompanyContext } from './company-context'
 import { scanCompanyBrain } from './company-brain-service'
 import { embeddedLocation } from './brain-location'
+
+// Every case here shells out to real `git`, repeatedly. Vitest's 5s default is a
+// budget for pure functions, and under full-suite load these are the files that
+// turn a loaded box into a red suite — the noise that hides a real regression.
+vi.setConfig({ testTimeout: 60_000 })
 
 let repo = ''
 
@@ -25,14 +30,28 @@ const CONTEXT_MAP_LINE_CEILING = 200
  * The same ceiling in the unit that is actually spent. Lines are the growth law;
  * characters are the bill.
  *
- * This one is **enforced in the renderer**, not merely asserted here: the map
- * has its own 80-character description budget and a 12-document slice per folder
- * line, so the number below is a consequence of those two constants rather than
- * a property of whatever the fixture happened to write. The first version of
- * this test asserted 20 000 against 19-character descriptions and would have
- * passed while the real worst case was over 24 000.
+ * This one is enforced in the renderer — `MAP_CHARACTER_CEILING` — and it has to
+ * be, which is what the comment that used to sit here got wrong. The per-line
+ * budgets bound a line; the tree has a term per entity and a term per folder and
+ * nothing bounded their number, so the renderer measures the result and gives up
+ * descriptions, then enumeration, to stay under. The fixture below is the shape
+ * that used to blow it: 26 524 characters against 20 000, at 520 documents.
  */
 const CONTEXT_MAP_CHARACTER_CEILING = 20_000
+
+/** The scaffold's ten sections, which a company that took the offer all have. */
+const SCAFFOLD_SECTIONS = [
+  'inbox',
+  'strategy',
+  'decisions',
+  'rules',
+  'clients',
+  'product',
+  'people',
+  'finance',
+  'content',
+  'reviews'
+]
 
 // Brain documents live under `.buildex/`; the generated outputs do not, so they
 // are written and read with explicit paths below.
@@ -269,6 +288,60 @@ describe('renderCompanyContext', () => {
     expect(bare.split('\n')).toHaveLength(rendered.split('\n').length)
   })
 
+  it('holds the character ceiling for a company using the whole scaffold', async () => {
+    // The shape the previous fixtures each avoided by growing exactly one term:
+    // 120 entities AND every scaffolded section holding described documents.
+    // Rendered whole this is 26 524 characters — 33% over. The renderer gives up
+    // descriptions before it gives up a path, and says so either way.
+    const fullLength = `${'situation '.repeat(30)}end`
+    for (let index = 0; index < 120; index += 1) {
+      write(
+        `clients/client-${index}/index.md`,
+        `---\ndescription: ${fullLength}\n---\n\n# Client ${index}\n`
+      )
+    }
+    for (const section of SCAFFOLD_SECTIONS) {
+      for (let index = 0; index < 40; index += 1) {
+        write(
+          `${section}/${section}-${String(index).padStart(2, '0')}.md`,
+          `---\ndescription: ${fullLength}\n---\n\n# Doc\n`
+        )
+      }
+    }
+
+    const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+
+    expect(rendered.length).toBeLessThanOrEqual(CONTEXT_MAP_CHARACTER_CEILING)
+    expect(rendered.split('\n').length).toBeLessThanOrEqual(CONTEXT_MAP_LINE_CEILING)
+    // Never silently: the agent is told the descriptions it sees are cut short.
+    expect(rendered).toContain('to keep this file within its size budget')
+    // Narrowed, not abandoned — the drop straight to bare paths would have cost
+    // two thirds of what actually fits.
+    expect(rendered).toContain('Descriptions below are cut to 40 characters')
+    expect(rendered.length).toBeGreaterThan(15_000)
+    // And nothing navigable was dropped to get there — every client still opens.
+    expect(rendered).toContain('`clients/client-119/`')
+    for (const section of SCAFFOLD_SECTIONS) {
+      expect(rendered).toContain(`- **${section}**`)
+    }
+  })
+
+  it('says how much of the map it could not fit when even the paths do not fit', async () => {
+    // Past the point where dropping descriptions is enough. A map that just
+    // stopped would have the agent believe those folders do not exist.
+    for (let index = 0; index < 900; index += 1) {
+      write(`clients/client-${String(index).padStart(4, '0')}/index.md`, '# Client\n')
+    }
+
+    const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+
+    expect(rendered.length).toBeLessThanOrEqual(CONTEXT_MAP_CHARACTER_CEILING)
+    expect(rendered).toContain('this map reached its size budget')
+    expect(rendered).toMatch(/- _\d+ more folders and entities are not listed/)
+    // The trailing lists are capped already, so they are not what gave way.
+    expect(rendered).toContain('## Documents (900)')
+  })
+
   it('cuts a description harder for the map than for the tree', async () => {
     // 160 is what a Brain row can afford. This file is read in full every
     // session and takes half, so the same document reads longer in the app
@@ -299,9 +372,27 @@ describe('renderCompanyContext', () => {
     const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
     const line = rendered.split('\n').find((entry) => entry.startsWith('- **decisions**')) ?? ''
 
-    expect(line).toContain('decision-00, decision-01')
     expect(line).toContain('+18 more')
-    expect(line).not.toContain('decision-12')
+    expect(line).toContain('decision-18, decision-19')
+    expect(line).not.toContain('decision-00')
+  })
+
+  it('shows the newest of a dated stream, not the twelve the operator moved past', async () => {
+    // WP-14b's capture stream is `inbox/<date>.md`, and a folder's documents
+    // arrive sorted ascending by id — so the first twelve of a dated folder are
+    // the oldest twelve. For a stream whose whole value is recency that is
+    // backwards, and it is the same for dated `decisions/` slugs.
+    for (let day = 1; day <= 20; day += 1) {
+      write(`inbox/2026-03-${String(day).padStart(2, '0')}.md`, '# Capture\n')
+    }
+
+    const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+    const line = rendered.split('\n').find((entry) => entry.startsWith('- **inbox**')) ?? ''
+
+    expect(line).toContain('2026-03-20')
+    expect(line).toContain('2026-03-09')
+    expect(line).not.toContain('2026-03-01')
+    expect(line).toContain('+8 more')
   })
 })
 
@@ -650,7 +741,59 @@ describe('renderCompanyContext apps section', () => {
     expect(rendered).toContain('## Apps (1)')
     expect(rendered).toContain('`slack-search`, `slack-post`')
     expect(rendered).toContain('read the skill before improvising')
-    expect(rendered).toContain('prefer its tools over shell or HTTP calls')
+    expect(rendered).toContain('prefer them over shell or HTTP calls')
+  })
+
+  it('names no path for an app, because neither path it used to name is there', () => {
+    // A plugin's skills and its MCP server live inside the plugin the agent
+    // installed and load from there. `.buildex/skills/` holds the brain's own
+    // skills and never an app's; the repo `.mcp.json` this fork used to write is
+    // removed on upgrade. Both sent the agent to an empty place.
+    const rendered = renderCompanyContext(
+      scan,
+      [
+        {
+          id: 'slack',
+          name: 'Slack',
+          summary: 'Team chat.',
+          skills: ['slack-search'],
+          hasMcp: true,
+          envKey: 'BUILDEX_SLACK_API_KEY',
+          connected: true
+        }
+      ],
+      location
+    )
+
+    expect(rendered).not.toContain('.buildex/skills/')
+    expect(rendered).not.toContain('.mcp.json')
+    expect(rendered).not.toContain('.claude/skills/')
+    // And the retracted vocabulary with them.
+    expect(rendered).not.toContain('capability pack')
+  })
+
+  it('bounds the apps section, which no ceiling test used to reach at all', () => {
+    // Every ceiling assertion passed `apps: []`, so app count, summary and skill
+    // list were the one part of this file nothing measured.
+    const apps = Array.from({ length: 40 }, (_, index) => ({
+      id: `app-${index}`,
+      name: `App ${index}`,
+      summary: `${'a very long marketing sentence '.repeat(20)}end`,
+      skills: Array.from({ length: 50 }, (_, skill) => `skill-${skill}`),
+      hasMcp: true,
+      envKey: `APP_${index}_API_KEY`,
+      connected: true
+    }))
+
+    const rendered = renderCompanyContext(scan, apps, location)
+
+    expect(rendered).toContain('## Apps (40)')
+    expect(rendered).toContain('+28 more installed')
+    expect(rendered).not.toContain('### App 12')
+    expect(rendered).toContain('+38 more')
+    expect(rendered).not.toContain('`skill-12`')
+    expect(rendered).not.toContain('very long marketing sentence end')
+    expect(rendered.length).toBeLessThanOrEqual(CONTEXT_MAP_CHARACTER_CEILING)
   })
 
   it('flags an app whose key is missing rather than implying it works', () => {
@@ -730,16 +873,23 @@ describe('renderCompanyContext brain location', () => {
     expect(rendered).not.toContain('/code/api/.buildex')
   })
 
-  it('names the external skills directory, not `.buildex/skills/`', () => {
-    // Why: an agent told the wrong skills directory reads its own instructions
-    // from a path that does not exist.
-    const rendered = renderCompanyContext(
-      EMPTY_BRAIN_SCAN,
-      [{ id: 'slack', name: 'Slack', summary: '', skills: ['slack-search'], hasMcp: false }],
-      { root: '/brains/acme', gitRoot: '/brains/acme', pathspec: '.', mode: 'external' }
-    )
+  it('names no skills directory for an app in either brain mode', () => {
+    // Why: the earlier copy chose between `.buildex/skills/` and the external
+    // brain's `skills/`, and an app's skills are in neither — they are in the
+    // plugin. Being right about which empty directory to name is not a fix.
+    const app = { id: 'slack', name: 'Slack', summary: '', skills: ['slack-search'], hasMcp: false }
 
-    expect(rendered).toContain('Skills live in `/brains/acme/skills/`')
-    expect(rendered).not.toContain('.buildex/skills/')
+    const external = renderCompanyContext(EMPTY_BRAIN_SCAN, [app], {
+      root: '/brains/acme',
+      gitRoot: '/brains/acme',
+      pathspec: '.',
+      mode: 'external'
+    })
+
+    expect(external).not.toContain('Skills live in')
+    expect(external).not.toContain('/brains/acme/skills/')
+    expect(renderCompanyContext(EMPTY_BRAIN_SCAN, [app], embeddedLocation('/repo'))).not.toContain(
+      '.buildex/skills/'
+    )
   })
 })

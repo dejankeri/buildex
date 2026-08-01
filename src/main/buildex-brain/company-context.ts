@@ -53,37 +53,56 @@ export type InstalledAppSummary = {
 }
 
 /**
- * The apps section: what this company has connected, and where the agent should
- * look for the detail. Deliberately short — the skills carry the instructions,
- * so this only has to make the agent aware they exist and reach for them.
+ * What the apps section may spend. It used to spend whatever the shelf held: the
+ * app count, each summary and each skill list printed verbatim, and every ceiling
+ * test measured a brain with no apps in it at all.
  */
-function renderApps(apps: InstalledAppSummary[], location: BrainLocation): string[] {
+const MAP_APPS_LIMIT = 12
+const MAP_SKILLS_PER_APP = 12
+const MAP_APP_SUMMARY_BUDGET = 120
+
+/**
+ * The apps section: what this company has connected. Deliberately short — the
+ * skills carry the instructions, so this only has to make the agent aware they
+ * exist and reach for them.
+ *
+ * It names no paths, on purpose. A plugin's skills and its MCP server live
+ * inside the plugin the agent installed and load from there with nothing linked
+ * and nothing for the agent to open; the earlier copy sent it to
+ * `.buildex/skills/` and `.mcp.json`, neither of which holds an app's anything.
+ * Saying less is the honest answer, and this text is re-read at every session
+ * start, so a line that buys nothing is a line charged to the operator forever.
+ */
+function renderApps(apps: InstalledAppSummary[]): string[] {
   if (apps.length === 0) {
     return []
   }
-  // In external mode the brain isn't `.buildex/` in this repo, so the skills
-  // path has to be the real one or the agent goes looking in the wrong place.
-  const skillsPath =
-    location.mode === 'embedded' ? '.buildex/skills/' : `${path.join(location.root, 'skills')}/`
+  const shown = apps.slice(0, MAP_APPS_LIMIT)
   const lines = [
     `## Apps (${apps.length})`,
     '',
-    'Installed capability packs. Each one ships skills that tell you how to use it',
-    `well — read the skill before improvising. Skills live in \`${skillsPath}\``,
-    'and are linked into `.claude/skills/`, so they load like any other skill.',
+    'Installed apps. Each one ships skills that load with this session and say how to',
+    'use it well — read the skill before improvising.',
     ''
   ]
-  for (const app of apps) {
+  for (const app of shown) {
     lines.push(`### ${app.name}`, '')
     if (app.summary) {
-      lines.push(app.summary, '')
+      lines.push(truncateAtWord(app.summary, MAP_APP_SUMMARY_BUDGET), '')
     }
-    lines.push(`- Skills: ${app.skills.map((skill) => `\`${skill}\``).join(', ')}`)
+    if (app.skills.length > 0) {
+      const names = app.skills.slice(0, MAP_SKILLS_PER_APP).map((skill) => `\`${skill}\``)
+      const hidden = app.skills.length - names.length
+      if (hidden > 0) {
+        names.push(`+${hidden} more`)
+      }
+      lines.push(`- Skills: ${names.join(', ')}`)
+    }
     if (app.hasMcp) {
       lines.push(
         app.connected === false
-          ? `- MCP: configured in \`.claude/mcp.json\`, but no key is stored on this machine yet — its tools will not connect until one is added from the Store.`
-          : '- MCP: configured in `.mcp.json`; prefer its tools over shell or HTTP calls.'
+          ? '- MCP: brings its own tools, but no key is stored on this machine yet — they will not connect until one is added from the Store.'
+          : '- MCP: brings its own tools; prefer them over shell or HTTP calls.'
       )
     }
     if (app.envKey) {
@@ -92,6 +111,9 @@ function renderApps(apps: InstalledAppSummary[], location: BrainLocation): strin
       )
     }
     lines.push('')
+  }
+  if (apps.length > shown.length) {
+    lines.push(`+${apps.length - shown.length} more installed — open the Store to see them.`, '')
   }
   return lines
 }
@@ -144,9 +166,13 @@ function isArchivedBrainPath(pathOrId: string): boolean {
  * What is *not* cut: names and paths. A truncated title still opens, because the
  * path beside it is the real identifier — but a truncated path or filename names
  * something the agent cannot open, which is worse than a long line. Those are
- * the map's remaining unbounded terms, and the filesystem is what bounds them.
+ * the map's remaining unbounded terms — O(entities + folders) — which is why
+ * `fitTree` measures the result rather than trusting the per-line budgets.
+ *
+ * `descriptionBudget` is how it gives way: narrowed, then 0, before any path is
+ * dropped.
  */
-function renderTree(nodes: BrainNode[], depth = 0): string[] {
+function renderTree(nodes: BrainNode[], descriptionBudget: number, depth = 0): string[] {
   const lines: string[] = []
   const indent = '  '.repeat(depth)
   for (const node of nodes) {
@@ -166,30 +192,108 @@ function renderTree(nodes: BrainNode[], depth = 0): string[] {
       continue
     }
     if (node.kind === 'entity') {
-      const summary = truncateAtWord(node.main?.summary ?? '', MAP_DESCRIPTION_BUDGET)
+      const summary =
+        descriptionBudget > 0 ? truncateAtWord(node.main?.summary ?? '', descriptionBudget) : ''
       lines.push(`${indent}- **${node.title}** \`${node.path}/\`${summary ? ` — ${summary}` : ''}`)
       continue
     }
-    const shown = node.documents.slice(0, MAP_DOCUMENTS_PER_FOLDER)
-    const names = shown.map((document) =>
-      document.description
-        ? `${document.name} (${truncateAtWord(document.description, MAP_DESCRIPTION_BUDGET)})`
-        : document.name
-    )
-    const hidden = node.documents.length - shown.length
+    // Why the tail rather than the head: documents arrive sorted ascending by id,
+    // so a dated stream — `inbox/<date>.md`, dated `decisions/` slugs — sorts
+    // oldest first. Taking the first twelve of a capture folder shows the twelve
+    // the operator has moved furthest past and hides this week's.
+    const hidden = Math.max(node.documents.length - MAP_DOCUMENTS_PER_FOLDER, 0)
+    const names = node.documents
+      .slice(hidden)
+      .map((document) =>
+        descriptionBudget > 0 && document.description
+          ? `${document.name} (${truncateAtWord(document.description, descriptionBudget)})`
+          : document.name
+      )
     if (hidden > 0) {
-      // Said out loud: an agent that knows there are more will open the folder,
-      // where a silently cut list would have it believe it had seen everything.
-      names.push(`+${hidden} more`)
+      // Said out loud, and first because that is where the omitted ones sort: an
+      // agent that knows there are more will open the folder, where a silently
+      // cut list would have it believe it had seen everything.
+      names.unshift(`+${hidden} more`)
     }
     lines.push(
       `${indent}- **${node.path === '' ? 'root' : node.path}**${
         names.length > 0 ? ` — ${names.join(', ')}` : ''
       }`
     )
-    lines.push(...renderTree(node.children, depth + 1))
+    lines.push(...renderTree(node.children, descriptionBudget, depth + 1))
   }
   return lines
+}
+
+/**
+ * What this whole file may cost, in the unit that is actually spent.
+ *
+ * The per-line budgets above bound a *line*; the tree has one term per entity and
+ * one per folder, and nothing bounded their number. 120 clients with the ten
+ * scaffolded sections all holding described documents rendered 26 524 characters
+ * against this number — 33% over — while every ceiling test passed, because each
+ * fixture only ever grew one term.
+ */
+const MAP_CHARACTER_CEILING = 20_000
+
+/** Room kept for the truncation line, whatever count it ends up naming. */
+const TRUNCATION_NOTICE_RESERVE = 200
+
+/**
+ * Description budgets to try, widest first; `0` renders names and paths alone.
+ *
+ * Graduated rather than all-or-nothing because the drop is steep: the fixture
+ * that broke the ceiling renders 26 524 characters described and 6 713 bare, so
+ * a single fallback throws away three times more context than it had to.
+ */
+const MAP_DESCRIPTION_FALLBACKS = [MAP_DESCRIPTION_BUDGET, 40, 0]
+
+const WITHIN_BUDGET = 'to keep this file within its size budget'
+
+function shortenedNotice(descriptionBudget: number): string {
+  return descriptionBudget === 0
+    ? `Descriptions are omitted below ${WITHIN_BUDGET} — open a document for what it says.`
+    : `Descriptions below are cut to ${descriptionBudget} characters ${WITHIN_BUDGET} — open a document for the rest.`
+}
+
+/** What these lines add to the joined output, one newline each. */
+function joinedLength(lines: string[]): number {
+  return lines.reduce((total, line) => total + line.length + 1, 0)
+}
+
+/**
+ * The tree, fitted to what is left of the ceiling.
+ *
+ * Descriptions give way before paths do. Prose is the term that grows fastest
+ * and the one the agent can recover by opening the document; a path it was never
+ * shown names something it does not know exists. Truncation is therefore last,
+ * and it is announced — a map that quietly stopped is a map that lies about the
+ * shape of the company.
+ */
+function fitTree(nodes: BrainNode[], budget: number): string[] {
+  let narrowest: string[] = []
+  for (const [index, descriptionBudget] of MAP_DESCRIPTION_FALLBACKS.entries()) {
+    const preamble = index === 0 ? [] : [shortenedNotice(descriptionBudget), '']
+    narrowest = renderTree(nodes, descriptionBudget)
+    if (joinedLength(preamble) + joinedLength(narrowest) <= budget) {
+      return [...preamble, ...narrowest]
+    }
+  }
+  const preamble = [shortenedNotice(0), '']
+  let spent = joinedLength(preamble)
+  const kept: string[] = []
+  for (const line of narrowest) {
+    if (spent + line.length + 1 + TRUNCATION_NOTICE_RESERVE > budget) {
+      break
+    }
+    kept.push(line)
+    spent += line.length + 1
+  }
+  return [
+    ...preamble,
+    ...kept,
+    `- _${narrowest.length - kept.length} more folders and entities are not listed: this map reached its size budget. Open the brain folder to see them._`
+  ]
 }
 
 /**
@@ -223,7 +327,7 @@ export function renderCompanyContext(
   // Document ids below stay brain-relative in both modes. Embedded, the agent's
   // cwd already resolves them. External, they resolve to nothing unless it also
   // knows the folder to join them onto — so only that case names it.
-  const lines: string[] =
+  const head: string[] =
     location.mode === 'external'
       ? [
           '# Company context',
@@ -242,11 +346,12 @@ export function renderCompanyContext(
           ''
         ]
 
-  lines.push(...renderApps(apps, location))
+  head.push(...renderApps(apps), `## Documents (${scan.documents.length})`, '')
 
-  lines.push(`## Documents (${scan.documents.length})`, '')
-  lines.push(...renderTree(scan.tree))
-  lines.push('')
+  // The trailing lists are built before the tree because the tree is what gives
+  // way: they are already capped at ten entries each, and the tree is the term
+  // that grows with the company.
+  const lines: string[] = []
 
   // Why: the most-linked documents are the ones the company actually organises
   // around. Surfacing them tells the agent where to look first — which is why
@@ -313,7 +418,8 @@ export function renderCompanyContext(
 
   // Why: no "uncommitted right now" list. It was stale the moment it was written,
   // it changed on every keystroke-turned-save, and git already knows.
-  return lines.join('\n')
+  const budget = MAP_CHARACTER_CEILING - joinedLength(head) - joinedLength(lines)
+  return [...head, ...fitTree(scan.tree, Math.max(budget, 0)), '', ...lines].join('\n')
 }
 
 function withImportBlock(existing: string): string {

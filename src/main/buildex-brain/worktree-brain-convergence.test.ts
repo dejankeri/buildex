@@ -10,10 +10,15 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resolveBrainLocation } from './brain-location'
 import { commitBrain } from './brain-history'
 import { listBrainDocumentPaths } from './company-brain-scan'
+
+// Every case here shells out to real `git`, repeatedly. Vitest's 5s default is a
+// budget for pure functions, and under full-suite load these are the files that
+// turn a loaded box into a red suite — the noise that hides a real regression.
+vi.setConfig({ testTimeout: 60_000 })
 
 // The defect this covers: `.buildex/` is branch content, so N parallel agent
 // worktrees each saw the snapshot their branch was cut from and saved onto that

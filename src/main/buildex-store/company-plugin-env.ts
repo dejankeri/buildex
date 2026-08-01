@@ -1,5 +1,6 @@
+import { requireBrainLocation } from '../buildex-brain/brain-location'
 import { resolveCompanyIdentity } from '../buildex-company-identity'
-import { readAppStoreCatalog } from './store-catalog-source'
+import { readCompanyStoreEntries } from './store-catalog-source'
 import { collectPluginEnv } from './plugin-env'
 
 // The company's installed plugins' keys, on their way into a terminal.
@@ -29,14 +30,26 @@ export function applyCompanyPluginEnv(
   baseEnv: Record<string, string>,
   opts: { workspacePath?: string; userDataPath: string }
 ): void {
-  const company = resolveCompanyIdentity(opts.workspacePath)
+  const workspacePath = opts.workspacePath
+  if (!workspacePath) {
+    return
+  }
+  const company = resolveCompanyIdentity(workspacePath)
   if (!company) {
     return
   }
   const deps = { userDataPath: opts.userDataPath, companyKey: company.key }
   try {
-    const catalog = readAppStoreCatalog(deps)
-    for (const [key, value] of Object.entries(collectPluginEnv(deps, catalog.entries))) {
+    // Why the brain: a catalogue read without this company's own marketplaces
+    // does not contain the plugins installed from them, so their keys would be
+    // saved, badged Connected by the Store — which does read them — and then
+    // never reach a terminal.
+    const entries = readCompanyStoreEntries(
+      requireBrainLocation(workspacePath),
+      company.key,
+      opts.userDataPath
+    )
+    for (const [key, value] of Object.entries(collectPluginEnv(deps, entries))) {
       // Why: never override a variable the operator already exported — their
       // shell environment outranks a stored key.
       baseEnv[key] ??= value

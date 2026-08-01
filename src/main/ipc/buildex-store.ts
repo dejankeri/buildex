@@ -11,6 +11,7 @@ import type {
   StoreEntry,
   StoreInstallRequest,
   StoreInstallResult,
+  StoreOverlay,
   StoreRoster,
   StoreRefreshResult,
   StoreRosterResult,
@@ -96,6 +97,20 @@ function assembleCatalog(request?: StoreCatalogRequest): StoreCatalog {
     companyKey: resolveCompanyIdentity(repoPath)?.key ?? null,
     unsupportedAgent: unsupportedInstallAgent(request?.agent)
   })
+}
+
+/**
+ * BuildEx's curation for one plugin, as *this* company's shelf carries it.
+ *
+ * The repo is not optional decoration: an app installed from a marketplace the
+ * company's brain adds is absent from a catalogue read without it, so a shelf
+ * read blind reports the wrong environment variable for its key — or none.
+ */
+function overlayForPlugin(pluginName: string, repoPath?: string): StoreOverlay | null | undefined {
+  const request = repoPath?.trim()
+  return assembleCatalog(request ? { repoPath: request } : undefined).entries.find(
+    (entry) => entry.plugin.name === pluginName
+  )?.overlay
 }
 
 /**
@@ -281,9 +296,7 @@ export function registerBuildExStoreHandlers(): void {
       if (!outcome.ok) {
         return { ok: false, status: null, error: outcome.error }
       }
-      const overlay = assembleCatalog().entries.find(
-        (entry) => entry.plugin.name === pluginName
-      )?.overlay
+      const overlay = overlayForPlugin(pluginName, request?.repoPath)
       return {
         ok: true,
         status: pluginCredentialStatus(deps, pluginName, overlay?.apiKey),
@@ -357,9 +370,7 @@ export function registerBuildExStoreHandlers(): void {
       }
       const deps = resolved
       clearPluginCredential(deps, pluginName)
-      const overlay = assembleCatalog().entries.find(
-        (entry) => entry.plugin.name === pluginName
-      )?.overlay
+      const overlay = overlayForPlugin(pluginName, request?.repoPath)
       return { ok: true, status: pluginCredentialStatus(deps, pluginName, overlay?.apiKey) }
     }
   )
