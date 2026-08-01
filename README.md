@@ -62,10 +62,11 @@ Built for the operator who runs the company, not the engineer.
 
 | Surface | What it does |
 |---|---|
-| **Company Brain** | A full-screen view over `.buildex/` — ten sections with coverage bars, the skills your company wrote and the ones its apps brought, and history of every save. Documents are written in place with the app's own markdown editor; YAML front matter is held back and restored byte for byte, so a skill's `name:` and `description:` survive editing. |
-| **Store & Apps** | 11 capability packs ship inside the app (Slack, Stripe, Linear, Notion, HubSpot, Asana, Calendly, Canva, Intercom, HeyGen, Protocol), so a fresh repo has a full shelf on first run. Installing writes skill scaffolds into the repo and never overwrites an existing skill. A repo's own catalog overrides a shipped pack by id. |
+| **Company Brain** | A full-screen view over `.buildex/` — ten sections, the skills your company wrote, and history of every save with the diff it made. Documents are written in place with the app's own markdown editor; YAML front matter is held back and restored byte for byte, so a skill's `name:` and `description:` survive editing. Each document shows what links to it, and a link to a page you have not written yet is collected rather than dropped. |
+| **Store** | A client of the plugin marketplaces your agent already has. Three ship with the app, so a fresh repo has a full shelf on first run, and you can add your own. Installing is your agent's own CLI doing it (`claude plugin install … --scope user`) — BuildEx unpacks nothing and writes nothing into your repo, so there is nothing of ours to overwrite or clean up. Seven business apps are curated and say so on the shelf. |
 | **Agent context** | Writes `.claude/company-context.md` and an `@`-import into `.claude/CLAUDE.md`, so the next session starts knowing the company. Refreshed automatically whenever the map can have changed — there is no button, because a context someone has to remember to refresh is a context that is usually wrong. |
 | **The gate** | An allow/ask/deny preset written into the repo's `.claude/settings.json`, so the agent's own runtime enforces it. A company can override it in `.buildex/gate-preset.json`; a broken override falls back to the shipped preset rather than to no gates. |
+| **Portfolio** | One read-only screen over every business at once — see below. |
 
 <table>
   <tr>
@@ -79,23 +80,24 @@ Built for the operator who runs the company, not the engineer.
     <td width="50%" valign="top">
       <img src="docs/assets/company-brain.png"
            alt="The Company Brain: nine sections - strategy, decisions, rules, clients, product, people, finance, content and reviews - each holding a document, with nine documents saved and none unsaved." />
-      <p><strong>Then it fills up.</strong> Sections of plain markdown in a repo you own, each with a
-      coverage bar — and every save is a commit you can walk back.</p>
+      <p><strong>Then it fills up.</strong> Sections of plain markdown in a repo you own, each
+      counting what is in it — and every save is a commit you can walk back, with the diff it made.</p>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <img src="docs/assets/store-shelf.png"
-           alt="The Store: capability packs including Asana, Calendly, HeyGen, HubSpot, Linear, Protocol and Stripe, with 52 business apps and 231 developer apps available." />
+           alt="The Store: apps including Asana, Calendly, HeyGen, HubSpot, Linear, Protocol and Stripe, with 52 business apps and 231 developer apps available." />
       <p><strong>A full shelf on first run.</strong> The Store reads the marketplaces your agent already
-      knows about, so what you see is what it can actually reach. Each pack says what it will ask you
+      knows about, so what you see is what it can actually reach. Each app says what it will ask you
       before it acts.</p>
     </td>
     <td width="50%" valign="top">
       <p><em>The company in these screenshots is invented — a fictional design studio, so no real company
       data is on display. Everything else is the app as it ships. They are captured from a real launch by
       <code>tests/e2e/buildex-marketing-capture.spec.ts</code>; regenerate them with
-      <code>BUILDEX_CAPTURE=1</code>.</em></p>
+      <code>BUILDEX_CAPTURE=1</code>. These captures predate the <code>inbox</code> section, so the Brain
+      shows nine.</em></p>
     </td>
   </tr>
 </table>
@@ -142,11 +144,11 @@ worktree as it is created, an existing **Worktree** at dispatch. Both are bounde
 A run that can't proceed unattended — an SSH host it can't reach, or one that would need
 interactive credentials — is recorded as **skipped**, with why, in that automation's run history
 (**Run · Workspace · Spend · Tokens · Status**) rather than hanging or failing silently. **One
-honest gap:** gating currently lands when a worktree is *created*, when an automation dispatches
-into one, or when a BuildEx surface touches it; a worktree on an SSH host is not yet gated at
-*activation* the way a local one is — and an SSH automation gets neither gate nor context here
-([tracked here](PROGRESS.md#the-gate-what-is-done-and-what-is-not)) — schedule SSH automations
-knowing that.
+honest gap:** gating lands on a **local** checkout when a worktree is created, when it is activated,
+when an automation dispatches into it, and when a BuildEx surface touches it. A checkout on an **SSH**
+host gets none of that — a remote path has no host awareness, and writing to a local directory that
+merely shares the path would gate the wrong thing. So an SSH automation runs with neither the gate nor
+the company context ([why](PROGRESS.md#known-gaps-and-footguns)). Schedule SSH automations knowing that.
 
 **Four rhythms worth starting with**, one per business, each a prompt against the section it
 serves:
@@ -175,16 +177,30 @@ it — `clients/archive/`, `decisions/archive/` — and the agent's context map 
 a count rather than a list, so history stays in the repo without spending every session's first
 read on it.
 
+## Every business on one screen
+
+The **Portfolio** view is a read-only table over every business you have open — brain state, unsaved
+documents, the last automation run, installed apps, and where each brain lives (`In repo`, `Own repo`,
+`Shared`, or a red `Not cloned here` / `Brain missing` / `Not a git repo`). Click a row to open that
+business's Brain, Automations or Store.
+
+Read-only is the whole design: opening a business writes to it, and a dashboard that wrote to the N
+businesses it was summarising would be doing that N times on every refresh. It probes before it reads,
+so a repo that is not a business is never opened, and it bounds every probe and read, so one
+unreachable SSH host costs its own row and not the screen. It does **not** show whether an external
+brain has diverged from its remote — that needs a network call this screen deliberately does not make
+([why](PROGRESS.md#known-gaps-and-footguns)).
+
 ## What works today (honestly)
 
 | Works now | Not yet |
 |---|---|
 | Everything Orca does — worktrees, terminals, diffs, agents, SSH | Linux and Windows downloads (both run from source today) |
-| The Brain: ten sections over `.buildex/`, edited in place | Inline approval cards and the activity ledger ([why](PROGRESS.md#the-gate-what-is-done-and-what-is-not)) |
-| The Store on first run, with 11 packs shipped in the app | Pack MCP faces — parsed and carried, but installing does not write `.mcp.json` yet |
-| Auto-fed company context, refreshed without a button | Gate applied on worktree activation (today it applies when a BuildEx surface first touches a repo) |
-| The gate preset, enforced by the agent runtime | Any hosted sync — by decision, not by omission |
-| Automations load the company brain and gate before their first message, in both workspace modes | Automations on an SSH host — nothing writes their context or gate from here, and SSH worktrees aren't gated at activation at all ([known gap](PROGRESS.md#the-gate-what-is-done-and-what-is-not)) |
+| The Brain: ten sections over `.buildex/`, edited in place, with backlinks and save diffs | Inline approval cards and the activity ledger — **won't-build for v1** ([why](PROGRESS.md#the-gate-what-is-done-and-what-is-not)) |
+| The Store on first run: three marketplaces ship, installs go through your agent's own CLI | A diverged-brain flag on the Portfolio ([why](PROGRESS.md#known-gaps-and-footguns)) |
+| Auto-fed company context, refreshed without a button | Anything on an SSH host: no gate, no context, at any moment ([why](PROGRESS.md#known-gaps-and-footguns)) |
+| The gate preset, enforced by the agent runtime, on local checkouts | Any hosted sync — by decision, not by omission |
+| Automations load the company brain and gate before their first message, in both workspace modes | Removing a Windows-copied skill on disconnect — a copy outlives it ([why](PROGRESS.md#known-gaps-and-footguns)) |
 
 ## Run it
 
@@ -213,7 +229,7 @@ Read these three before touching anything:
 | Doc | What |
 |---|---|
 | [`BUILDEX-PATCHES.md`](BUILDEX-PATCHES.md) | Every line this fork changes in an upstream-owned file, and the rebase procedure. **The rule: BuildEx code lives in new files; an upstream file may only gain a registration.** That is what keeps rebases clean. |
-| [`PROGRESS.md`](PROGRESS.md) | Phase status, what is real, what is not, and the decisions behind both. |
+| [`PROGRESS.md`](PROGRESS.md) | Phase status, what is real, what is not, the **decisions of record** (what is in scope, what will not be built, what was rejected, what is frozen), and the known gaps. Read the decisions before proposing one that was already settled. |
 | [`AGENTS.md`](AGENTS.md) | The operating contract — design system, cross-platform rules, git compatibility floors. |
 
 Rebase against upstream **weekly**:

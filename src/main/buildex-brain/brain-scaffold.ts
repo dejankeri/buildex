@@ -218,8 +218,8 @@ could be read two ways will be.
       name: 'triage.md',
       body: `# Engagement triage
 
-<!-- Flagged clients land below, dated. The client documents themselves are
-     never rewritten by the automation. -->
+<!-- Newest run first, directly under the heading above. The client documents
+     themselves are never rewritten by the automation. -->
 
 ## Automation prompt
 
@@ -229,7 +229,8 @@ Schedule as a **Weekly** automation against this repo (sidebar \`Automations\`
 > Read every document in \`clients/\`. For each one, check git history for
 > when it last changed and read what it says the next step is. Flag any
 > client with no update in the last 14 days, and any whose next step is
-> already due. Append the flagged list to this file, dated.
+> already due. Write the flagged list into \`clients/triage.md\` with today's
+> date, directly under that file's \`#\` heading so the newest run is first.
 `
     }
   },
@@ -251,7 +252,8 @@ Schedule as a **Weekly** automation against this repo (sidebar \`Automations\`
       name: 'metrics.md',
       body: `# Metrics
 
-<!-- Each automation run appends a dated entry below. -->
+<!-- Newest period first, directly under the heading above — the same order the
+     inbox distillation files entries in, because it writes here too. -->
 
 ## Automation prompt
 
@@ -260,10 +262,11 @@ Schedule as **Weekly**, or pick **Custom cron** for a monthly close (sidebar
 
 > Read every document in \`finance/\`. Pull together the running numbers —
 > revenue, spend, and burn — from what is recorded there and from git
-> history for anything that changed since the last run. Append this
-> period's numbers to this file with the date, and one line on the trend
-> versus the period before. If a number is missing, say what is missing
-> rather than guessing.
+> history for anything that changed since the last run. Write this period's
+> numbers into \`finance/metrics.md\` with the date, directly under that
+> file's \`#\` heading so the newest period is first, and one line on the
+> trend versus the period before. If a number is missing, say what is
+> missing rather than guessing.
 `
     }
   },

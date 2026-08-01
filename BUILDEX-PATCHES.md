@@ -17,14 +17,19 @@ diff to **3 lines**. Do that every time.
 
 ```
 src/renderer/src/components/sidebar/BuildExNavEntries.tsx
-src/renderer/src/components/buildex-apps/AppsPage.tsx
-src/renderer/src/components/buildex-store/StorePage.tsx
+src/renderer/src/components/buildex-brain/*
+src/renderer/src/components/buildex-store/*
 src/renderer/src/components/buildex-portfolio/*
+src/renderer/src/components/buildex-brand/*
 tests/e2e/buildex-surfaces.spec.ts
 config/scripts/verify-buildex-macos-release-env.mjs
 config/scripts/verify-packaged-asar-contents.cjs
 BUILDEX-PATCHES.md
 ```
+
+There is no `buildex-apps/`. The Apps page was a viewer over packs BuildEx had
+unpacked into the repo; once installing became the agent's own plugin CLI there
+was nothing left for it to list that the Store did not already show.
 
 ## Upstream files touched
 
@@ -110,7 +115,7 @@ fork build, so it cannot transmit. Do not "fix" this by pointing it somewhere.
 |---|---|
 | `src/shared/buildex-brain-types.ts`, `buildex-store-types.ts`, `buildex-automation-context-types.ts` | **BuildEx-owned** wire contracts |
 | `src/main/buildex-brain/*`, `src/main/buildex-store/*` | **BuildEx-owned** domain layers |
-| `src/renderer/src/components/buildex-brain/*`, `buildex-apps/*`, `buildex-store/*`, `buildex-brand/*` | **BuildEx-owned** surfaces. Upstream has no Brain, Apps or Store, so nothing here can conflict |
+| `src/renderer/src/components/buildex-brain/*`, `buildex-store/*`, `buildex-portfolio/*`, `buildex-brand/*` | **BuildEx-owned** surfaces. Upstream has no Brain, Store or Portfolio, so nothing here can conflict |
 | `src/main/ipc/buildex-brain.ts`, `buildex-brain-placement.ts`, `buildex-store.ts`, `buildex-automation-context.ts`, `authorized-brain-location.ts` | **BuildEx-owned** IPC modules |
 | `src/main/ipc/register-core-handlers.ts` | 4 imports + 4 registration calls |
 | `src/preload/index.ts` | 5 type imports + 5 api namespaces (+2 type imports and 1 member for `buildexBrainSections.saveDiff`) |
@@ -504,7 +509,7 @@ reviewable diff instead of ~400 silent ones. Read it during each rebase.
 
 | File | Change |
 |---|---|
-| `src/shared/types.ts` | `'brain' \| 'store' \| 'portfolio'` on `TopLevelView`; `collapsedBrainSections` on `PersistedUIState`; a **dead** `'brain'` on `RightSidebarTab` — see below |
+| `src/shared/types.ts` | `'brain' \| 'store' \| 'portfolio'` on `TopLevelView`; `collapsedBrainSections` on `PersistedUIState`. `RightSidebarTab` is upstream's again — see below |
 | `src/shared/top-level-view.ts` | `Record<TopLevelView, true>` entries |
 | `src/renderer/src/store/slices/ui.ts` | 7 upstream `previousViewBefore*` unions gain each new view; `previousViewBeforeBrain/Store/Portfolio` (`Exclude<>`, ours) + 6 open/close actions |
 | `src/renderer/src/hooks/resolve-zoom-target.ts` | `activeView` union |
@@ -517,10 +522,16 @@ reviewable diff instead of ~400 silent ones. Read it during each rebase.
 `BrainPanel.tsx`, the activity-bar item, the lazy import in
 `right-sidebar-panel-content.tsx` and the `'brain'` entry in
 `right-sidebar-route.ts`'s allowlist are all gone, and those three upstream files
-are byte-identical to the merge-base again. What is left behind is a **dead
-`| 'brain'` on `RightSidebarTab`** in `src/shared/types.ts`: nothing produces it,
-the runtime allowlist rejects it, and it is one line of upstream conflict surface
-buying nothing. Delete it the next time `types.ts` is open.
+are byte-identical to the merge-base again. The dead `| 'brain'` that survived on
+`RightSidebarTab` is gone too (WP-4), so **`RightSidebarTab` carries no BuildEx
+member at all** and that declaration is upstream's. Worth knowing on the next
+rebase: upstream's plugin kernel adds `` | `plugin:${string}` `` to that same
+union, and the drill saw it conflict at the exact line the Brain tab used to sit
+on. There is nothing of ours there now — take upstream's side.
+
+The `'brain'` that *is* still in `right-sidebar-visibility.ts` is a
+`TopLevelView`, not a tab: it suppresses the file explorer beside the full-screen
+surface. Do not remove it with the other one.
 
 **The sync adds; it never prunes and never rewords.** `verify-localization-catalog.mjs --fix`
 inserts keys the source references and repairs *parity* between `en.json` and the
@@ -552,6 +563,18 @@ WP-11 hit it a third time: retiring the entity page and card orphaned five
 "New folder" was a delete of `sections.{newEntity,nameEntity}` by hand plus a
 generated add of `sections.newFolder` — the delete half is the half the sync
 cannot do.
+
+**A fourth instance is still live at HEAD**, left as evidence of the reword half
+rather than fixed blind. The Store's marketplace rework changed two fallbacks in
+`StoreShelf.tsx` from "the indexes that ship with BuildEx could not be read …
+reinstall the app" to "the marketplaces could not be reached … check the
+connection", because indexes are fetched now and are not shipped. The **catalog
+values were never rewritten**, so `buildex.store.shelf.catalogEmptyTitle` and
+`.catalogEmptyHint` still render the old sentence and still tell the operator to
+reinstall the app over what is a network failure. Seven `buildex.store.page.*`
+keys ("Skill packs you install are written into your company repo") are orphaned
+outright. Three steps, in the order above, and it does not matter that the source
+already reads correctly — **the fallback is dead text**.
 
 **The Portfolio is a composition, not a subsystem.** `buildex-portfolio/*` adds
 no IPC and no main-process module: it enumerates the renderer's own `repos` and
@@ -666,11 +689,23 @@ pnpm install                  # lockfile may have moved
 pnpm run typecheck            # must exit 0
 pnpm run sync:localization-catalog
 pnpm run lint                 # expect ONLY the pre-existing upstream Ghostty localization failure
+pnpm exec electron-vite build --mode e2e          # REQUIRED — see below
 SKIP_BUILD=1 pnpm exec playwright test tests/e2e/buildex-surfaces.spec.ts \
   --config tests/playwright.config.ts --project=electron-headless --workers=1
 pnpm exec vitest run --config config/vitest.config.ts \
   src/renderer/src/i18n/buildex-brand-catalog.test.ts   # read the snapshot diff
 ```
+
+**Never run `SKIP_BUILD=1` against an `out/` tree you did not just produce.**
+`tests/e2e/global-setup.ts` skips the build whenever `SKIP_BUILD` is set and
+`out/main/index.js` exists, so the suite runs a **stale bundle**: a main-process
+change is silently not under test and the run passes green against code you did
+not write. The other half is `--mode e2e` — the specs read Zustand state through
+`window.__store`, which only a preload bundle built in that mode exposes, so
+reusing a plain `pnpm build` tree makes every spec hang on
+`waitForFunction(() => Boolean(window.__store))` and time out at 30 s. Build
+first, then `SKIP_BUILD=1` is safe and fast; or drop `SKIP_BUILD` entirely and
+let global-setup build.
 
 Rebase **weekly**. Let it slide a month and the renderer will have moved
 underneath you.
@@ -683,6 +718,21 @@ catalog output through the interceptor**. Those 46 are a *floor*, not a backlog:
 they have no source diff to mirror, so they cannot be unbranded without dropping
 `brandedTranslate` itself. Any target below ~56 files is arithmetically
 unreachable while the interceptor lives.
+
+**Two audit predictions were arithmetically wrong; do not re-derive from them.**
+
+- The audit set a **~55-file** post-revert target. 46 of the surviving 102 are the
+  interceptor floor, so ~55 was never reachable — reaching it means deleting
+  `brandedTranslate`, which is a product decision, not a tidy-up. The honest floor
+  is 46 + whatever identity and registration genuinely require.
+- WP-9's criterion predicted **~700–800 renderer LOC removed** from the Store.
+  `src/renderer/src/components/buildex-store/` is **2 236 lines in total**,
+  1 923 of them outside tests; the prediction was a ~40 % cut of a directory that
+  had not been measured. WP-9 removed a shelf, a segment mechanism and a source
+  parser, which is the right work — the number attached to it was invented.
+
+If a future plan quotes a line or file count for this fork, measure it first. The
+commands are one line each and both are in this file.
 
 ### Drill, 2026-08-01 — the first one against a real gap
 
