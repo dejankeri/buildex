@@ -73,20 +73,25 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
   It does **not** unpack anything: installing shells out to the agent's own CLI
   (`claude plugin install <plugin>@<marketplace> --scope user`), and
   `~/.claude/plugins/installed_plugins.json` is the only truth about what is
-  installed. Nothing is written into the company repo, so there is no scaffold to
-  overwrite and nothing to keep on uninstall. `--scope user` is deliberate:
-  isolation between businesses comes from credentials and the gate, not from
-  installing the same plugin N times.
+  installed. **No plugin bytes and no skill scaffold reach the company repo** —
+  so there is nothing of the app's to overwrite and nothing to keep on uninstall.
+  What BuildEx does write there is what a marketplace does not carry: installing
+  or uninstalling re-syncs the gate and the agent's context file
+  (`syncRepoAfterChange` in `ipc/buildex-store.ts`), for every company opened this
+  run. `--scope user` is deliberate: isolation between businesses comes from
+  credentials and the gate, not from installing the same plugin N times.
 - **Store, on first run** — three marketplaces ship with the app
   (`anthropics/claude-plugins-official`, `dejankeri/buildex-packs`,
   `dejankeri/protocol-claude-plugin`), so a repo with no marketplace of its own
   still has a full shelf. The **indexes are fetched and cached, not bundled** —
   a bundled copy would be guaranteed-stale JSON in the app. What does ship is 19
   small overlay files under `resources/buildex/overlays/`, of which 7 are
-  curations (Asana, Calendly, HeyGen, HubSpot, Linear, Protocol CRM, Stripe) that
-  earn the **Curated** badge; the other 12 only place a software plugin on the
-  shelf. A company can add its own marketplaces, and its brain's additions are
-  part of the shelf that company sees.
+  curations (Asana, Calendly, HeyGen, HubSpot, Linear, Protocol CRM, Stripe); the
+  other 12 only place a software plugin on the shelf and vouch for nothing. Six of
+  the seven show a **Curated** badge; Protocol CRM is the one overlay carrying a
+  `gate`, so it shows **Ask-first** instead — the stronger statement, since it
+  says the agent will stop and ask. A company can add its own marketplaces, and
+  its brain's additions are part of the shelf that company sees.
 - **Credentials are per business** — a plugin's API key is stored under
   `pack-credentials/<companyKey>/<plugin>.enc`, where `companyKey` is derived
   from the **primary checkout**, so N worktrees of one business are one identity
@@ -359,8 +364,11 @@ known: the affordance is missing, not broken.
 **The Portfolio has no divergence column.** The audit asked for a diverged flag on
 external brains. There is no read-only route to one from existing IPC —
 `buildexBrain.pull` is a mutation and would be fanned out over N businesses, and
-`git:status` refuses any path that is not a registered worktree or repo root,
-which an external brain repo never is. The column reports **where the brain lives
+`git:status` on a **local** path goes through `resolveRegisteredWorktreePath` and
+refuses anything that is not a registered worktree or repo root, which an external
+brain repo never is. (The SSH branch of that handler skips the check and hands the
+path to the connection's provider — irrelevant here, since an external brain on
+this machine is exactly the local case.) The column reports **where the brain lives
 and whether this machine has it** instead (`In repo` / `Own repo` / `Shared` /
 `Not cloned here` / `Brain missing` / `Not a git repo`), which is true without a
 network call. A deliberate substitution; adding divergence needs a read-only
@@ -374,7 +382,9 @@ source fallbacks say. **The catalog value is what renders**, so the source is no
 the fix. Seven further `buildex.store.page.*` keys ("Skill packs you install are
 written into your company repo") are orphaned and render nowhere. Correcting them
 is the three-step hand-edit described in `BUILDEX-PATCHES.md`; the sync will not
-do it.
+do it. **When you fix it, delete this paragraph and the matching one in
+`BUILDEX-PATCHES.md` in the same commit** — both say "still live at HEAD", and a
+survivor becomes a false claim the moment the copy is right.
 
 **`reviews/weekly-review.md` describes itself as the destination** in its HTML
 comment while its seeded prompt writes a new dated file in `reviews/`. Harmless —
@@ -425,9 +435,13 @@ Clean each up once by hand.
   `.buildex/` holds nothing else will not be offered first-time setup. Delete it.
 
 Neither file is touched automatically, in either direction — an operator's own
-file that happens to share the name is theirs. That is invariant 8 — *nothing the
-operator wrote in `.buildex/` is ours to delete* — which the code cites by number
-in several places (`company-context.test.ts`, `BrainDocument.tsx`).
+file that happens to share the name is theirs. That is one application of
+**invariant 8 — *nothing is ever lost***, which the code cites by number without
+ever defining it: `brain-remove.ts:20` for the removal backups, `BrainDocument.tsx:15`
+for saving on ⌘S, Back and unmount, and `company-context.test.ts:586` and
+`gate-settings.ts:125` for this one, an operator's own file being theirs whatever
+it is called. (Orca's source-control code uses a separate numbering; its "design
+invariant 8" is unrelated.)
 
 A `.mcp.json` written by an older BuildEx is the exception: it *is* cleaned up,
 because leaving it would show the agent every app twice. `legacy-mcp-config-cleanup.ts`

@@ -44,11 +44,13 @@ import { credentialWriteScope } from '../buildex-store/credential-company-scope'
 
 // The Store's IPC surface.
 //
-// Reading the shelf is cheap and repo-independent: the marketplace indexes ship
-// with the app, so the Store fills even before a project is open. Installing is
-// the agent's own plugin CLI — BuildEx contributes the parts a marketplace does
-// not carry, which is the gate, the credential, and the line the brain tells the
-// agent about what this company now runs on.
+// Reading the shelf is repo-independent: the marketplace indexes are fetched and
+// cached, not bundled, so the Store fills from the cache before a project is
+// open and refetches when asked — never from JSON frozen at build time.
+//
+// Installing is the agent's own plugin CLI — BuildEx contributes the parts a
+// marketplace does not carry, which is the gate, the credential, and the line the
+// brain tells the agent about what this company now runs on.
 
 function claudeDeps(): {
   homeDir: string

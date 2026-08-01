@@ -574,7 +574,10 @@ values were never rewritten**, so `buildex.store.shelf.catalogEmptyTitle` and
 reinstall the app over what is a network failure. Seven `buildex.store.page.*`
 keys ("Skill packs you install are written into your company repo") are orphaned
 outright. Three steps, in the order above, and it does not matter that the source
-already reads correctly — **the fallback is dead text**.
+already reads correctly — **the fallback is dead text**. `PROGRESS.md` records the
+same defect for the operator-facing reader; **delete both entries in the same
+commit that fixes the copy**, or the fork keeps claiming a live defect it no
+longer has.
 
 **The Portfolio is a composition, not a subsystem.** `buildex-portfolio/*` adds
 no IPC and no main-process module: it enumerates the renderer's own `repos` and

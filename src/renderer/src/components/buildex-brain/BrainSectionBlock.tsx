@@ -53,8 +53,8 @@ export default function BrainSectionBlock({
   const isTop = depth === 0
   const Chevron = collapsed ? ChevronRight : ChevronDown
 
-  // Why: a brain with nine declared sections and three filled ones was mostly
-  // empty blocks — purpose, placeholder, Add, times six. An empty section is
+  // Why: a brain with ten declared sections and three filled ones was mostly
+  // empty blocks — purpose, placeholder, Add, times seven. An empty section is
   // worth one line: enough to know it exists and to start filling it.
   if (isTop && isEmpty(node)) {
     return (

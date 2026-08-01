@@ -120,7 +120,10 @@ export async function prepareCompanyWorktreeForAutomationRun(
  * directory, so gating on it would write into an unrelated local folder and still
  * leave the real checkout ungated. **Remote worktrees are therefore not gated on
  * activation at all** — that needs a writer on the far side, which BuildEx does
- * not have yet. Their gate still lands when a BuildEx surface touches the repo.
+ * not have yet. Nor does any other path reach them: creation returns through
+ * `createManagedRemoteWorktree` before the gate call, and `initializeCompanyRepo`
+ * takes a path with no connection, so a BuildEx surface cannot gate a remote
+ * checkout either. **Nothing gates an SSH checkout from this machine.**
  */
 export function gateCompanyWorktreeOnActivation(
   worktreePath: string | undefined,
