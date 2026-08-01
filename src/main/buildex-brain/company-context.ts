@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type {
   BrainLocation,
@@ -23,8 +23,6 @@ import { truncateAtWord } from './brain-text-budget'
 // `.buildex/`, where every edit to any document produced a diff.
 
 export const CONTEXT_RELATIVE_PATH = '.claude/company-context.md'
-/** Where it used to live, back when it was tracked. Removed on sight. */
-const LEGACY_CONTEXT_RELATIVE_PATH = '.buildex/company-context.md'
 /**
  * Where the import lives. `.claude/CLAUDE.md` is a documented project-instructions
  * location, loaded exactly like a root CLAUDE.md — and it sits inside `.claude/`,
@@ -336,30 +334,6 @@ export type ContextSyncResult = {
   claudeMdPath: string
   contextChanged: boolean
   claudeMdChanged: boolean
-  /** True when a tracked context file from an older BuildEx was cleaned up. */
-  legacyRemoved: boolean
-}
-
-/**
- * A repo written by an older BuildEx carries `.buildex/company-context.md`, which
- * nothing updates any more. Remove it — but only if it is unmistakably ours, by
- * its generated header. Anything else is the operator's file and stays put
- * (invariant 8).
- */
-function removeLegacyContext(repoPath: string): boolean {
-  const legacy = path.join(repoPath, ...LEGACY_CONTEXT_RELATIVE_PATH.split('/'))
-  if (!existsSync(legacy)) {
-    return false
-  }
-  try {
-    if (!readFileSync(legacy, 'utf8').startsWith('# Company context')) {
-      return false
-    }
-    rmSync(legacy, { force: true })
-    return true
-  } catch {
-    return false
-  }
 }
 
 /**
@@ -399,7 +373,6 @@ export function syncCompanyContext(
     contextPath: CONTEXT_RELATIVE_PATH,
     claudeMdPath: AGENT_MEMORY_RELATIVE_PATH,
     contextChanged,
-    claudeMdChanged,
-    legacyRemoved: removeLegacyContext(repoPath)
+    claudeMdChanged
   }
 }

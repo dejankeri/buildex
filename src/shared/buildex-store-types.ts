@@ -94,7 +94,6 @@ export type StoreOverlay = {
    */
   mcp?: boolean
   apiKey?: StoreApiKey
-  provision?: StoreProvision
   /** Tool calls that wait for a person, in the agent's own permission grammar. */
   gate?: StoreGateRules
 }
@@ -117,22 +116,6 @@ export type StoreApiKey = {
   hint?: string
   /** The variable the agent's environment carries. Derived when absent. */
   envKey?: string
-}
-
-/** A browser round-trip that mints a key, so nobody pastes one by hand. */
-export type StoreProvision = {
-  authorizeUrl: string
-  exchangeUrl: string
-  codeParam: string
-  codeField: string
-  hostField?: string
-  keyPath: string
-  apiBasePath?: string
-  envKey?: string
-  envBase?: string
-  /** Said plainly before the operator authorizes, because it is broad. */
-  grants?: string
-  docsUrl?: string
 }
 
 /**

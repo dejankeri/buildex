@@ -559,25 +559,14 @@ describe('syncCompanyContext', () => {
     expect(existsSync(path.join(repo, '.claude', 'company-context.md'))).toBe(true)
   })
 
-  it('clears out a tracked context file left by an older BuildEx', async () => {
-    write('a.md', '# A')
-    write('company-context.md', '# Company context\n\nStale, from the version that tracked it.\n')
-
-    const result = syncCompanyContext(repo, await scan(), [], embeddedLocation(repo))
-
-    expect(result.legacyRemoved).toBe(true)
-    expect(existsSync(path.join(repo, '.buildex', 'company-context.md'))).toBe(false)
-  })
-
-  it('never deletes a company document that happens to share the name', async () => {
-    // Why: invariant 8. Only a file carrying our generated header is ours to
-    // remove; anything else the operator wrote stays exactly where it is.
+  it('never touches a company document in the brain folder', async () => {
+    // Why: invariant 8. Nothing the operator wrote in `.buildex/` is ours to
+    // remove, whatever it is called.
     write('a.md', '# A')
     write('company-context.md', '# Our own notes on context\n')
 
-    const result = syncCompanyContext(repo, await scan(), [], embeddedLocation(repo))
+    syncCompanyContext(repo, await scan(), [], embeddedLocation(repo))
 
-    expect(result.legacyRemoved).toBe(false)
     expect(read('.buildex/company-context.md')).toContain('Our own notes')
   })
 

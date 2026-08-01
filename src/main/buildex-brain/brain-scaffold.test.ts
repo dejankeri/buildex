@@ -219,12 +219,11 @@ describe('isBrainInitialized', () => {
     expect(isBrainInitialized(location())).toBe(true)
   })
 
-  it('stays false when the only thing there is a pack the Store installed', () => {
-    // Why: installing an app writes skills and a receipt into `.buildex/`. If
-    // that counted as a brain, the operator would never be offered setup and
-    // would be left with a brain that is nothing but somebody else's skills.
+  it('stays false when the only thing there is a skill the Store installed', () => {
+    // Why: installing an app writes skills into `.buildex/`. If that counted as
+    // a brain, the operator would never be offered setup and would be left with
+    // a brain that is nothing but somebody else's skills.
     mkdirSync(path.join(repo, '.buildex', 'skills', 'slack-search'), { recursive: true })
-    writeFileSync(path.join(repo, '.buildex', 'packs.json'), '{"packs":{}}', 'utf8')
 
     expect(isBrainInitialized(location())).toBe(false)
   })

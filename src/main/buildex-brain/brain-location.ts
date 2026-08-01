@@ -130,9 +130,7 @@ export function resolveBrainLocation(
   }
 
   const bound =
-    bindings.brainByRepo[repoPath] ??
-    (primary ? bindings.brainByRepo[primary] : undefined) ??
-    bindings.defaultBrainPath
+    bindings.brainByRepo[repoPath] ?? (primary ? bindings.brainByRepo[primary] : undefined)
   if (bound) {
     return checkExternal(bound)
   }

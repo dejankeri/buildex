@@ -2,13 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import {
-  bindRepoToBrain,
-  readBrainBindings,
-  rememberClone,
-  unbindRepo,
-  writeBrainBindings
-} from './brain-bindings'
+import { bindRepoToBrain, readBrainBindings, rememberClone, unbindRepo } from './brain-bindings'
 
 let dir = ''
 let file = ''
@@ -48,19 +42,6 @@ describe('brain bindings', () => {
     expect(readBrainBindings(file).clonesByRemote['git@github.com:acme/brain.git']).toBe(
       '/brains/acme'
     )
-  })
-
-  it('reads a hand-written machine-wide default back, and its absence as none', () => {
-    // Nothing in the app writes this yet; the resolver honours it, so reading
-    // it has to keep working for whoever edits the file.
-    writeBrainBindings(
-      { defaultBrainPath: '/brains/acme', clonesByRemote: {}, brainByRepo: {} },
-      file
-    )
-    expect(readBrainBindings(file).defaultBrainPath).toBe('/brains/acme')
-
-    writeBrainBindings({ clonesByRemote: {}, brainByRepo: {} }, file)
-    expect(readBrainBindings(file).defaultBrainPath).toBeUndefined()
   })
 
   it('returns safe defaults when JSON is invalid', () => {

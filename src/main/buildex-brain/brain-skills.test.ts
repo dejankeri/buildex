@@ -27,17 +27,10 @@ afterEach(() => {
 
 describe('listBrainSkills', () => {
   // Why: the Store installs through the agent's plugin cache now, so nothing it
-  // does lands here. A legacy receipt from the pack era must not make the
-  // company's own skill look like somebody else's.
-  it('treats every skill in the brain as the company own, legacy receipt or not', () => {
+  // does lands here — every skill under the brain is the company's own.
+  it('treats every skill in the brain as the company own', () => {
     write('.buildex/skills/slack-search/SKILL.md', '# Slack search\n')
     write('.buildex/skills/onboard-client/SKILL.md', '# Onboard a client\n')
-    write(
-      '.buildex/packs.json',
-      JSON.stringify({
-        packs: { slack: { files: { '.buildex/skills/slack-search/SKILL.md': 'abc' } } }
-      })
-    )
 
     const skills = listBrainSkills(repo, location())
 

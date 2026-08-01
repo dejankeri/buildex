@@ -1,11 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
-import type {
-  StoreApiKey,
-  StoreGateRules,
-  StoreOverlay,
-  StoreProvision
-} from '../../shared/buildex-store-types'
+import type { StoreApiKey, StoreGateRules, StoreOverlay } from '../../shared/buildex-store-types'
 
 // What BuildEx adds to a plugin the marketplace does not carry: the ask-first
 // gate, the credential its MCP server needs, and the system-of-record line the
@@ -42,8 +37,9 @@ function parseRuleList(value: unknown): string[] {
   const rules = new Set<string>()
   for (const entry of value) {
     const rule = asString(entry)
-    // Why: gate-policy.ts parses `Tool` and `Tool(argPrefix:*)`. Anything with a
-    // newline or a stray paren is not a rule it can evaluate, and a rule that
+    // Why: these are written verbatim into `.claude/settings.json`, whose
+    // grammar is `Tool` or `Tool(argPrefix:*)`. Anything with a newline or a
+    // stray paren is not a rule the agent runtime can match, and a rule that
     // silently never matches reads as protection that is not there.
     if (rule && !/[\n\r]/.test(rule) && (rule.match(/\(/g) ?? []).length < 2) {
       rules.add(rule)
@@ -94,42 +90,6 @@ function parseApiKey(value: unknown): StoreApiKey | undefined {
   return apiKey
 }
 
-function parseProvision(value: unknown): StoreProvision | undefined {
-  if (!isRecord(value)) {
-    return undefined
-  }
-  const authorizeUrl = asHttpUrl(value.authorizeUrl)
-  const exchangeUrl = asHttpUrl(value.exchangeUrl)
-  const codeParam = asString(value.codeParam)
-  const codeField = asString(value.codeField)
-  const keyPath = asString(value.keyPath)
-  // All five are load-bearing: without any one of them the round-trip cannot
-  // complete, and a half-configured provision flow fails after the operator has
-  // already authorized in a browser.
-  if (!authorizeUrl || !exchangeUrl || !codeParam || !codeField || !keyPath) {
-    return undefined
-  }
-  const provision: StoreProvision = { authorizeUrl, exchangeUrl, codeParam, codeField, keyPath }
-  const optional: [keyof StoreProvision, string | null][] = [
-    ['hostField', asString(value.hostField)],
-    ['apiBasePath', asString(value.apiBasePath)],
-    ['grants', asString(value.grants)],
-    ['docsUrl', asHttpUrl(value.docsUrl)]
-  ]
-  for (const [key, parsed] of optional) {
-    if (parsed) {
-      Object.assign(provision, { [key]: parsed })
-    }
-  }
-  for (const key of ['envKey', 'envBase'] as const) {
-    const parsed = asString(value[key])
-    if (parsed && ENV_KEY_RE.test(parsed)) {
-      provision[key] = parsed
-    }
-  }
-  return provision
-}
-
 /** Parse one overlay file. Returns null when it names no plugin. */
 export function parseStoreOverlay(json: string): StoreOverlay | null {
   let raw: unknown
@@ -165,10 +125,6 @@ export function parseStoreOverlay(json: string): StoreOverlay | null {
   const apiKey = parseApiKey(raw.apiKey)
   if (apiKey) {
     overlay.apiKey = apiKey
-  }
-  const provision = parseProvision(raw.provision)
-  if (provision) {
-    overlay.provision = provision
   }
   const gate = parseGate(raw.gate)
   if (gate) {

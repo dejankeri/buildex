@@ -9,12 +9,6 @@ import { getCanonicalUserDataPath } from '../persistence'
 // in the repo (see brain-location.ts), which names a remote instead.
 
 export type BrainBindings = {
-  /**
-   * Used by any repo with no pointer and no binding of its own. Honoured by the
-   * resolver, written by nobody: no surface sets a machine-wide default yet, so
-   * today this is an escape hatch for someone editing the file directly.
-   */
-  defaultBrainPath?: string
   /** Remote URL -> where it is cloned here. */
   clonesByRemote: Record<string, string>
   /** Repo path -> brain path, for repos bound without writing to the repo. */
@@ -54,9 +48,6 @@ export function readBrainBindings(file?: string): BrainBindings {
     }
     const record = raw as Record<string, unknown>
     return {
-      ...(typeof record.defaultBrainPath === 'string'
-        ? { defaultBrainPath: record.defaultBrainPath }
-        : {}),
       clonesByRemote: isRecordOfStrings(record.clonesByRemote) ? record.clonesByRemote : {},
       brainByRepo: isRecordOfStrings(record.brainByRepo) ? record.brainByRepo : {}
     }

@@ -53,17 +53,33 @@ describe('parseStoreOverlay', () => {
     })
   })
 
-  it('drops a gate rule the evaluator could not parse', () => {
-    // Why: gate-policy.ts understands `Tool` and `Tool(argPrefix:*)`. A rule it
-    // cannot match is protection that looks present and is not.
+  it('drops a gate rule outside the permission grammar and keeps the ones inside it', () => {
+    // Why: these rules are written verbatim into `.claude/settings.json`, whose
+    // grammar is `Tool` or `Tool(argPrefix:*)`. A rule the agent runtime cannot
+    // match is protection that looks present and is not — so the grammar check
+    // has to survive the in-app evaluator that used to sit beside it.
     const overlay = parseStoreOverlay(
       JSON.stringify({
         pluginName: 'acme',
-        gate: { ask: ['Bash(rm -rf:*)', 'Two(paren)(rules)', 'with\nnewline', '  '] }
+        gate: {
+          ask: [
+            'Bash(rm -rf:*)',
+            'Bash(git push*)',
+            'mcp__protocol__schedule',
+            'Two(paren)(rules)',
+            'with\nnewline',
+            'carriage\rreturn',
+            '  '
+          ],
+          deny: ['WebFetch', 'still(two)(parens)']
+        }
       })
     )
 
-    expect(overlay?.gate).toEqual({ ask: ['Bash(rm -rf:*)'] })
+    expect(overlay?.gate).toEqual({
+      ask: ['Bash(git push*)', 'Bash(rm -rf:*)', 'mcp__protocol__schedule'],
+      deny: ['WebFetch']
+    })
   })
 
   it('refuses an env key that is not a shell variable name', () => {
@@ -77,39 +93,15 @@ describe('parseStoreOverlay', () => {
     expect(overlay?.apiKey).toEqual({ transport: 'rest' })
   })
 
-  it('refuses a provision flow that is missing a load-bearing field', () => {
-    // A half-configured flow fails only after the operator has authorized in a
-    // browser, which is the worst moment to discover it.
+  it('refuses a docs URL that is not http(s)', () => {
     const overlay = parseStoreOverlay(
       JSON.stringify({
         pluginName: 'acme',
-        provision: {
-          authorizeUrl: 'https://example.com/connect',
-          exchangeUrl: 'https://example.com/exchange',
-          codeParam: 'code',
-          codeField: 'code'
-        }
+        apiKey: { transport: 'rest', docsUrl: 'file:///etc/passwd' }
       })
     )
 
-    expect(overlay?.provision).toBeUndefined()
-  })
-
-  it('refuses provision and docs URLs that are not http(s)', () => {
-    const overlay = parseStoreOverlay(
-      JSON.stringify({
-        pluginName: 'acme',
-        provision: {
-          authorizeUrl: 'file:///etc/passwd',
-          exchangeUrl: 'https://example.com/exchange',
-          codeParam: 'code',
-          codeField: 'code',
-          keyPath: 'data.key'
-        }
-      })
-    )
-
-    expect(overlay?.provision).toBeUndefined()
+    expect(overlay?.apiKey).toEqual({ transport: 'rest' })
   })
 
   it('returns null when the file names no plugin', () => {

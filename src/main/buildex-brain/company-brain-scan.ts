@@ -29,18 +29,8 @@ const IGNORED_DIRECTORIES = new Set([
 // dozen installed packs drown the map anyway. The whole tree is out.
 const SKILLS_TREE_RE = /^skills\//i
 
-// Left in the brain folder by an older BuildEx, which generated the agent's
-// company context here before it moved to `.claude/`. Skipped so a repo that
-// still carries one does not map BuildEx's own output as company knowledge in
-// the window before the sync removes it.
-const GENERATED_BRAIN_FILES = new Set(['company-context.md'])
-
 export function isSkillManifest(relativeId: string): boolean {
   return SKILLS_TREE_RE.test(relativeId)
-}
-
-export function isGeneratedBrainFile(relativeId: string): boolean {
-  return GENERATED_BRAIN_FILES.has(relativeId.toLowerCase())
 }
 
 // Things BuildEx puts in the brain folder on the operator's behalf rather than
@@ -50,7 +40,6 @@ export function isGeneratedBrainFile(relativeId: string): boolean {
 // up with a brain that is nothing but somebody else's skills.
 const MACHINE_BRAIN_ENTRIES = new Set([
   'skills',
-  'packs.json',
   'brain.json',
   // Policy, not knowledge — and the same mistake `gate-applied.json` already
   // cost us: its presence alone made a repo read as having a brain, so setup
@@ -122,7 +111,7 @@ export function listBrainDocumentPaths(location: BrainLocation): string[] {
       // reads as `decisions/pricing.md` rather than `.buildex/decisions/…`. The
       // folder is plumbing; the operator should not have to see it.
       const id = toPosix(path.relative(brainRoot, absolute))
-      if (!isSkillManifest(id) && !isGeneratedBrainFile(id)) {
+      if (!isSkillManifest(id)) {
         found.push(id)
       }
     }

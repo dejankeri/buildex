@@ -61,9 +61,7 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
   document created, an app installed or removed. There is no button — a context
   someone has to remember to refresh is a context that is usually wrong. Both
   files sit in `.claude/`, git-excluded: this is derived machine state, so
-  committing it would churn the company's history for nothing. A tracked
-  `company-context.md` left by an older build is removed on sight, but only when
-  it carries our generated header.
+  committing it would churn the company's history for nothing.
 - **Store, on first run** — 11 capability packs (Slack, Stripe, Linear, Notion,
   HubSpot, Asana, Calendly, Canva, Intercom, HeyGen, Protocol) ship inside the
   app, so a repo with no catalog of its own still has a full shelf. A repo
@@ -148,6 +146,28 @@ cd ~/code/buildex-app
 nvm use 24.14.0 && corepack pnpm@10.24.0 install
 corepack pnpm@10.24.0 run dev
 ```
+
+## Upgrading from an earlier build
+
+Pre-1.0, BuildEx does **not** carry per-version migration shims. Three of them
+were deleted in WP-8 because nothing has written their inputs for releases, and
+a shim that runs on every sync forever costs more than the one-off tidy it
+saves. A brain written by an earlier build still opens, scans, saves and syncs
+exactly as before; what changed is only what BuildEx cleans up on its way past.
+
+If a company repo predates these, clean it up once by hand:
+
+- `.buildex/company-context.md` — the agent context used to be generated here
+  before it moved to `.claude/`. It is no longer deleted on sync, and it is no
+  longer hidden from the brain map, so a stale one now shows up as a document.
+  Delete it (it is regenerated at `.claude/company-context.md` on every sync).
+- `.buildex/packs.json` — a receipt from the capability-pack era. Nothing reads
+  it. It is no longer moved into a brain repo by *Move brain to its own repo*,
+  and its presence alone now makes a repo read as "has a brain", so a repo whose
+  `.buildex/` holds nothing else will not be offered first-time setup. Delete it.
+
+Neither file is touched automatically, in either direction — an operator's own
+file that happens to share the name is theirs (invariant 8).
 
 ## Blocked on you
 

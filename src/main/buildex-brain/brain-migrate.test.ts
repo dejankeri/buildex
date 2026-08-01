@@ -204,7 +204,6 @@ describe('migrateBrainToExternal', () => {
     writeFileSync(path.join(repo, '.buildex', 'gate-preset.json'), '{"deny":["Bash"]}\n', 'utf8')
     mkdirSync(path.join(repo, '.buildex', 'catalog', 'slack'), { recursive: true })
     writeFileSync(path.join(repo, '.buildex', 'catalog', 'slack', 'pack.json'), '{}\n', 'utf8')
-    writeFileSync(path.join(repo, '.buildex', 'packs.json'), '{"packs":{}}\n', 'utf8')
     mkdirSync(path.join(repo, '.buildex', 'skills', 'slack-search'), { recursive: true })
     writeFileSync(path.join(repo, '.buildex', 'skills', 'slack-search', 'SKILL.md'), '# S\n')
 
@@ -214,7 +213,6 @@ describe('migrateBrainToExternal', () => {
     )
 
     expect(result.ok).toBe(true)
-    expect(existsSync(path.join(brain, 'packs.json'))).toBe(true)
     expect(existsSync(path.join(brain, 'skills', 'slack-search', 'SKILL.md'))).toBe(true)
     expect(existsSync(path.join(brain, 'gate-preset.json'))).toBe(false)
     expect(existsSync(path.join(brain, 'catalog'))).toBe(false)

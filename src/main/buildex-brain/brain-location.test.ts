@@ -3,12 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { scaffoldCompanyBrain } from './brain-scaffold'
-import {
-  bindRepoToBrain,
-  readBrainBindings,
-  rememberClone,
-  writeBrainBindings
-} from './brain-bindings'
+import { bindRepoToBrain, readBrainBindings, rememberClone } from './brain-bindings'
 import {
   bindExistingBrain,
   readBrainPointer,
@@ -70,21 +65,6 @@ describe('resolveBrainLocation', () => {
   it('uses the machine-local binding when there is one', () => {
     makeGitRepo(brain)
     bindRepoToBrain(repo, brain, bindingsFile)
-
-    const result = resolveBrainLocation(repo, { bindingsFile })
-
-    expect(result).toEqual({
-      status: 'ready',
-      location: { root: brain, gitRoot: brain, pathspec: '.', mode: 'external' }
-    })
-  })
-
-  it('falls back to the machine-wide default brain', () => {
-    makeGitRepo(brain)
-    writeBrainBindings(
-      { defaultBrainPath: brain, clonesByRemote: {}, brainByRepo: {} },
-      bindingsFile
-    )
 
     const result = resolveBrainLocation(repo, { bindingsFile })
 

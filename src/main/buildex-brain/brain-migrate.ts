@@ -140,11 +140,8 @@ export async function migrateBrainToExternal(
   return { ok: true, backupPath, movedPaths }
 }
 
-/** Legacy capability-pack receipt. Nothing writes it now; we only ever move or delete it. */
-const LEGACY_PACK_STATE_FILE_NAME = 'packs.json'
-
 /**
- * What the brain owns, brain-relative: its documents, `skills/` and `packs.json`.
+ * What the brain owns, brain-relative: its documents and `skills/`.
  *
  * Deliberately not "everything in `.buildex/`". The folder is also where the
  * company's gate preset lives, and that is read from the code repo in both
@@ -153,10 +150,8 @@ const LEGACY_PACK_STATE_FILE_NAME = 'packs.json'
  */
 function brainOwnedEntries(source: BrainLocation): string[] {
   const owned = listBrainDocumentPaths(source)
-  for (const entry of ['skills', LEGACY_PACK_STATE_FILE_NAME]) {
-    if (existsSync(path.join(source.root, entry))) {
-      owned.push(entry)
-    }
+  if (existsSync(path.join(source.root, 'skills'))) {
+    owned.push('skills')
   }
   return owned
 }
