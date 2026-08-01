@@ -12,6 +12,7 @@ import {
 import path from 'node:path'
 import type { BrainLocation } from '../../shared/buildex-brain-types'
 import { isPathInsideOrEqual } from '../../shared/cross-platform-path'
+import { ensureBuildExGitExclude } from './repo-git-exclude'
 
 // Skills live in the brain's `skills/` folder — wherever the brain is — and are
 // linked into .claude/skills/, which is always per-repo.
@@ -326,6 +327,14 @@ export function relinkBrainSkills(repoPath: string, location: BrainLocation): Re
     } else {
       linked.push(entry)
     }
+  }
+  // The exclude block names the links one by one, and until this ran there were
+  // none to name. Cheap and idempotent — it rewrites nothing when the set of
+  // links is unchanged, which is every call after the first.
+  try {
+    ensureBuildExGitExclude(repoPath)
+  } catch {
+    // Links the operator's `git status` will mention. Not worth a failed relink.
   }
   return { linked, copied, unavailable, pruned }
 }
