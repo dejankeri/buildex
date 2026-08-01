@@ -366,7 +366,30 @@ reviewable diff instead of ~400 silent ones. Read it during each rebase.
 | `src/renderer/src/components/right-sidebar/right-sidebar-panel-content.tsx` | lazy import + 1 render line |
 | `src/renderer/src/components/sidebar/SidebarNav.tsx` | **3 lines**: import + `<BuildExNavEntries />` |
 | `src/renderer/src/App.tsx` | 3 lazy imports + 3 render lines |
-| `src/renderer/src/i18n/locales/{en,es,ja,ko,zh}.json` | the `buildex.*` keys — **generated**, never hand-edited. Count deliberately not stated: it grows with every BuildEx surface and a number here only rots. Run `pnpm run sync:localization-catalog` and take whatever it writes |
+| `src/renderer/src/i18n/locales/{en,es,ja,ko,zh}.json` | the `buildex.*` keys. **Adding one is generated** — run `pnpm run sync:localization-catalog` and take whatever it writes. **Removing or rewording one is a hand-edit** (see below). Count deliberately not stated: it grows with every BuildEx surface and a number here only rots |
+
+**The sync adds; it never prunes and never rewords.** `verify-localization-catalog.mjs --fix`
+inserts keys the source references and repairs *parity* between `en.json` and the
+other four — it has no step that removes a key nothing references any more, and
+no step that notices a `translate()` fallback whose text changed. Both matter,
+because **the catalog value is what renders and the fallback is dead text**:
+change the fallback alone and the old string keeps appearing on screen with a
+green typecheck, a green lint and a clean sync log.
+
+So deleting UI is three steps, not one:
+
+1. edit `en.json` by hand — delete the orphaned keys, rewrite any changed value;
+2. make the same edit in `es`/`ja`/`ko`/`zh`, because every `buildex.*` value is
+   English-seeded in all five and parity repair will not touch a value it
+   already has;
+3. **then** run `pnpm run sync:localization-catalog`, which drops the now-extra
+   keys from the four non-English files and confirms parity.
+
+WP-9 hit this: collapsing the Store's two shelves into one left
+`buildex.store.shelf.otherShelfHint` ("check the other shelf's count") and
+`shelf.empty` referenced by nothing, and changed `shelf.noMatches` from "Nothing
+on this shelf matches" to "Nothing matches". The sync reported success and would
+have shipped all three.
 
 **The Portfolio is a composition, not a subsystem.** `buildex-portfolio/*` adds
 no IPC and no main-process module: it enumerates the renderer's own `repos` and
@@ -462,8 +485,11 @@ first launch*, not in a later branding pass.
 benefit. Skipping `starNag.start()` in `index.ts` disables the nag, keeps IPC
 handlers registered, and leaves the module's suite fully green.
 
-**5. i18n is nearly free.** `pnpm run sync:localization-catalog` generates every
-key across all five locales. Run it before `pnpm lint`.
+**5. i18n is nearly free in one direction only.** `pnpm run sync:localization-catalog`
+generates every *new* key across all five locales — run it before `pnpm lint`.
+It does not prune a key nothing references any more, and it does not rewrite a
+value whose copy changed, so **removing or rewording UI copy is a hand-edit
+across all five files first.** See the locales row under Phase 0.5.
 
 ---
 

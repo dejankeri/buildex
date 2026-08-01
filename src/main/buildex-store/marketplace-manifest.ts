@@ -50,6 +50,12 @@ function parseKeywords(value: unknown): string[] {
   return [...keywords]
 }
 
+/** The `github` spelling's repo, as the URL the CLI clones from it. */
+function githubRepoUrl(value: unknown): string | null {
+  const repo = asString(value)
+  return repo ? `https://github.com/${repo}.git` : null
+}
+
 /**
  * Where the plugin's bytes come from, flattened for display.
  *
@@ -59,6 +65,10 @@ function parseKeywords(value: unknown): string[] {
  * in this string reaches nothing of ours. The URL is still required to be
  * http(s), because that one *is* acted on here — the provenance line offers to
  * open it.
+ *
+ * What is *not* opaque is which field the URL comes from. Opaque means asking
+ * less of a value, never inventing one: this line is the only trust signal an
+ * unvetted plugin carries, so it has to name what the CLI will actually clone.
  */
 function parseSource(value: unknown): StorePluginSource | null {
   // The bare-string spelling: a subdirectory of the marketplace repo itself.
@@ -69,9 +79,12 @@ function parseSource(value: unknown): StorePluginSource | null {
   if (!isRecord(value)) {
     return null
   }
-  // The `github` spelling names a repo; the other two carry a URL.
-  const repo = asString(value.repo)
-  const url = repo ? `https://github.com/${repo}.git` : asHttpUrl(value.url)
+  // Bound to the discriminator, not read from wherever a field happens to sit:
+  // `github` names a repo and every other spelling carries a URL, and the CLI
+  // resolves whichever one the discriminator selects. An entry spelling itself
+  // `url` while also carrying a `repo` would otherwise show a repo the operator
+  // could go and read while the CLI clones somewhere else entirely.
+  const url = asString(value.source) === 'github' ? githubRepoUrl(value.repo) : asHttpUrl(value.url)
   if (!url) {
     return null
   }

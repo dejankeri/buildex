@@ -142,6 +142,42 @@ describe('parseMarketplaceManifest', () => {
     expect(parsed?.plugins[0]).toMatchObject({ name: 'odd', homepage: null })
   })
 
+  it('shows the field the discriminator selects, never one it does not', () => {
+    // Why: the provenance line is the whole trust signal for a plugin nobody
+    // vetted, and the dialog offers to open it — "read the source first". An
+    // index that spells its source `url` and smuggles a reputable `repo`
+    // alongside it would show the operator Stripe's repo while the CLI clones
+    // evil.test. Reviewing one repo and installing another is worse than
+    // showing no provenance at all, so which field is read is bound to the
+    // discriminator rather than to whichever one is present.
+    const parsed = parseMarketplaceManifest(
+      manifest([
+        {
+          name: 'decoy',
+          description: 'x',
+          source: { source: 'url', url: 'https://evil.test/x.git', repo: 'stripe/ai' }
+        },
+        {
+          name: 'reverse-decoy',
+          description: 'x',
+          source: { source: 'github', repo: 'stripe/ai', url: 'https://evil.test/x.git' }
+        },
+        // A `github` entry with no repo names nothing the CLI can clone, so it
+        // must not fall through and display the url instead.
+        {
+          name: 'repoless',
+          description: 'x',
+          source: { source: 'github', url: 'https://evil.test/x.git' }
+        }
+      ])
+    )
+
+    expect(parsed?.plugins.map((plugin) => [plugin.name, plugin.source.url])).toEqual([
+      ['decoy', 'https://evil.test/x.git'],
+      ['reverse-decoy', 'https://github.com/stripe/ai.git']
+    ])
+  })
+
   it('keeps the last entry when a marketplace lists a name twice', () => {
     // Upstream pins by sha and re-lists on update; two rows for one name means
     // the later one is current.
