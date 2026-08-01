@@ -6,6 +6,7 @@ import { expect, type ElectronApplication, type Page } from '@stablyai/playwrigh
 import type { GlobalSettings } from '../../../src/shared/types'
 import { ensureTerminalVisible, waitForActiveWorktree, waitForSessionReady } from './store'
 import { waitForActivePaneHookDescriptor, waitForActiveTerminalManager } from './terminal'
+import { DEMO_ANSWER, DEMO_QUESTION, NORTHWIND_DOCS } from './northwind-studio-documents'
 
 // Northwind Studio: an invented six-person design studio used to stage the app
 // for pictures and for the live demo. Nothing here is a mock of the product —
@@ -15,148 +16,18 @@ import { waitForActivePaneHookDescriptor, waitForActiveTerminalManager } from '.
 // Used by buildex-marketing-capture.spec.ts (shoots it) and
 // buildex-demo-live.spec.ts (leaves it open to click around).
 
+export { DEMO_ANSWER, DEMO_QUESTION, NORTHWIND_DOCS }
+
 export const DEMO_WINDOW = { width: 1440, height: 900 }
 
-export const DEMO_QUESTION = 'Which retainers renew before the end of Q3, and what are they worth?'
-
-export const DEMO_ANSWER = `Three renew before the end of Q3. Clients and owners come from \`clients/\`,
-the numbers from \`finance/position.md\`, and the activation figure from the July review.
-
-| Client | Renews | Monthly | Owner | Where it stands |
-|---|---|---|---|---|
-| Vantage Analytics | 12 Aug | $18k | Mira | Activation 21% → 34%, short of the 40% brief |
-| Helio | 3 Sep | $14k | Dan | Signed in July, first renewal |
-| Fernbank | 28 Sep | $9k | Mira | Quiet since the June handover |
-
-**Vantage is the one to prepare for.** The engagement was sold on 40% activation by
-Q4 and it is at 34%, so the renewal conversation needs the trend, not the number.
-
-I can draft that note with the figures already in it. It will sit in Pending until
-you approve it — nothing goes to a client on its own.`
-
-export const NORTHWIND_DOCS = {
-  'strategy/overview.md': `---
-name: strategy
-description: Where Northwind Studio is going in 2026
----
-
-# Strategy — 2026
-
-We are a six-person product design studio. We win on **speed with taste**: a
-working prototype in the first week, not a deck in the third.
-
-## The bet
-
-Mid-market SaaS teams have money and no design bench. They do not want a
-rebrand; they want their core flow to stop leaking users. We sell that.
-
-## What we will not do
-
-- No hourly billing. Fixed scope, fixed price, fixed date.
-- No logo-only work. It does not compound into product work.
-- No more than four active engagements at once.
-`,
-  'rules/operating.md': `---
-name: rules
-description: How we operate day to day
----
-
-# Operating rules
-
-1. **Every engagement opens with a written scope.** No work starts before it is
-   agreed in writing and filed under \`clients/\`.
-2. **Nothing outward goes without a human.** Proposals, invoices and client mail
-   wait for a person, always.
-3. **Decisions get written down the day they are made.**
-4. **Fridays are for the studio.** No client calls, no delivery deadlines.
-`,
-  'decisions/log.md': `---
-name: decisions
-description: What we decided, and why
----
-
-# Decision log
-
-## 2026-07-14 — Net-30 for enterprise, net-14 for everyone else
-Enterprise procurement will not move faster than 30 days and we kept losing
-deals arguing about it. Supersedes the flat net-14 terms from January.
-
-## 2026-06-28 — We stop taking logo-only projects
-Three of them last quarter, none turned into product work.
-
-## 2026-06-02 — Four active engagements, hard cap
-Five broke us in May. Quality dropped on two, and we nearly lost Vantage.
-`,
-  'clients/vantage.md': `---
-name: Vantage Analytics
-description: Retainer - dashboard and onboarding redesign
----
-
-# Vantage Analytics
-
-**Status:** active retainer · **Since:** March 2026 · **Owner:** Mira
-
-Redesigning the analytics dashboard and first-run onboarding. Their activation
-rate sat at 21%; the brief is to get it past 40% by Q4.
-`,
-  'people/team.md': `---
-name: team
-description: Who we are and who owns what
----
-
-# The studio
-
-| Person | Role | Owns |
-|---|---|---|
-| Mira | Principal designer | Vantage, Northwind brand |
-| Dan | Product designer | Helio, onboarding practice |
-| Sasha | Engineer | Prototypes, design system |
-| Ellis | Operations | Contracts, invoicing, the calendar |
-`,
-  'finance/position.md': `---
-name: finance
-description: Cash position and what is committed
----
-
-# Position — July 2026
-
-- **Cash:** $312k
-- **Committed revenue (signed):** $488k through Q4
-- **Runway with zero new work:** 11 months
-`,
-  'product/practice.md': `---
-name: practice
-description: What we sell, and how the work is shaped
----
-
-# The practice
-
-A engagement is six weeks: one week to a working prototype, four to build it
-out with their team, one to hand over.
-`,
-  'content/voice.md': `---
-name: voice
-description: How Northwind sounds in public
----
-
-# Voice
-
-Plain, specific, never breathless. We show the work rather than describe it.
-`,
-  'reviews/2026-07.md': `---
-name: July 2026
-description: What happened this month, and what it means
----
-
-# July 2026
-
-Activation work on Vantage landed at 34%, short of the 40% target but up from
-21%. Helio signed. We held the four-engagement cap for the second month.
-`
-}
-
 // The one-time "Workspace board moved to the bottom bar" hint outlives a 6s wait
-// and lands in frame. Remove the toast layer outright rather than racing it.
+// and lands in frame. Hide the toast layer rather than racing it.
+//
+// Hidden, never removed: these nodes are React's — the Radix ones are portals
+// still mounted in the sidebar's tree. Detaching them makes React's own cleanup
+// throw NotFoundError on the next unmount, which takes out the workspace list
+// and puts a crash dialog in the frame. A style change React does not track is
+// the only edit that is safe here.
 export async function hideTransientChrome(page: Page): Promise<void> {
   await page.evaluate(() => {
     const selectors = [
@@ -169,8 +40,8 @@ export async function hideTransientChrome(page: Page): Promise<void> {
       '[data-radix-popper-content-wrapper]'
     ]
     for (const selector of selectors) {
-      for (const node of Array.from(document.querySelectorAll(selector))) {
-        node.remove()
+      for (const node of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
+        node.style.setProperty('display', 'none', 'important')
       }
     }
   })
@@ -197,6 +68,22 @@ export async function relabelDemoRepo(page: Page, realName: string): Promise<voi
     },
     { from: realName, to: 'northwind-studio' }
   )
+}
+
+// global-setup gives every test repo a second worktree on branch `e2e-secondary`
+// so worktree tests have something to switch to. It is harness scaffolding — no
+// operator has one — and in the sidebar it reads as a branch of the business.
+// Same justification as relabelDemoRepo: this hides a row the harness added,
+// not a row the product did. Hidden rather than detached, for the reason
+// hideTransientChrome gives.
+export async function hideScaffoldWorktreeRow(page: Page, branch: string): Promise<void> {
+  await page.evaluate((name) => {
+    for (const row of Array.from(document.querySelectorAll<HTMLElement>('[data-worktree-id]'))) {
+      if (row.textContent?.includes(name)) {
+        row.style.setProperty('display', 'none', 'important')
+      }
+    }
+  }, branch)
 }
 
 // A demo at the default test window size looks like a bug report.
@@ -323,16 +210,74 @@ export async function stageDemoConsole(page: Page): Promise<void> {
   await expect(page.getByText('Vantage Analytics').first()).toBeVisible()
 }
 
+// Three saves rather than one, dated apart. A brain arrives over weeks, and the
+// History tab's whole claim — that every save is a commit you can walk back —
+// reads as a filing cabinet when there is a single entry in it.
+const SAVE_SUBJECTS = {
+  foundations: 'Strategy, operating rules and the decision log',
+  engagements: 'The Vantage engagement, the team, and what we make',
+  july: 'July review, where the numbers stand, and how we sound'
+} as const
+
+const NORTHWIND_SAVES: { subject: string; daysAgo: number; documents: string[] }[] = [
+  {
+    subject: SAVE_SUBJECTS.foundations,
+    daysAgo: 9,
+    documents: ['strategy/overview.md', 'rules/operating.md', 'decisions/log.md']
+  },
+  {
+    subject: SAVE_SUBJECTS.engagements,
+    daysAgo: 4,
+    documents: ['clients/vantage.md', 'people/team.md', 'product/practice.md']
+  },
+  {
+    subject: SAVE_SUBJECTS.july,
+    daysAgo: 1,
+    documents: ['reviews/2026-07.md', 'finance/position.md', 'content/voice.md']
+  }
+]
+
 // Real content behind the coverage bars: an empty brain photographs as an empty
 // brain, which is not what the product is for. Committed, because the header
 // counts uncommitted documents as "unsaved" and a demo should show a company at
 // rest, not mid-edit.
 export function writeNorthwindBrain(repoPath: string): void {
-  for (const [rel, body] of Object.entries(NORTHWIND_DOCS)) {
-    const full = path.join(repoPath, '.buildex', rel)
-    mkdirSync(path.dirname(full), { recursive: true })
-    writeFileSync(full, body)
+  const now = Date.now()
+  const commit = (subject: string, daysAgo: number): void => {
+    execFileSync('git', ['add', '-A'], { cwd: repoPath })
+    // Dated back so the history reads as a company's, not as one scripted
+    // minute. Both variables: git takes the author date from one and the date
+    // the log sorts and displays by from the other.
+    const when = new Date(now - daysAgo * 24 * 60 * 60 * 1000).toISOString()
+    execFileSync('git', ['commit', '-m', subject], {
+      cwd: repoPath,
+      env: { ...process.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when }
+    })
   }
-  execFileSync('git', ['add', '-A'], { cwd: repoPath })
-  execFileSync('git', ['commit', '-m', 'Northwind Studio company brain'], { cwd: repoPath })
+
+  // The scaffold gets its own save. Rolling it into the first tranche would file
+  // ten seed documents under a subject about three of them.
+  if (execFileSync('git', ['status', '--porcelain'], { cwd: repoPath }).toString().trim()) {
+    commit('Set up the company brain', 12)
+  }
+
+  for (const save of NORTHWIND_SAVES) {
+    for (const relative of save.documents) {
+      const full = path.join(repoPath, '.buildex', relative)
+      mkdirSync(path.dirname(full), { recursive: true })
+      writeFileSync(full, NORTHWIND_DOCS[relative as keyof typeof NORTHWIND_DOCS])
+    }
+    commit(save.subject, save.daysAgo)
+  }
 }
+
+/** The newest save's subject — what the Brain header and History show first. */
+export const NORTHWIND_LAST_SAVE = SAVE_SUBJECTS.july
+
+/**
+ * The save worth opening in a picture: not the newest.
+ *
+ * History lists newest first, so expanding the top entry pushes every other save
+ * below the fold and the frame stops looking like a history at all.
+ */
+export const NORTHWIND_SAVE_TO_OPEN = SAVE_SUBJECTS.engagements

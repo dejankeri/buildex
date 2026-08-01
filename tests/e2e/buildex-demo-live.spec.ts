@@ -1,12 +1,15 @@
 import { test, expect } from './helpers/orca-app'
 import {
   applyDarkTheme,
+  hideScaffoldWorktreeRow,
   hideTransientChrome,
+  NORTHWIND_LAST_SAVE,
   relabelDemoRepo,
   resizeDemoWindow,
   stageDemoConsole,
   writeNorthwindBrain
 } from './helpers/northwind-studio-demo'
+import { stageDemoPortfolio } from './helpers/demo-portfolio-companies'
 import path from 'node:path'
 
 // The live demo: the same Northwind Studio the screenshots show, but left open
@@ -38,7 +41,13 @@ test('the live demo @headful', async ({ orcaPage, electronApp, testRepoPath }) =
   await resizeDemoWindow(electronApp)
   await applyDarkTheme(orcaPage)
 
-  // Brain first, so every surface is populated by the time it is handed over.
+  // The console is staged before the Brain is opened, even though the Brain is
+  // set up first: staging is what activates the primary workspace, and without
+  // it "Create the brain" scaffolds into whichever workspace the harness left
+  // active while writeNorthwindBrain writes to the primary.
+  await stageDemoConsole(orcaPage)
+
+  // Brain next, so every surface is populated by the time it is handed over.
   await orcaPage.getByRole('button', { name: 'Brain', exact: true }).click()
   await expect(orcaPage.getByRole('heading', { name: 'Set up your company brain' })).toBeVisible()
   await orcaPage
@@ -48,18 +57,33 @@ test('the live demo @headful', async ({ orcaPage, electronApp, testRepoPath }) =
   await expect(orcaPage.getByText('documents', { exact: true })).toBeVisible()
   writeNorthwindBrain(testRepoPath)
 
-  // Hand it over on the console; Brain and Store are one sidebar click away.
+  // Written to disk from outside the app, so the open page is still showing the
+  // scan it ran when the brain was created. Rescan before handing it over.
+  await orcaPage.getByRole('button', { name: 'Rescan', exact: true }).click()
+  await expect(orcaPage.getByText(NORTHWIND_LAST_SAVE, { exact: false }).first()).toBeVisible({
+    timeout: 30_000
+  })
+
+  // The other five businesses, so the Portfolio has something to be about.
+  const stagedRepos = await stageDemoPortfolio(orcaPage)
+
+  // Hand it over on the console; Portfolio, Brain and Store are one click away.
+  await orcaPage.getByRole('button', { name: 'Portfolio', exact: true }).click()
+  await orcaPage.getByRole('button', { name: 'Brain', exact: true }).click()
   await stageDemoConsole(orcaPage)
   await relabelDemoRepo(orcaPage, path.basename(testRepoPath))
+  await hideScaffoldWorktreeRow(orcaPage, 'e2e-secondary')
   await hideTransientChrome(orcaPage)
 
   console.log(
     [
       '',
-      '  BuildEx live demo is up — Northwind Studio, an invented design studio.',
+      '  BuildEx live demo is up — six invented businesses, Northwind Studio open.',
       '',
+      `    Portfolio        all six, read-only`,
       `    Brain / Store    the sidebar buttons, both populated`,
       `    Repo             ${testRepoPath}  (throwaway)`,
+      `    Others           ${stagedRepos.length} more throwaway repos under the temp dir`,
       '',
       '  HOME is isolated: nothing here touches your real ~/.claude or ~/.orca.',
       '  Ctrl-C to close it and clean up.',
