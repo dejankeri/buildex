@@ -9,11 +9,13 @@ import { bindRepoToBrain, rememberClone } from './brain-bindings'
 import { commitBrain } from './brain-history'
 import {
   BRAIN_POINTER_RELATIVE_PATH,
+  brainPlacementCheckout,
   embeddedBrainCheckout,
   embeddedLocation,
   externalLocation,
   writeBrainPointer
 } from './brain-location'
+import { checkoutCommitBlockMessage, readCheckoutCommitBlock } from './checkout-commit-block'
 import { listBrainDocumentPaths } from './company-brain-scan'
 
 // Taking a brain that grew up inside a code repo and giving it a repo of its own.
@@ -37,10 +39,14 @@ export async function migrateBrainToExternal(
   request: BrainMigrationRequest,
   now: number
 ): Promise<BrainMigrationResult> {
-  // The embedded brain a worktree shows is the primary checkout's, so that is
-  // the one being moved — and the checkout every git command, the pointer and
-  // the binding below must name. Asked once here so they cannot disagree.
+  // Two questions, one answer apart. The brain a worktree shows is the primary
+  // checkout's, so that is the one being moved and the one every git command
+  // here names. Where the *decision* is recorded is always the primary, because
+  // a pointer or a binding left in a worktree is visible from that worktree
+  // alone. They differ only for a worktree still holding a brain the primary
+  // has never had — see `embeddedBrainCheckout`.
   const repoPath = embeddedBrainCheckout(request.repoPath)
+  const placement = brainPlacementCheckout(request.repoPath)
   const source = embeddedLocation(repoPath)
   const target = externalLocation(request.brainPath, request.remote)
 
@@ -50,6 +56,20 @@ export async function migrateBrainToExternal(
   if (!existsSync(source.root)) {
     return { ok: false, movedPaths: [], error: 'There is no brain here to move' }
   }
+
+  // Before the backup, because everything after it writes. A migration commits
+  // in three checkouts at most, and catching the failure afterwards is exactly
+  // what leaves a staged deletion behind: `git rm --ignore-unmatch` exits 0
+  // mid-merge, the commit exits 128, and this function would go on to delete the
+  // files from disk and report success — leaving the brain in the primary's HEAD
+  // and its removal staged in somebody else's conflicted index.
+  for (const checkout of new Set([repoPath, placement, target.gitRoot])) {
+    const blocking = await readCheckoutCommitBlock(checkout)
+    if (blocking) {
+      return { ok: false, movedPaths: [], error: checkoutCommitBlockMessage(blocking, checkout) }
+    }
+  }
+
   const movedPaths = listBrainDocumentPaths(source)
 
   let backupPath: string
@@ -104,17 +124,17 @@ export async function migrateBrainToExternal(
 
   try {
     if (request.writePointer && request.remote) {
-      writeBrainPointer(repoPath, request.remote)
+      writeBrainPointer(placement, request.remote)
       rememberClone(request.remote, request.brainPath, request.bindingsFile)
       try {
         await gitExecFileAsync(['add', '--', BRAIN_POINTER_RELATIVE_PATH], {
-          cwd: repoPath
+          cwd: placement
         })
       } catch {
         // The pointer is on disk either way; an uncommitted one still resolves.
       }
     } else {
-      bindRepoToBrain(repoPath, request.brainPath, request.bindingsFile)
+      bindRepoToBrain(placement, request.brainPath, request.bindingsFile)
     }
   } catch (error) {
     // The files have already moved, so the one thing the operator must not be
@@ -141,7 +161,7 @@ export async function migrateBrainToExternal(
   // Every link in `.claude/skills/` pointed into the folder just emptied, and a
   // dangling one is invisible to the agent and to every later install. Both
   // checkouts hold their own `.claude/`, and only one of them is on screen.
-  for (const checkout of new Set([request.repoPath, repoPath])) {
+  for (const checkout of new Set([request.repoPath, repoPath, placement])) {
     relinkBrainSkills(checkout, target)
   }
 

@@ -32,9 +32,9 @@ import { createBrainDocument } from '../buildex-brain/brain-document-create'
 import { createBrainEntity } from '../buildex-brain/brain-entity-create'
 import { embeddedBrainCheckout, embeddedLocation } from '../buildex-brain/brain-location'
 import {
-  inProgressOperationMessage,
-  readInProgressGitOperation
-} from '../buildex-brain/checkout-in-progress-operation'
+  checkoutCommitBlockMessage,
+  readCheckoutCommitBlock
+} from '../buildex-brain/checkout-commit-block'
 import { requireBrainLocation, resolveBrainLocation } from './authorized-brain-location'
 import { readBrainHistory, saveBrain } from '../buildex-brain/brain-history'
 import { readBrainSaveDiff } from '../buildex-brain/brain-save-diff'
@@ -128,12 +128,12 @@ export function registerBuildExBrainHandlers(): void {
       // Checked before the save runs, not left to git: `git add` would succeed
       // and the partial commit behind it would fail, leaving the brain staged in
       // a conflicted index the operator is about to commit.
-      const blocking = await readInProgressGitOperation(location.gitRoot)
+      const blocking = await readCheckoutCommitBlock(location.gitRoot)
       if (blocking) {
         return {
           ok: false,
           savedPaths: [],
-          error: inProgressOperationMessage(blocking, location.gitRoot)
+          error: checkoutCommitBlockMessage(blocking, location.gitRoot)
         }
       }
       return saveBrain(location, request?.message ?? '')

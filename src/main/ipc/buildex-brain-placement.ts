@@ -30,9 +30,9 @@ import {
   resolveBrainLocation
 } from './authorized-brain-location'
 import {
-  inProgressOperationMessage,
-  readInProgressGitOperation
-} from '../buildex-brain/checkout-in-progress-operation'
+  checkoutCommitBlockMessage,
+  readCheckoutCommitBlock
+} from '../buildex-brain/checkout-commit-block'
 import { pullBrain, pushBrain, reportPush } from '../buildex-brain/brain-sync'
 import { refreshCompanyContext } from '../buildex-brain/company-context-refresh'
 import { readInstalledAppSummaries } from '../buildex-store/store-catalog-source'
@@ -69,12 +69,12 @@ export function registerBuildExBrainPlacementHandlers(): void {
       }
       // Same reason as the save handler: removal commits too, so a checkout
       // mid-merge would take the staged deletion into somebody's merge commit.
-      const blocking = await readInProgressGitOperation(location.gitRoot)
+      const blocking = await readCheckoutCommitBlock(location.gitRoot)
       if (blocking) {
         return {
           ok: false,
           committed: false,
-          error: inProgressOperationMessage(blocking, location.gitRoot)
+          error: checkoutCommitBlockMessage(blocking, location.gitRoot)
         }
       }
       // External brains are shared across repos, so this deletes nothing for

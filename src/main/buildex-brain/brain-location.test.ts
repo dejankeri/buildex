@@ -233,6 +233,58 @@ describe('resolveBrainLocation', () => {
     })
   })
 
+  it('keeps a worktree holding documents the primary checkout has never had', () => {
+    makeGitRepo(repo)
+    const worktree = makeWorktree(repo, path.join(dir, 'api-feature'), 'api-feature')
+    mkdirSync(path.join(worktree, '.buildex', 'decisions'), { recursive: true })
+    writeFileSync(path.join(worktree, '.buildex', 'decisions', 'pricing.md'), '# P\n', 'utf8')
+
+    // Every save from a worktree used to land on that worktree's branch, so this
+    // is exactly the population upgrading into convergence. Sending them to a
+    // brainless primary would orphan the documents there and — since
+    // `embeddedBrainPresent` would go false — the UI would offer bind rather
+    // than migrate, so they could not even be moved out.
+    expect(resolveBrainLocation(worktree, { bindingsFile })).toEqual({
+      status: 'ready',
+      location: {
+        root: path.join(worktree, '.buildex'),
+        gitRoot: worktree,
+        pathspec: '.buildex',
+        mode: 'embedded'
+      }
+    })
+  })
+
+  it('converges that worktree the moment the primary checkout has a brain', () => {
+    makeGitRepo(repo)
+    const worktree = makeWorktree(repo, path.join(dir, 'api-feature'), 'api-feature')
+    mkdirSync(path.join(worktree, '.buildex', 'decisions'), { recursive: true })
+    writeFileSync(path.join(worktree, '.buildex', 'decisions', 'pricing.md'), '# P\n', 'utf8')
+    mkdirSync(path.join(repo, '.buildex', 'decisions'), { recursive: true })
+    writeFileSync(path.join(repo, '.buildex', 'decisions', 'hiring.md'), '# H\n', 'utf8')
+
+    const resolution = resolveBrainLocation(worktree, { bindingsFile })
+    if (resolution.status !== 'ready') {
+      throw new Error('expected a ready brain')
+    }
+    expect(resolution.location.gitRoot).toBe(repo)
+  })
+
+  it("converges a worktree whose .buildex holds nothing of the company's", () => {
+    makeGitRepo(repo)
+    const worktree = makeWorktree(repo, path.join(dir, 'api-feature'), 'api-feature')
+    // BuildEx having run here is not a brain: the gate preset is policy, and
+    // linked skills are somebody else's. `isBrainInitialized` is the test.
+    mkdirSync(path.join(worktree, '.buildex'), { recursive: true })
+    writeFileSync(path.join(worktree, '.buildex', 'gate-preset.json'), '{}\n', 'utf8')
+
+    const resolution = resolveBrainLocation(worktree, { bindingsFile })
+    if (resolution.status !== 'ready') {
+      throw new Error('expected a ready brain')
+    }
+    expect(resolution.location.gitRoot).toBe(repo)
+  })
+
   it('keeps the primary checkout itself on its own embedded brain', () => {
     makeGitRepo(repo)
 
@@ -409,6 +461,51 @@ describe('bindExistingBrain', () => {
     expect(result.ok).toBe(false)
     expect(result.error).toBeTruthy()
     expect(readBrainBindings(bindingsFile).brainByRepo[repo]).toBeUndefined()
+  })
+})
+
+describe('bindExistingBrain from a linked worktree', () => {
+  it('records the binding against the primary checkout, so every sibling sees it', async () => {
+    makeGitRepo(repo)
+    makeGitRepo(brain)
+    const worktree = makeWorktree(repo, path.join(dir, 'api-feature'), 'api-feature')
+    const sibling = makeWorktree(repo, path.join(dir, 'api-other'), 'api-other')
+
+    await bindExistingBrain({
+      repoPath: worktree,
+      brainPath: brain,
+      writePointer: false,
+      bindingsFile
+    })
+
+    // The fallback reads worktree then primary and never the reverse, so a
+    // binding left in the worktree would be visible from that worktree alone
+    // while the primary and every sibling carried on resolving embedded.
+    expect(readBrainBindings(bindingsFile).brainByRepo[repo]).toBe(brain)
+    const external = {
+      status: 'ready',
+      location: { root: brain, gitRoot: brain, pathspec: '.', mode: 'external' }
+    }
+    expect(resolveBrainLocation(worktree, { bindingsFile })).toEqual(external)
+    expect(resolveBrainLocation(sibling, { bindingsFile })).toEqual(external)
+    expect(resolveBrainLocation(repo, { bindingsFile })).toEqual(external)
+  })
+
+  it('writes the tracked pointer into the primary checkout too', async () => {
+    makeGitRepo(repo)
+    makeGitRepo(brain)
+    const worktree = makeWorktree(repo, path.join(dir, 'api-feature'), 'api-feature')
+
+    await bindExistingBrain({
+      repoPath: worktree,
+      brainPath: brain,
+      remote: 'git@github.com:acme/brain.git',
+      writePointer: true,
+      bindingsFile
+    })
+
+    expect(readBrainPointer(repo)).toBe('git@github.com:acme/brain.git')
+    expect(readBrainPointer(worktree)).toBeNull()
   })
 })
 

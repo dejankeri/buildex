@@ -3,10 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import {
-  inProgressOperationMessage,
-  readInProgressGitOperation
-} from './checkout-in-progress-operation'
+import { checkoutCommitBlockMessage, readCheckoutCommitBlock } from './checkout-commit-block'
 import { commitBrain } from './brain-history'
 import { embeddedLocation } from './brain-location'
 
@@ -50,22 +47,22 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-describe('readInProgressGitOperation', () => {
+describe('readCheckoutCommitBlock', () => {
   it('says nothing is in progress in an ordinary checkout', async () => {
-    expect(await readInProgressGitOperation(repo)).toBeNull()
+    expect(await readCheckoutCommitBlock(repo)).toBeNull()
   })
 
   it('says nothing for a folder that is no repo at all', async () => {
     const folder = path.join(dir, 'notes')
     mkdirSync(folder, { recursive: true })
 
-    expect(await readInProgressGitOperation(folder)).toBeNull()
+    expect(await readCheckoutCommitBlock(folder)).toBeNull()
   })
 
   it('names a conflicted merge', async () => {
     conflictedMerge()
 
-    expect(await readInProgressGitOperation(repo)).toBe('merge')
+    expect(await readCheckoutCommitBlock(repo)).toBe('merge')
   })
 
   it('names a conflicted rebase', async () => {
@@ -81,7 +78,57 @@ describe('readInProgressGitOperation', () => {
       // The conflict is the point.
     }
 
-    expect(await readInProgressGitOperation(repo)).toBe('rebase')
+    expect(await readCheckoutCommitBlock(repo)).toBe('rebase')
+  })
+
+  it('names a detached HEAD, which git would let the commit through on', async () => {
+    git(repo, 'checkout', '--quiet', '--detach', 'HEAD')
+
+    // The opposite failure to a conflicted merge: nothing refuses, the save
+    // reports success, and the commit is unreachable the moment the operator
+    // checks a branch out again.
+    expect(await readCheckoutCommitBlock(repo)).toBe('detached-head')
+  })
+
+  it('names a bisect, which detaches HEAD once it picks a midpoint', async () => {
+    const first = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim()
+    for (const n of ['second', 'third']) {
+      writeFileSync(path.join(repo, 'src', 'app.ts'), `${n}\n`, 'utf8')
+      git(repo, 'commit', '--quiet', '-am', n)
+    }
+    git(repo, 'bisect', 'start')
+    git(repo, 'bisect', 'bad', 'HEAD')
+    git(repo, 'bisect', 'good', first)
+
+    expect(await readCheckoutCommitBlock(repo)).toBe('detached-head')
+  })
+
+  it('says nothing for a repo with no commits yet, where the branch is unborn', async () => {
+    const fresh = path.join(dir, 'fresh')
+    mkdirSync(fresh, { recursive: true })
+    git(fresh, 'init', '--quiet')
+
+    // `symbolic-ref HEAD` resolves to refs/heads/<name> before the first commit,
+    // and committing there is exactly what a first save does.
+    expect(await readCheckoutCommitBlock(fresh)).toBeNull()
+  })
+
+  it('reports the operation ahead of the detached HEAD a rebase also leaves', async () => {
+    git(repo, 'checkout', '--quiet', '-b', 'other')
+    writeFileSync(path.join(repo, 'src', 'app.ts'), 'theirs\n', 'utf8')
+    git(repo, 'commit', '--quiet', '-am', 'Theirs')
+    git(repo, 'checkout', '--quiet', '-')
+    writeFileSync(path.join(repo, 'src', 'app.ts'), 'ours\n', 'utf8')
+    git(repo, 'commit', '--quiet', '-am', 'Ours')
+    try {
+      git(repo, 'rebase', 'other')
+    } catch {
+      // The conflict is the point.
+    }
+
+    // Both are true mid-rebase; the rebase is the one the operator has to
+    // resolve, and the branch comes back with it.
+    expect(await readCheckoutCommitBlock(repo)).toBe('rebase')
   })
 
   it('reads the state of the checkout asked about, not the repo', async () => {
@@ -91,8 +138,8 @@ describe('readInProgressGitOperation', () => {
 
     // Each checkout has its own git dir, and the worktree is idle even though
     // the primary checkout is stuck.
-    expect(await readInProgressGitOperation(worktree)).toBeNull()
-    expect(await readInProgressGitOperation(repo)).toBe('merge')
+    expect(await readCheckoutCommitBlock(worktree)).toBeNull()
+    expect(await readCheckoutCommitBlock(repo)).toBe('merge')
   })
 })
 
@@ -113,15 +160,23 @@ describe('what the guard is protecting', () => {
         encoding: 'utf8'
       }).trim()
     ).toBe('M  .buildex/decisions/pricing.md')
-    expect(await readInProgressGitOperation(repo)).toBe('merge')
+    expect(await readCheckoutCommitBlock(repo)).toBe('merge')
   })
 })
 
-describe('inProgressOperationMessage', () => {
+describe('checkoutCommitBlockMessage', () => {
   it('names the operation and the checkout the operator has to go fix', () => {
-    const message = inProgressOperationMessage('rebase', '/code/acme')
+    const message = checkoutCommitBlockMessage('rebase', '/code/acme')
 
     expect(message).toContain('rebase')
     expect(message).toContain('/code/acme')
+  })
+
+  it('tells the operator to check a branch out, which is a different instruction', () => {
+    const message = checkoutCommitBlockMessage('detached-head', '/code/acme')
+
+    expect(message).toContain('/code/acme')
+    expect(message).toContain('branch')
+    expect(message).not.toContain('abort')
   })
 })

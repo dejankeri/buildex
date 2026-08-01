@@ -11,6 +11,7 @@ import {
 } from 'node:fs'
 import path from 'node:path'
 import type { BrainLocation } from '../../shared/buildex-brain-types'
+import { isPathInsideOrEqual } from '../../shared/cross-platform-path'
 
 // Skills live in the brain's `skills/` folder — wherever the brain is — and are
 // linked into .claude/skills/, which is always per-repo.
@@ -107,10 +108,15 @@ function linkSkillIntoAgentDir(
 
   try {
     mkdirSync(path.dirname(linkPath), { recursive: true })
-    // Relative inside the repo so a clone or a move keeps working; absolute when
-    // the brain is elsewhere, because nothing relative can reach it reliably.
-    const relative = path.relative(path.dirname(linkPath), target)
-    symlinkSync(location.mode === 'embedded' ? relative : target, linkPath, 'dir')
+    // Relative when the target is genuinely inside this checkout, so a clone or a
+    // move keeps working; absolute otherwise, because nothing relative can reach
+    // it reliably. Containment, not `mode === 'embedded'`: since a worktree's
+    // embedded brain is the primary checkout's, that test would write
+    // `../../../acme/.buildex/skills/x` — a link that escapes the checkout, and
+    // one that resolves in a teammate's clone to whatever happens to sit beside
+    // it if `.claude/skills/` is tracked.
+    const inside = isPathInsideOrEqual(repoPath, target)
+    symlinkSync(inside ? path.relative(path.dirname(linkPath), target) : target, linkPath, 'dir')
     return 'linked'
   } catch {
     return 'needs-copy'

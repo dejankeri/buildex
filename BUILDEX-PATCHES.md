@@ -254,19 +254,59 @@ takes the primary's, and anything with no primary checkout — a folder workspac
 a worktree of a bare repo, a worktree whose main clone has moved off this machine
 — keeps its own rather than being pointed at a guess.
 
-Two consequences worth knowing before touching the save path. First, an embedded
-location can now name a path *outside* the repo the renderer asked about, so
-`authorizeBrainLocation` authorizes that root — the one case; an embedded brain
-in the very path asked about still needs nothing and widening it would hand out
-access it never needed. Second, **git will not make a partial commit during a
-merge, rebase, cherry-pick or revert**, but the `git add` in front of one will
-happily succeed — so an unguarded save leaves the brain staged inside somebody's
-conflicted index and their merge commit sweeps it up, which is pathspec scoping
-defeated through the back door. `checkout-in-progress-operation.ts` reads the
-target checkout's own git dir (each checkout has one, which is why it can answer
-per checkout) and the save and removal handlers refuse before running anything.
-Migrate does not check; it is a one-shot, dialog-driven action whose git failures
-are already caught and reported, and its `git rm` is per-file.
+**Convergence must not orphan the documents it is converging.** The population
+upgrading into this rule is exactly "worktrees whose branch holds brain
+documents", because every save from a worktree used to land there. Sent to a
+brainless primary they would read as gone, `embeddedBrainPresent` would go false,
+and the placement UI would offer *bind* ("nothing to move") over *migrate* — so
+they could not even be moved out. So a checkout with a brain keeps it while the
+primary has none, and converges the moment the primary has one. The test is
+`isBrainInitialized`, never `existsSync('.buildex')`: the folder alone proves
+only that BuildEx has run there, which is the same trap `gate-applied.json` and
+`packs.json` each sprang once.
+
+**Where a brain *lives* and where the decision about it is *recorded* are two
+questions.** `embeddedBrainCheckout` answers the first, `brainPlacementCheckout`
+the second, and the second is always the primary checkout — because the fallback
+that finds a pointer or a binding reads worktree then primary and never the
+reverse. A placement written into a worktree is visible from that worktree alone
+while every sibling resolves elsewhere: the same split-brain, through a different
+door. Both `migrateBrainToExternal` and `bindExistingBrain` write through the
+placement checkout; only migrate's file moves and git commands use the other.
+
+Two consequences worth knowing before touching any brain write path. First, an
+embedded location can now name a path *outside* the repo the renderer asked
+about, so `authorizeBrainLocation` authorizes that root — the one case; an
+embedded brain in the very path asked about still needs nothing and widening it
+would hand out access it never needed. Second, `checkout-commit-block.ts`, which
+answers **why a checkout cannot take a brain commit** and covers two states that
+fail in opposite directions:
+
+- **Merge, rebase, cherry-pick, revert.** Git refuses the partial commit; the
+  `git add` in front of it does not — so an unguarded write leaves the brain
+  staged inside somebody's conflicted index and their merge commit sweeps it up.
+  Pathspec scoping defeated through the back door.
+- **Detached HEAD**, `git bisect` and a checked-out tag included. Git *accepts*
+  the commit and nothing warns; it becomes unreachable as soon as a branch is
+  checked out again. The operation is reported ahead of the detached HEAD a
+  rebase also leaves, because resolving it brings the branch back.
+
+It reads the checkout's own git dir (each has one, which is why it can answer per
+checkout) and save, removal and **migration** all refuse before running anything.
+Migration checks all three checkouts it may write to and does so **before the
+backup**. Catching its own commit failure afterwards is precisely what leaves the
+damage: mid-merge `git rm --ignore-unmatch` exits 0 and stages the deletion, the
+partial commit exits 128 into a bare `catch`, and migrate would go on to delete
+the files from disk and return `ok: true` — brain still in HEAD, its removal
+staged in someone else's conflicted index.
+
+**`.claude/skills/<name>` is relative only when the target is inside the
+checkout.** It used to key that on `mode === 'embedded'` — true when embedded
+meant "in this repo", and false since convergence. From a worktree the old test
+wrote `../../../acme/.buildex/skills/x`: a link that escapes the checkout, is
+rewritten on every worktree creation, and — if `.claude/skills/` is tracked —
+enters history and resolves in a teammate's clone to whatever sits beside it.
+Containment, not mode.
 
 **A gate write is only ever as complete as the catalogue behind it.** The rules
 must come from the shelf *that company* sees — `readCompanyStoreEntries(location)`,

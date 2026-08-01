@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -133,6 +134,38 @@ describe('relinkBrainSkills', () => {
       unavailable: [],
       pruned: []
     })
+  })
+})
+
+describe('what the link itself says', () => {
+  it('is relative when the brain is inside this checkout, so a clone or a move survives', () => {
+    writeSkill(path.join(repo, '.buildex'), 'how-we-price')
+
+    expect(serveSkillInAgentDir(repo, embeddedLocation(repo), 'how-we-price')).toBe('linked')
+
+    expect(readlinkSync(agentSkill('how-we-price'))).toBe(
+      path.join('..', '..', '.buildex', 'skills', 'how-we-price')
+    )
+  })
+
+  it("is absolute when an embedded brain is the primary checkout's, not this one", () => {
+    // Convergence broke the old `mode === 'embedded'` test: this would otherwise
+    // be `../../../acme/.buildex/skills/x`, a link that escapes the checkout and
+    // — if `.claude/skills/` is tracked — resolves in a teammate's clone to
+    // whatever happens to sit beside it.
+    const primary = path.join(dir, 'acme')
+    mkdirSync(primary, { recursive: true })
+    writeSkill(path.join(primary, '.buildex'), 'how-we-price')
+    const worktree = repo
+
+    expect(serveSkillInAgentDir(worktree, embeddedLocation(primary), 'how-we-price')).toBe('linked')
+
+    const written = readlinkSync(agentSkill('how-we-price'))
+    expect(path.isAbsolute(written)).toBe(true)
+    expect(written.startsWith('..')).toBe(false)
+    expect(realpathSync(agentSkill('how-we-price'))).toBe(
+      realpathSync(path.join(primary, '.buildex', 'skills', 'how-we-price'))
+    )
   })
 })
 

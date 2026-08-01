@@ -252,3 +252,76 @@ describe('migrating from a linked worktree', () => {
     rmSync(result.backupPath ?? '', { recursive: true, force: true })
   })
 })
+
+describe('migrating out of a checkout that cannot take the commit', () => {
+  it('refuses before the backup rather than deleting the files and reporting success', async () => {
+    // Unguarded this is the worst reachable shape of the mid-merge hazard:
+    // `git rm --ignore-unmatch` exits 0 and stages the deletion, the partial
+    // commit exits 128 into a bare catch, and migrate goes on to delete the
+    // files from disk and return ok — leaving the brain in HEAD and its removal
+    // staged in somebody else's conflicted index.
+    mkdirSync(path.join(repo, 'src'), { recursive: true })
+    writeFileSync(path.join(repo, 'src', 'app.ts'), 'base\n', 'utf8')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '--quiet', '-m', 'code')
+    git(repo, 'checkout', '--quiet', '-b', 'other')
+    writeFileSync(path.join(repo, 'src', 'app.ts'), 'theirs\n', 'utf8')
+    git(repo, 'commit', '--quiet', '-am', 'Theirs')
+    git(repo, 'checkout', '--quiet', '-')
+    writeFileSync(path.join(repo, 'src', 'app.ts'), 'ours\n', 'utf8')
+    git(repo, 'commit', '--quiet', '-am', 'Ours')
+    try {
+      git(repo, 'merge', 'other')
+    } catch {
+      // The conflict is the point.
+    }
+
+    const result = await migrateBrainToExternal(
+      { repoPath: repo, brainPath: brain, writePointer: false, bindingsFile },
+      1_700_000_000_000
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('merge')
+    expect(result.backupPath).toBeUndefined()
+    // Nothing moved, nothing deleted, nothing staged.
+    expect(readFileSync(path.join(repo, '.buildex', 'decisions', 'pricing.md'), 'utf8')).toBe(
+      '# Pricing\n'
+    )
+    expect(existsSync(path.join(brain, 'decisions'))).toBe(false)
+    expect(
+      execFileSync('git', ['status', '--porcelain', '--', '.buildex'], {
+        cwd: repo,
+        encoding: 'utf8'
+      }).trim()
+    ).toBe('')
+  })
+
+  it('refuses when the brain repo it is moving into is mid-merge', async () => {
+    // The target is a repo the operator picked, and `commitBrain` there stages
+    // before it commits just the same.
+    writeFileSync(path.join(brain, 'seed.md'), 'a\n', 'utf8')
+    git(brain, 'add', '.')
+    git(brain, 'commit', '--quiet', '-m', 'first')
+    git(brain, 'checkout', '--quiet', '-b', 'other')
+    writeFileSync(path.join(brain, 'seed.md'), 'theirs\n', 'utf8')
+    git(brain, 'commit', '--quiet', '-am', 'Theirs')
+    git(brain, 'checkout', '--quiet', '-')
+    writeFileSync(path.join(brain, 'seed.md'), 'ours\n', 'utf8')
+    git(brain, 'commit', '--quiet', '-am', 'Ours')
+    try {
+      git(brain, 'merge', 'other')
+    } catch {
+      // The conflict is the point.
+    }
+
+    const result = await migrateBrainToExternal(
+      { repoPath: repo, brainPath: brain, writePointer: false, bindingsFile },
+      1_700_000_000_000
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('merge')
+    expect(existsSync(path.join(repo, '.buildex', 'decisions', 'pricing.md'))).toBe(true)
+  })
+})

@@ -153,18 +153,56 @@ Three shapes, and all three are tested:
   checkout to converge on and nothing is guessed at. Same answer for a worktree
   of a bare repo, and for one whose main clone has moved off this machine.
 
+**One exception, and it is about not losing anybody's writing.** Before this
+rule, every save from a worktree landed on that worktree's branch — so the
+population upgrading into convergence is precisely "worktrees holding documents
+the primary checkout has never seen". Sending those to a brainless primary would
+orphan them: the brain would read as empty, and the placement screen would offer
+*Point at an existing brain* ("nothing to move") instead of *Move brain to its
+own repo*, so they could not even be moved out. A checkout that has a brain
+therefore keeps it while the primary has none, and converges the moment the
+primary has one. "Has a brain" is `isBrainInitialized`, not the folder existing:
+a `.buildex/` holding only the gate preset is BuildEx having run there, not the
+company's writing.
+
+Where a *placement decision* is recorded — a `.buildex/brain.json` pointer, a
+machine-local binding — is always the primary checkout, including one made from
+a worktree. The fallback that finds them reads worktree then primary and never
+the reverse, so a decision left in a worktree is visible from that worktree alone
+while every sibling carries on resolving somewhere else. That is the same
+split-brain by another door, and it applies to *Move brain to its own repo* and
+*Point at an existing brain* alike.
+
 Saving is still **pathspec-scoped**: `git add -- .buildex` then
 `git commit -- .buildex`, which is a partial commit, so half-written code in the
 primary checkout stays uncommitted and anything else the operator had staged
 stays staged. That guarantee matters more now, not less, because the commit
 lands in a checkout they are not looking at.
 
-One thing git will not do: a partial commit **during a merge, rebase,
-cherry-pick or revert**. The `git add` in front of it does not refuse, so an
-unguarded save would leave the brain's files staged inside a conflicted index
-and the commit finishing that merge would sweep them up. So a save (and a brain
-removal) checks the target checkout first and refuses with the operation and the
-path, rather than half-running. `checkout-in-progress-operation.ts`.
+Two things a checkout can be in the middle of, failing in opposite directions,
+and `checkout-commit-block.ts` answers for both:
+
+- **A merge, rebase, cherry-pick or revert.** Git refuses a partial commit, but
+  the `git add` in front of it does not — so an unguarded write leaves the brain
+  staged inside a conflicted index for the commit that finishes that merge to
+  sweep up.
+- **A detached HEAD** — including `git bisect` and a checked-out tag. The
+  reverse: git accepts the commit, nothing warns, and it is unreachable the
+  moment the operator checks a branch out again.
+
+Save, brain removal and migration all check the target checkouts first and refuse
+with the reason and the path, rather than half-running. Migration checks all
+three checkouts it can write to, and does it **before the backup**: catching its
+own commit failure afterwards is exactly what would leave a staged deletion
+behind while it deleted the files and reported success.
+
+One knock-on worth knowing: `.claude/skills/<name>` is a symlink into the brain,
+and it used to be written relative whenever the mode was embedded — "relative
+inside the repo so a clone or a move keeps working". Embedded no longer implies
+inside the repo, so the test is now containment. From a worktree the link is
+absolute; a relative one would read `../../../acme/.buildex/skills/x`, escape the
+checkout, and — if `.claude/skills/` is tracked — resolve in a teammate's clone
+to whatever happened to sit beside it.
 
 **If you run many worktrees at once, prefer an external brain.** Convergence
 makes embedded mode correct, not free: every save serialises on one checkout, it

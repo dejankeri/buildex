@@ -10,7 +10,7 @@ import type {
 import { gitExecFileAsync } from '../git/runner'
 import { relinkBrainSkills } from './skill-link'
 import { bindRepoToBrain, readBrainBindings, rememberClone } from './brain-bindings'
-import { BRAIN_ROOT } from './company-brain-scan'
+import { BRAIN_ROOT, isBrainInitialized } from './company-brain-scan'
 import { primaryCheckoutPath } from './worktree-primary-checkout'
 
 // Where this repo's brain is. The only module that answers that question.
@@ -70,6 +70,30 @@ export function embeddedLocation(repoPath: string): BrainLocation {
 }
 
 /**
+ * The primary checkout, when this machine can actually reach it.
+ *
+ * Null for a checkout that has none — a folder workspace, a worktree of a bare
+ * repo — and for one whose main clone has moved or gone, where converging would
+ * point the brain at a path that is not there.
+ */
+function reachablePrimaryCheckout(checkoutPath: string): string | null {
+  const primary = primaryCheckoutPath(checkoutPath)
+  return primary && existsSync(primary) ? primary : null
+}
+
+/**
+ * The checkout a placement decision — a pointer, a binding — is recorded in.
+ *
+ * Always the primary one, because the fallback that finds them reads worktree
+ * then primary and never the reverse: a decision recorded in a worktree is
+ * visible from that worktree alone, while every sibling carries on resolving
+ * somewhere else. That is the company's brain split in two.
+ */
+export function brainPlacementCheckout(checkoutPath: string): string {
+  return reachablePrimaryCheckout(checkoutPath) ?? checkoutPath
+}
+
+/**
  * The one checkout whose `.buildex/` is this company's embedded brain.
  *
  * `.buildex/` is branch content, so N parallel agent worktrees would otherwise
@@ -79,14 +103,25 @@ export function embeddedLocation(repoPath: string): BrainLocation {
  * one, the same aliasing `resolveBrainLocation` already applies to pointers and
  * bindings. One rule, one resolver.
  *
- * A folder workspace that is no checkout, and a worktree of a bare repo, have no
- * primary checkout and keep their own — there is nothing to converge on.
+ * One exception, and it is about not losing anybody's writing. Before this rule
+ * existed every save from a worktree landed on that worktree's branch — so the
+ * population upgrading into it is precisely "worktrees holding documents the
+ * primary checkout has never seen". Converging those onto a brainless primary
+ * would orphan them: the brain would read as empty, `embeddedBrainPresent` would
+ * go false, and the placement UI would offer *bind* ("nothing to move") instead
+ * of *migrate*, so they could not even be moved out. A checkout with a brain
+ * therefore keeps it while the primary has none, and converges the moment the
+ * primary has one.
  */
 export function embeddedBrainCheckout(checkoutPath: string): string {
-  const primary = primaryCheckoutPath(checkoutPath)
-  // A primary this machine cannot see is a worktree whose main clone moved or
-  // went: converging there would point the brain at nothing at all.
-  return primary && existsSync(primary) ? primary : checkoutPath
+  const primary = reachablePrimaryCheckout(checkoutPath)
+  if (!primary) {
+    return checkoutPath
+  }
+  if (isBrainInitialized(embeddedLocation(primary))) {
+    return primary
+  }
+  return isBrainInitialized(embeddedLocation(checkoutPath)) ? checkoutPath : primary
 }
 
 export function externalLocation(brainPath: string, remote?: string): BrainLocation {
@@ -183,7 +218,12 @@ export function requireBrainLocation(
 export async function bindExistingBrain(
   request: BrainBindRequest & { bindingsFile?: string }
 ): Promise<BrainBindResult> {
-  const { repoPath, brainPath, remote, writePointer, bindingsFile } = request
+  const { brainPath, remote, writePointer, bindingsFile } = request
+  // Recorded in the primary checkout, or a bind issued from a worktree is
+  // visible from that worktree alone while the primary and every sibling carry
+  // on resolving embedded — the company's brain split in two, through the door
+  // migrate had already been closed at.
+  const repoPath = brainPlacementCheckout(request.repoPath)
   if (!existsSync(brainPath)) {
     return { ok: false, error: `${brainPath} does not exist` }
   }
@@ -206,7 +246,10 @@ export async function bindExistingBrain(
     bindRepoToBrain(repoPath, brainPath, bindingsFile)
   }
   // The brain's skills are the company's, and binding is the moment this repo
-  // gains them: without the links the agent here sees none of them, ever.
-  relinkBrainSkills(repoPath, externalLocation(brainPath, remote))
+  // gains them: without the links the agent here sees none of them, ever. Both
+  // checkouts hold their own `.claude/`, and only one of them is on screen.
+  for (const checkout of new Set([request.repoPath, repoPath])) {
+    relinkBrainSkills(checkout, externalLocation(brainPath, remote))
+  }
   return { ok: true }
 }
