@@ -30,12 +30,19 @@ const CONTEXT_MAP_LINE_CEILING = 200
  * The same ceiling in the unit that is actually spent. Lines are the growth law;
  * characters are the bill.
  *
- * This one is enforced in the renderer — `MAP_CHARACTER_CEILING` — and it has to
- * be, which is what the comment that used to sit here got wrong. The per-line
- * budgets bound a line; the tree has a term per entity and a term per folder and
- * nothing bounded their number, so the renderer measures the result and gives up
- * descriptions, then enumeration, to stay under. The fixture below is the shape
- * that used to blow it: 26 524 characters against 20 000, at 520 documents.
+ * The renderer enforces it against the **tree** — `MAP_CHARACTER_CEILING`, less
+ * whatever the rest of the file already spent — which is the part that grows with
+ * the brain, and is what the comment that used to sit here got wrong by claiming
+ * nothing was enforced at all. The per-line budgets bound a line; the tree has a
+ * term per entity and a term per folder and nothing bounded their number, so the
+ * renderer measures the result and gives up descriptions, then enumeration. The
+ * fixture below is the shape that used to blow it: 26 524 characters against
+ * 20 000, at 520 documents.
+ *
+ * The cases here render no apps, so for them it doubles as a file ceiling. The
+ * apps section is held by its own item limits rather than by this budget: the
+ * apps case below asserts those limits, and that a bounded shelf still lands
+ * under this number — not that every shelf must.
  */
 const CONTEXT_MAP_CHARACTER_CEILING = 20_000
 

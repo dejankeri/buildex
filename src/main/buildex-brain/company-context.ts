@@ -226,13 +226,19 @@ function renderTree(nodes: BrainNode[], descriptionBudget: number, depth = 0): s
 }
 
 /**
- * What this whole file may cost, in the unit that is actually spent.
+ * What the *tree* may cost, in the unit that is actually spent — this number less
+ * whatever the rest of the file already spent.
  *
- * The per-line budgets above bound a *line*; the tree has one term per entity and
+ * The per-line budgets above bound a line; the tree has one term per entity and
  * one per folder, and nothing bounded their number. 120 clients with the ten
  * scaffolded sections all holding described documents rendered 26 524 characters
  * against this number — 33% over — while every ceiling test passed, because each
  * fixture only ever grew one term.
+ *
+ * Not a ceiling on the file. The apps section and the three trailing lists are
+ * held by their own item limits, so the whole can exceed this by the slack in
+ * those caps — 21 133 measured with twelve apps carrying long skill names.
+ * Bounding those too is a design change, not a tightening.
  */
 const MAP_CHARACTER_CEILING = 20_000
 
@@ -269,6 +275,10 @@ function joinedLength(lines: string[]): number {
  * shown names something it does not know exists. Truncation is therefore last,
  * and it is announced — a map that quietly stopped is a map that lies about the
  * shape of the company.
+ *
+ * Saying so is unconditional, so a budget under ~330 buys the notice and the
+ * truncation line and overruns anyway. Deliberate: at that point the honest
+ * answer costs more than the room left, and silence is not the cheaper one.
  */
 function fitTree(nodes: BrainNode[], budget: number): string[] {
   let narrowest: string[] = []

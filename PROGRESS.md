@@ -107,10 +107,15 @@ If a cloud sync is ever wanted, it belongs behind the existing remote, not besid
   is no button — a context someone has to remember to refresh is a context that is
   usually wrong. Both files sit in `.claude/`, git-excluded: this is derived
   machine state, so committing it would churn the company's history for nothing.
-  It is read in full at every session start, so it has a hard **20 000-character
-  ceiling enforced in the renderer** (`MAP_CHARACTER_CEILING`): over it, document
-  descriptions narrow and then go before any path does, and the file says which
-  happened. A map that quietly stopped would tell the agent a folder is not there.
+  It is read in full at every session start, so the term that grows with the
+  company — the **document tree** — is bounded in the renderer against
+  `MAP_CHARACTER_CEILING` (20 000) less what the rest of the file already spent:
+  over budget, document descriptions narrow and then go before any path does, and
+  the file says which happened. A map that quietly stopped would tell the agent a
+  folder is not there. The apps section and the three trailing lists are capped by
+  their own item limits rather than by that budget, so the file as a whole can
+  exceed 20 000 by the slack in those caps — measured at 21 133 with twelve apps
+  carrying long skill names.
 - **The gate** — the allow/ask/deny preset is written into the company repo's
   `.claude/settings.json`, so the agent's own runtime enforces it. Wide
   autonomy: reading, editing, searching, shell and web run without interruption;
