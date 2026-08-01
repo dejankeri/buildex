@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EMPTY_BRAIN_SCAN } from '../../../../shared/buildex-brain-types'
 import { EMPTY_STORE_CATALOG } from '../../../../shared/buildex-store-types'
 import type { Repo } from '../../../../shared/types'
-import { usePortfolio, type PortfolioState } from './use-portfolio'
+import type { PortfolioState } from './use-portfolio'
 
 // Which repos are businesses, and what a business looks like when this machine
 // cannot read it. Both answers write to other people's repos if they are wrong:
@@ -26,18 +26,26 @@ const repos: Repo[] = [
   }
 ]
 
+const fetchWorktrees = vi.fn()
+
 const storeState = {
   repos,
-  worktreesByRepo: {
-    local: [{ id: 'local::/repos/acme', isMainWorktree: true, path: '/repos/acme' }]
-  }
+  worktreesByRepo: {} as Record<string, { id: string; isMainWorktree: boolean; path: string }[]>,
+  fetchWorktrees
 }
 
-vi.mock('@/store', () => ({
-  useAppStore: (selector: (state: typeof storeState) => unknown) => selector(storeState)
-}))
+const useAppStore = Object.assign(
+  (selector: (state: typeof storeState) => unknown) => selector(storeState),
+  { getState: () => storeState }
+)
+vi.mock('@/store', () => ({ useAppStore }))
+
+// Imported after the mock's captures exist: vi.mock's factory is hoisted, so a
+// static import would run it while `useAppStore` is still in its dead zone.
+const { usePortfolio } = await import('./use-portfolio')
 
 const readDir = vi.fn()
+const scanRequests: { repoPath: string; readOnly?: boolean }[] = []
 const resolve = vi.fn()
 const scan = vi.fn()
 const catalog = vi.fn()
@@ -58,11 +66,11 @@ async function renderProbe(): Promise<void> {
     root = createRoot(host!)
     root.render(<Probe />)
   })
-  // The sweep fills rows one business at a time after the first paint.
+  // The sweep probes, hydrates, then fills rows one business at a time.
   await act(async () => {
-    await Promise.resolve()
-    await Promise.resolve()
-    await Promise.resolve()
+    for (let tick = 0; tick < 12; tick += 1) {
+      await Promise.resolve()
+    }
   })
 }
 
@@ -71,6 +79,16 @@ beforeEach(() => {
   resolve.mockReset()
   scan.mockReset()
   catalog.mockReset()
+  fetchWorktrees.mockReset()
+  scanRequests.length = 0
+  storeState.worktreesByRepo = {}
+  // Hydration is what gives an unopened business a workspace to activate.
+  fetchWorktrees.mockImplementation(async (repoId: string) => {
+    const repo = repos.find((entry) => entry.id === repoId)!
+    storeState.worktreesByRepo[repoId] = [
+      { id: `${repoId}::${repo.path}`, isMainWorktree: true, path: repo.path }
+    ]
+  })
   latest = null
   Object.defineProperty(window, 'api', {
     configurable: true,
@@ -91,7 +109,10 @@ beforeEach(() => {
       mode: 'embedded'
     }
   }))
-  scan.mockResolvedValue({ ...EMPTY_BRAIN_SCAN, initialized: true })
+  scan.mockImplementation(async (request: { repoPath: string; readOnly?: boolean }) => {
+    scanRequests.push(request)
+    return { ...EMPTY_BRAIN_SCAN, initialized: true }
+  })
   catalog.mockResolvedValue(EMPTY_STORE_CATALOG)
 })
 
@@ -116,7 +137,7 @@ describe('usePortfolio', () => {
     // The gate, the skill links and the company context all land on scan. A
     // repo the operator never made a business must not receive them.
     expect(scan).toHaveBeenCalledTimes(1)
-    expect(scan).toHaveBeenCalledWith({ repoPath: '/repos/acme' })
+    expect(scanRequests).toEqual([{ repoPath: '/repos/acme', readOnly: true }])
   })
 
   it('lists an SSH business as degraded and asks the brain IPC nothing about it', async () => {
@@ -152,5 +173,49 @@ describe('usePortfolio', () => {
 
     expect(latest?.companies.find((entry) => entry.repoId === 'local')?.degraded).toBe('unreadable')
     expect(latest?.companies.find((entry) => entry.repoId === 'plain')?.degraded).toBeNull()
+  })
+
+  it('shows the businesses it can reach while a dead host is still not answering', async () => {
+    // The case the SSH probe exists for: a blackholed host does not refuse, it
+    // hangs. Waiting for the whole set would leave the operator on a spinner
+    // with Refresh disabled and no rows at all.
+    readDir.mockImplementation(async ({ connectionId }: { connectionId?: string }) => {
+      if (connectionId) {
+        return new Promise(() => {})
+      }
+      return [{ name: 'strategy' }]
+    })
+
+    await renderProbe()
+
+    expect(latest?.companies.map((entry) => entry.repoId)).toEqual(['local', 'plain'])
+    expect(latest?.companies.every((entry) => entry.loaded)).toBe(true)
+  })
+
+  it('loads a workspace for a business the operator has not opened, so its cells link', async () => {
+    // App.tsx hydrates worktrees only for the persisted session, so on a fresh
+    // launch the rows this page exists to reach have none — and a row with no
+    // workspace has nothing to activate.
+    readDir.mockResolvedValue([{ name: 'strategy' }])
+
+    await renderProbe()
+
+    expect(fetchWorktrees).toHaveBeenCalledWith('local')
+    expect(latest?.companies.find((entry) => entry.repoId === 'local')?.worktreeId).toBe(
+      'local::/repos/acme'
+    )
+    // The degraded row needs it too: "open it on its host" is only advice if
+    // the row can be opened.
+    expect(latest?.companies.find((entry) => entry.repoId === 'remote')?.worktreeId).toBe(
+      'remote::/home/ubuntu/beta'
+    )
+  })
+
+  it('asks the store for a read-only catalog too, since that gates a repo as well', async () => {
+    readDir.mockResolvedValue([{ name: 'strategy' }])
+
+    await renderProbe()
+
+    expect(catalog).toHaveBeenCalledWith({ repoPath: '/repos/acme', readOnly: true })
   })
 })

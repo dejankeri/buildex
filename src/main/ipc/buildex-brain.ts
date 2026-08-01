@@ -187,7 +187,15 @@ export function registerBuildExBrainHandlers(): void {
       }
       // Why: the Brain is often the first BuildEx surface a run opens, so this is
       // the earliest reliable moment to put the gate and the packs in order.
-      initializeCompanyRepo(repoPath)
+      //
+      // Skipped for a read-only scan. A surface that reads N companies at once
+      // — the Portfolio — would otherwise gate, relink and rewrite the context
+      // of every business the operator merely glanced at, and repeat it on
+      // every refresh. Preparing a checkout belongs to opening it.
+      const readOnly = request?.readOnly === true
+      if (!readOnly) {
+        initializeCompanyRepo(repoPath)
+      }
       const resolution = resolveBrainLocation(repoPath)
       if (resolution.status !== 'ready') {
         // Why: independent of how the brain currently resolves — the renderer
@@ -204,14 +212,22 @@ export function registerBuildExBrainHandlers(): void {
       // Why: heals a checkout whose `.claude/skills/` links were never built —
       // every worktree created before this ran, and any the operator made by
       // hand. Idempotent: an existing link is recognised, not rewritten.
-      relinkBrainSkills(repoPath, location)
+      if (!readOnly) {
+        relinkBrainSkills(repoPath, location)
+      }
       const scan = await scanCompanyBrain(repoPath, location, resolution, Date.now())
       // Why: opening the Brain is the moment to catch up on anything the agent
       // itself wrote. Not awaited — the screen renders from local state now.
       // The brain's own fetch is `buildex-brain:pull`, which the Brain page
       // calls on open: its answer includes whether the brain has diverged, and
       // there is nowhere to report that from here.
-      void refreshCompanyContext(repoPath, location, readInstalledAppSummaries(location, repoPath))
+      if (!readOnly) {
+        void refreshCompanyContext(
+          repoPath,
+          location,
+          readInstalledAppSummaries(location, repoPath)
+        )
+      }
       return scan
     }
   )

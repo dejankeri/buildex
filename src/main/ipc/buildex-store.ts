@@ -166,7 +166,10 @@ export function registerBuildExStoreHandlers(): void {
     // Why: with no project open there is nowhere for the gate to land, but the
     // operator should still see what BuildEx can do. An empty shelf on first
     // launch says the product has nothing to offer, which is the opposite of true.
-    if (repoPath) {
+    //
+    // Skipped for a read-only catalog: a surface reading N companies' shelves
+    // at once is not the moment to gate N repos.
+    if (repoPath && request?.readOnly !== true) {
       initializeCompanyRepo(repoPath)
     }
     try {

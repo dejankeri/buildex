@@ -287,6 +287,8 @@ export type StoreCatalogRequest = {
   repoPath: string
   /** Agent the workspace runs; decides which marketplaces and which installer. */
   agent?: string
+  /** Read the shelf and write nothing — see {@link BrainScanRequest.readOnly}. */
+  readOnly?: boolean
 }
 
 export type StoreInstallRequest = {

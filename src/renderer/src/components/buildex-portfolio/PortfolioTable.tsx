@@ -59,8 +59,21 @@ function Cell({
       {children}
     </span>
   )
+  // Why titled rather than merely dimmed: a grey cell reads as "nothing here",
+  // and the truth is "BuildEx cannot route you there", which the operator can
+  // act on by opening the project once from the sidebar.
   if (!onOpen) {
-    return <span className="min-w-0 text-muted-foreground/60">{content}</span>
+    return (
+      <span
+        className="min-w-0 text-muted-foreground/60"
+        title={translate(
+          'buildex.portfolio.unroutable',
+          'No workspace loaded for this business yet — open it once from the sidebar.'
+        )}
+      >
+        {content}
+      </span>
+    )
   }
   return (
     <button

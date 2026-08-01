@@ -145,6 +145,15 @@ export type BrainWantedPage = {
 
 export type BrainScanRequest = {
   repoPath: string
+  /**
+   * Read the brain and write nothing.
+   *
+   * A scan normally prepares the checkout on the way past — the gate, the skill
+   * links, the company context. That is right for a repo somebody just opened
+   * and wrong for one of N repos a dashboard is summarising, so a surface that
+   * reads many companies at once asks for the reading alone.
+   */
+  readOnly?: boolean
 }
 
 export const EMPTY_BRAIN_SCAN: BrainScan = {

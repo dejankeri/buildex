@@ -14219,7 +14219,8 @@
         "lastRun": "Last run",
         "apps": "Apps",
         "brainRepo": "Brain repo"
-      }
+      },
+      "unroutable": "No workspace loaded for this business yet — open it once from the sidebar."
     }
   }
 }

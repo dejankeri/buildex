@@ -377,13 +377,34 @@ process has already touched, so on a fresh launch it is empty and the dashboard
 would be blank until the operator visited each business one at a time, which is
 the exact problem the page exists to remove.
 
-**A dashboard must not gate every repo in the sidebar.** `buildex-brain:scan` is
-what puts the gate, the skill links and the company context in order — right for
-a repo somebody runs a business out of, wrong for the other eleven. So the sweep
-probes first (`resolve`, then `fs.readDir` of the brain root, both side-effect
-free) and only scans repos that already hold a brain. A missing directory means
-"not a business"; **any other error means BuildEx could not look**, and that
+**A dashboard must not write to the businesses it is summarising.**
+`buildex-brain:scan` prepares the checkout on the way past — `initializeCompanyRepo`
+(git exclude + the gate in `.claude/settings.json`), `relinkBrainSkills`, and a
+void-fired `refreshCompanyContext`. Right for a repo somebody just opened; wrong
+for N repos a table is reading, and it would repeat on every refresh. Both
+`BrainScanRequest` and `StoreCatalogRequest` therefore carry **`readOnly?: boolean`**,
+and the two handlers skip exactly those calls when it is set. A flag on an
+existing handler, not a new module: the reading is identical either way, so the
+two paths cannot drift on what a scan reports. `buildex-brain-read-only-scan.test.ts`
+asserts both directions against a real repo.
+
+Two things follow from the same rule. The sweep **probes before it scans**
+(`resolve`, then `fs.readDir` of the brain root — both side-effect free), so a
+repo that is not a business is never read at all. And a missing directory means
+"not a business", while **any other error means BuildEx could not look**, which
 renders as a degraded row rather than dropping the business.
+
+**Nothing may wait on a host that never answers.** Probes are bounded
+(`PROBE_DEADLINE_MS`) and reads are bounded (`COMPANY_DEADLINE_MS`); rows publish
+as each probe lands and each business's read is queued behind the previous one,
+so a blackholed SSH connection — which hangs until TCP gives up rather than
+failing fast — costs its own row and never the screen.
+
+**A row the operator cannot open is not a link.** `App.tsx` hydrates worktrees
+only for the persisted session, so on a fresh launch every company the operator
+has *not* opened has no workspace — and those are exactly the rows this page
+exists to reach. The sweep calls the store's own `fetchWorktrees(repo.id)` for
+any listed business without one, degraded rows included.
 
 **SSH repos are probed over their connection, never resolved locally.**
 `resolveBrainLocation` stats the local filesystem, so asking it about
