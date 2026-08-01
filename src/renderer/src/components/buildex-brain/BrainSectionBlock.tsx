@@ -1,5 +1,11 @@
 import React from 'react'
 import { ChevronDown, ChevronRight, FileText, Folder, Paperclip, Plus } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import type {
@@ -19,6 +25,9 @@ import type {
 // operator learns folders and documents, and the main-file convention shows up
 // as a folder that opens, not as a second kind of thing with its own page.
 
+/** What Add makes. `folder` writes the folder plus the main file that opens it. */
+export type BrainAddKind = 'document' | 'folder'
+
 export default function BrainSectionBlock({
   node,
   depth = 0,
@@ -37,7 +46,7 @@ export default function BrainSectionBlock({
   onToggleCollapsed?: (folder: string) => void
   onOpenDocument: (documentId: string) => void
   onOpenAttachment: (attachmentId: string) => void
-  onAdd: (folder: string) => void
+  onAdd: (folder: string, kind: BrainAddKind) => void
   /** The name-it field, drawn by the owner of the state, beside the folder it will write into. */
   renderAdding?: (folder: string) => React.ReactNode
 }): React.JSX.Element {
@@ -248,25 +257,32 @@ export function BrainAttachmentRow({
   )
 }
 
-// One action, not a menu of kinds: a document is the only thing the brain is
-// made of, and a folder that holds one is a folder — not a second taxonomy the
-// operator has to choose between before they can write anything down.
+// Two things the brain is made of, named as themselves. A folder is a folder
+// here and everywhere else in the app — the taxonomy this retired was the
+// *entity*: its own page, its own card, its own word. Making a client is still
+// making a folder, and no other affordance in BuildEx can make one.
 function AddControl({
   node,
   onAdd
 }: {
   node: BrainNode
-  onAdd: (folder: string) => void
+  onAdd: (folder: string, kind: BrainAddKind) => void
 }): React.JSX.Element {
   return (
-    <button
-      type="button"
-      onClick={() => onAdd(node.path)}
-      className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-accent"
-    >
-      <Plus size={11} />
-      {translate('buildex.brain.sections.add', 'Add')}
-    </button>
+    <DropdownMenu>
+      <DropdownMenuTrigger className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-accent">
+        <Plus size={11} />
+        {translate('buildex.brain.sections.add', 'Add')}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => onAdd(node.path, 'document')}>
+          {translate('buildex.brain.sections.newDocument', 'New document')}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onAdd(node.path, 'folder')}>
+          {translate('buildex.brain.sections.newFolder', 'New folder')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
 import type { BrainScan, BrainSectionInfo } from '../../../../shared/buildex-brain-types'
-import BrainSectionBlock from './BrainSectionBlock'
+import BrainSectionBlock, { type BrainAddKind } from './BrainSectionBlock'
 import BrainWantedPages from './BrainWantedPages'
 import { filterBrainTree } from './brain-tree-filter'
 
@@ -34,7 +34,7 @@ export default function BrainSections({
   onCreated: () => void | Promise<void>
 }): React.JSX.Element {
   const [query, setQuery] = useState('')
-  const [creatingIn, setCreatingIn] = useState<string | null>(null)
+  const [creatingIn, setCreatingIn] = useState<{ folder: string; kind: BrainAddKind } | null>(null)
   const [title, setTitle] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [current, setCurrent] = useState<string | null>(null)
@@ -70,25 +70,33 @@ export default function BrainSections({
 
   const create = async (): Promise<void> => {
     const name = title.trim()
-    const folder = creatingIn
-    if (!repoPath || folder === null || !name) {
+    if (!repoPath || !creatingIn || !name) {
       setCreatingIn(null)
       return
     }
+    const { folder, kind } = creatingIn
     setCreatingIn(null)
     setTitle('')
 
-    const result = await window.api.buildexBrainSections.createDocument({
-      repoPath,
-      folder,
-      title: name
-    })
+    // A folder is the folder plus the main file that stands for it — the one
+    // convention the Brain reads, and nothing else in BuildEx writes it.
+    const result =
+      kind === 'folder'
+        ? await window.api.buildexBrainSections.createEntity({
+            repoPath,
+            parentFolder: folder,
+            title: name
+          })
+        : await window.api.buildexBrainSections.createDocument({ repoPath, folder, title: name })
     if (!result.ok) {
       setError(result.error ?? CREATE_FAILED())
       return
     }
     setError(null)
     await onCreated()
+    // Both land in the same place: the file the operator is about to write in.
+    // For a folder that is its main file, which is what clicking the folder
+    // opens from now on — so creating one and clicking one agree.
     if (result.documentId) {
       onOpenDocument(result.documentId)
     }
@@ -165,15 +173,15 @@ export default function BrainSections({
               onToggleCollapsed={(folder) => toggleCollapsed(`${repoPath ?? ''}::${folder}`)}
               onOpenDocument={onOpenDocument}
               onOpenAttachment={openAttachment}
-              onAdd={(folder) => {
+              onAdd={(folder, kind) => {
                 setTitle('')
-                setCreatingIn(folder)
+                setCreatingIn({ folder, kind })
               }}
               // Why a render prop: Add sits on every folder, so the field has to
               // appear beside the one that was clicked. Held here because the
               // draft title belongs to the page, not to whichever block drew it.
               renderAdding={(folder) =>
-                creatingIn === folder ? (
+                creatingIn?.folder === folder ? (
                   <input
                     autoFocus
                     value={title}

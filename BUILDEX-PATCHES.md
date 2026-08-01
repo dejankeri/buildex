@@ -393,9 +393,11 @@ have shipped all three. WP-10 hit it again from the other side: dropping the
 agent view's `notShown` and rewording `loadedHint` needed the same three steps,
 and the reword is the half nothing checks — the old sentence renders from the
 catalog with a green sync even after the fallback in the source has changed.
-WP-11 hit it a third time, removal only: retiring the entity page, card and
-Add-menu branch orphaned eight `buildex.brain.{entity,sections}.*` keys across
-all five files.
+WP-11 hit it a third time: retiring the entity page and card orphaned five
+`buildex.brain.entity.*` keys, and renaming the Add menu's "New entity" to
+"New folder" was a delete of `sections.{newEntity,nameEntity}` by hand plus a
+generated add of `sections.newFolder` — the delete half is the half the sync
+cannot do.
 
 **The Portfolio is a composition, not a subsystem.** `buildex-portfolio/*` adds
 no IPC and no main-process module: it enumerates the renderer's own `repos` and

@@ -14033,7 +14033,9 @@
         "filter": "Filter",
         "noMatches": "Nothing matches that",
         "entityCountOne": "1 entity",
-        "documentCountOne": "1 document"
+        "documentCountOne": "1 document",
+        "newDocument": "New document",
+        "newFolder": "New folder"
       },
       "skills": {
         "intro": "Skills live in .buildex/skills and travel with the repo — push, and your team has them.",

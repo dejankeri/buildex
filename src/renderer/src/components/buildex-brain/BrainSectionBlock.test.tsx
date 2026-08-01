@@ -2,6 +2,7 @@
 
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BrainDocument, BrainNode } from '../../../../shared/buildex-brain-types'
 import BrainSectionBlock, { BrainDocumentRow } from './BrainSectionBlock'
@@ -101,7 +102,8 @@ describe('a folder with a main file', () => {
     expect(screen.getByText('pricing')).toBeInTheDocument()
   })
 
-  it('adds into the folder whose Add was clicked, not the section above it', () => {
+  it('adds a folder into the folder whose Add was clicked, not the section above it', async () => {
+    const user = userEvent.setup()
     const onAdd = vi.fn()
     render(
       <BrainSectionBlock
@@ -113,9 +115,11 @@ describe('a folder with a main file', () => {
       />
     )
 
-    fireEvent.click(screen.getAllByText('Add')[1])
+    // The second Add is Acme's own; the first belongs to Clients above it.
+    await user.click(screen.getAllByRole('button', { name: /Add/ })[1])
+    await user.click(screen.getByRole('menuitem', { name: 'New folder' }))
 
-    expect(onAdd).toHaveBeenCalledWith('clients/acme')
+    expect(onAdd).toHaveBeenCalledWith('clients/acme', 'folder')
     expect(screen.getByText('adding to clients/acme')).toBeInTheDocument()
   })
 })
