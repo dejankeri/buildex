@@ -189,7 +189,7 @@ Measured on 2026-08-01 at the end of the audit unless noted.
 | `tests/e2e/buildex-surfaces.spec.ts` | 15/15 in real headless Electron |
 | Full unit suite (~37 000 tests) | last full fan-out was Task 13's; only the recorded upstream baseline fails. Not re-run for a docs change — see the flaky-suite note below |
 | Modified upstream files | **102** (56 structural/identity + 46 interceptor-floor test files), down from 213 before WP-7 |
-| Rebase drill vs live upstream | 388 commits / 5.2 days: **19 conflict stops, 26 files, 4 needing judgment** (the earlier "3× clean" drills were against days-old gaps and 1-2 commits) |
+| Rebase drill vs live upstream | 388 commits / 5.2 days: **19 conflict stops, 26 files, 5 needing judgment** (the earlier "3× clean" drills were against days-old gaps and 1-2 commits) |
 
 **The e2e spec needs a fresh `--mode e2e` build in front of it.** `SKIP_BUILD=1`
 alone reuses whatever is in `out/`, so a main-process change can pass green

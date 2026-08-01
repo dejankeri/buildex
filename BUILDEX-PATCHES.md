@@ -747,21 +747,42 @@ measuring a days-old gap and 2 commits. Measured properly:
 | Upstream rate | **1 795 commits in the preceding 4 weeks** (~450/week), so "weekly" means a ~450-commit gap |
 | **Conflict stops** | **19** |
 | **Distinct conflicted files** | **26** (38 file-conflict events — one file conflicts repeatedly as the replay walks past it; `electron-builder.config.cjs` stopped the rebase 5 times) |
-| Needing real judgment | **4 stops** |
+| Needing real judgment | **5 stops**, across 4 distinct files |
 | Machine time | **9.2 s** — the clock is not the cost; the 19 decision points are |
 
 **Quote the stop count, not the file count.** A rebase stops once per *commit*
 that conflicts, so one hot file bills once per fork commit that touches it.
 
-**The conflicts that need a human.** Everything else was an adjacent-line
-insertion on both sides.
+**The conflicts that need a human.** These five stops are where the fork's line
+and upstream's line are not two insertions at one anchor — one side is gone, or
+both rewrote the same value.
 
 | File | Why it is semantic |
 |---|---|
 | `UpdateCard.tsx` | Upstream moved release-URL construction into a new `src/shared/release-channel.ts` (channel-aware: `stablyai/orca` vs `orca-hourly`). The fork's local `releaseUrlForVersion` has **no upstream anchor left** — it must be re-expressed against the new module, not merged |
 | `package.json` `scripts.build:mac{,:release}` | Upstream added `config/scripts/build-mac-local.mjs` and its own verify step *inside the same lines* the fork rewrote. Correct resolution keeps upstream's new step **and** the BuildEx verifier |
 | `package.json` identity block | `name`/`version`/`description`/`homepage`/`author` — always ours, every rebase, forever. Cheap but unavoidable |
+| `right-sidebar-panel-content.tsx` | One side of the hunk is **empty**: the fork adds the Brain lazy-import, a later fork commit removes it again, and upstream moved the surrounding lines in between. Nothing to merge — take upstream's |
 | `SkillFreshnessUpdateDialog.test.tsx` | An interceptor-floor test whose upstream expectations moved underneath the branded ones |
+
+**The other 22 files were trivially mechanical** — an adjacent-line insertion on
+both sides of one anchor, resolvable without reading either project's intent:
+`.gitignore`, `README.md`, `config/electron-builder.config.cjs`,
+`config/scripts/run-electron-vite-dev.mjs`, `src/main/updater.ts`,
+`src/main/updater-prerelease-feed-readiness.test.ts`,
+`src/main/runtime/orca-runtime.ts`, `src/main/ipc/buildex-brain.ts`,
+`src/main/ipc/buildex-brain-placement.ts`, `src/preload/index.ts`,
+`src/preload/api-types.ts`, `src/shared/types.ts`, `src/shared/feature-tips.ts`,
+`src/shared/remote-runtime-client.ts`,
+`src/renderer/src/components/settings/browser-search.ts`,
+`src/renderer/src/components/tab-group/AiVaultSessionDropLayer.tsx`,
+`src/renderer/src/hooks/useAutomationDispatchEvents.test.ts`, and the five
+`src/renderer/src/i18n/locales/*.json`.
+
+**The locales are mechanical only as JSON.** Both sides append at the same
+end-of-object anchor, so a *textual* "keep both" produces invalid JSON — the
+brace depths differ. Merge them as data, or take upstream's file and re-run
+`pnpm run sync:localization-catalog`.
 
 **The registration-only rule holds where it is followed.** `pty.ts`,
 `register-core-handlers.ts` and `App.tsx` — the dual-touched files this drill
@@ -796,6 +817,25 @@ came out importing `./BrainPanel`, a file that no longer exists.
 nothing; the gates above are the check. Two cheap post-rebase assertions worth
 running before the suite: the modified-file count should not have *grown*, and
 `git diff --diff-filter=M` should not list a file that WP-7 reverted.
+
+> **The 102 → 107 tree no longer exists.** The drill ran on a scratch branch that
+> was deleted on completion, by design — nothing from a measurement should be
+> landable. So the duplicate keys and the dangling `BrainPanel` import are
+> *observed and discarded*, not preserved evidence: they cannot be inspected from
+> this repo and are not reproducible from the commit history. To see them again,
+> re-run the drill. The reproducible half is the read-only `merge-tree` command
+> above, which needs no scratch branch and confirms the 19-file figure on demand.
+
+**Why the command above is still `git rebase`.** The merge-vs-rebase numbers are
+recorded here because a future session should have them — not because the
+procedure changed. Switching a long-lived fork from rebase to merge is a workflow
+decision with its own blast radius: it changes what `upstream/main` means in this
+branch's history, what a reviewer reads in a diff, and how the release line is
+cut. That is a call to make deliberately, with the release process in view, and
+not a side effect of a measurement task. **Take the data, not a conclusion**; if
+someone does make the switch, this section is the evidence for it, and the drill
+should be re-run afterwards because these conflict counts are specific to
+replaying 99 commits.
 
 ## Fork exit criteria
 
