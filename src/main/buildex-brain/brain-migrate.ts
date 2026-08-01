@@ -147,15 +147,17 @@ export async function migrateBrainToExternal(
     }
   }
 
-  try {
-    // Committed either way: `git rm` only staged the removal, and the code
-    // repo's HEAD must lose the brain even when the operator declined a pointer.
-    await gitExecFileAsync(['commit', '-m', MIGRATION_MESSAGE, '--', source.pathspec], {
-      cwd: repoPath
-    })
-  } catch {
-    // No git, or nothing staged for this pathspec: the files are gone from
-    // disk regardless, and there was nothing left to commit.
+  // Committed either way: `git rm` only staged the removal, and the code repo's
+  // HEAD must lose the brain even when the operator declined a pointer.
+  await commitMigration(repoPath, source.pathspec)
+  if (placement !== repoPath) {
+    // The pointer was staged in a *different* checkout, so the commit above —
+    // which runs in the one that held the brain — never reaches it. Without this
+    // the primary is left holding a staged `.buildex/brain.json` that the next
+    // unrelated commit there sweeps up: the same defeat of pathspec scoping as
+    // the mid-merge case, for an addition rather than a deletion. Scoped to the
+    // pointer alone, which is exactly what was staged.
+    await commitMigration(placement, BRAIN_POINTER_RELATIVE_PATH)
   }
 
   // Every link in `.claude/skills/` pointed into the folder just emptied, and a
@@ -166,6 +168,16 @@ export async function migrateBrainToExternal(
   }
 
   return { ok: true, backupPath, movedPaths }
+}
+
+/** Pathspec-scoped, and never fatal: no git here, or nothing of ours staged. */
+async function commitMigration(cwd: string, pathspec: string): Promise<void> {
+  try {
+    await gitExecFileAsync(['commit', '-m', MIGRATION_MESSAGE, '--', pathspec], { cwd })
+  } catch {
+    // No git, or nothing staged for this pathspec: the files are gone from disk
+    // regardless, and there was nothing left to commit.
+  }
 }
 
 /**

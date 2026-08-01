@@ -274,6 +274,16 @@ while every sibling resolves elsewhere: the same split-brain, through a differen
 door. Both `migrateBrainToExternal` and `bindExistingBrain` write through the
 placement checkout; only migrate's file moves and git commands use the other.
 
+**Two checkouts, two commits.** Splitting those questions split migrate's writes
+across checkouts, and a commit only reaches the one it runs in. The `git rm` is
+staged where the brain was and committed there against `.buildex`; the pointer is
+staged where the placement is recorded and needs its own commit against
+`.buildex/brain.json`. They are the same checkout in every case but one — a
+worktree holding a brain the primary never had, migrated with `writePointer` —
+and there the single commit left the primary holding a staged `brain.json` for
+the next unrelated commit to sweep up. Pathspec scoping defeated again, for an
+addition instead of a deletion.
+
 Two consequences worth knowing before touching any brain write path. First, an
 embedded location can now name a path *outside* the repo the renderer asked
 about, so `authorizeBrainLocation` authorizes that root — the one case; an

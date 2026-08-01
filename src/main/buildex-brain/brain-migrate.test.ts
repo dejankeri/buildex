@@ -325,3 +325,61 @@ describe('migrating out of a checkout that cannot take the commit', () => {
     expect(existsSync(path.join(repo, '.buildex', 'decisions', 'pricing.md'))).toBe(true)
   })
 })
+
+describe('migrating a brain the primary checkout never had, with a tracked pointer', () => {
+  // The combination the placement split created and nothing exercised: the
+  // documents live in the worktree (so the git rm and its commit run there),
+  // while the pointer is recorded in the primary (so its commit must run
+  // there). One commit in one checkout cannot do both.
+  it('commits the pointer in the checkout it was staged in, leaving nothing staged', async () => {
+    const worktree = path.join(realpathSync(dir), 'api-feature')
+    git(repo, 'worktree', 'add', '--quiet', '-b', 'feature', worktree)
+    const primary = realpathSync(repo)
+    // The primary's branch drops the brain; the worktree's branch keeps it.
+    // That is the shape every pre-convergence worktree upgrades into.
+    git(repo, 'rm', '-r', '--quiet', '--', '.buildex')
+    git(repo, 'commit', '--quiet', '-m', 'no brain here')
+
+    const result = await migrateBrainToExternal(
+      {
+        repoPath: worktree,
+        brainPath: brain,
+        remote: 'git@github.com:acme/brain.git',
+        writePointer: true,
+        bindingsFile
+      },
+      1_700_000_000_000
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.movedPaths).toEqual(['decisions/pricing.md'])
+    expect(readFileSync(path.join(brain, 'decisions', 'pricing.md'), 'utf8')).toBe('# Pricing\n')
+
+    // The pointer is recorded in the primary, and it is *committed* there — not
+    // left staged in a checkout the operator is not looking at, where the next
+    // unrelated commit would sweep it up.
+    expect(readBrainPointer(primary)).toBe('git@github.com:acme/brain.git')
+    expect(
+      execFileSync('git', ['status', '--porcelain', '--', '.buildex'], {
+        cwd: primary,
+        encoding: 'utf8'
+      })
+    ).toBe('')
+    expect(
+      execFileSync('git', ['show', '--name-only', '--format=', 'HEAD'], {
+        cwd: primary,
+        encoding: 'utf8'
+      }).trim()
+    ).toBe('.buildex/brain.json')
+
+    // And the worktree's own branch carries the removal, on its own commit.
+    expect(existsSync(path.join(worktree, '.buildex', 'decisions'))).toBe(false)
+    expect(
+      execFileSync('git', ['status', '--porcelain', '--', '.buildex'], {
+        cwd: worktree,
+        encoding: 'utf8'
+      })
+    ).toBe('')
+    rmSync(result.backupPath ?? '', { recursive: true, force: true })
+  })
+})
