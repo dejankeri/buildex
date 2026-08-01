@@ -11,13 +11,8 @@ const TAILSCALE_DOWNLOAD_URL = 'https://tailscale.com/download'
 
 // Why: only the "runtime is unreachable" family of failures has a Tailscale
 // remedy; auth/protocol errors pass through untouched.
-// Matches either brand: this fork renames the copy, and upstream's wording can
-// return through a rebase. Keying on one name silently drops the hint.
-const APP = '(?:orca|buildex)'
-const REMOTE_RUNTIME_UNREACHABLE_RE = new RegExp(
-  `could not connect to the remote ${APP} runtime|remote ${APP} runtime closed the connection|timed out (?:waiting for|while connecting to) the remote ${APP} runtime`,
-  'i'
-)
+const REMOTE_RUNTIME_UNREACHABLE_RE =
+  /could not connect to the remote orca runtime|remote orca runtime closed the connection|timed out (?:waiting for|while connecting to) the remote orca runtime/i
 
 const TAILSCALE_MAGIC_DNS_SUFFIX_RE = /(?:^|\.)ts\.net$/i
 // Why: gate the CGNAT check on a full IPv4 literal — the range regex alone also

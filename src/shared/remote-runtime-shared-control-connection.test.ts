@@ -635,7 +635,7 @@ describe('RemoteRuntimeSharedControlConnection', () => {
     const connection = new RemoteRuntimeSharedControlConnection(server.pairing)
 
     await expect(connection.request('worktree.ps', undefined, 1000)).rejects.toThrow(
-      'Remote BuildEx runtime closed the connection'
+      'Remote Orca runtime closed the connection'
     )
     expect(connection.getDiagnostics()).toMatchObject({
       state: 'closed',

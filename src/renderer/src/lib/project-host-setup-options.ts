@@ -209,7 +209,7 @@ function getHostSetupAvailability(host: ExecutionHostRegistryEntry): {
   if (host.health === 'blocked') {
     return {
       isAvailable: false,
-      detail: 'BuildEx server version is incompatible'
+      detail: 'Orca server version is incompatible'
     }
   }
   // Why: disconnected hosts cannot confirm project setup or runtime capabilities,
@@ -234,7 +234,7 @@ function getHostSetupAvailability(host: ExecutionHostRegistryEntry): {
     ) {
       return {
         isAvailable: false,
-        detail: 'Update BuildEx on this host to set up projects'
+        detail: 'Update Orca on this host to set up projects'
       }
     }
   }

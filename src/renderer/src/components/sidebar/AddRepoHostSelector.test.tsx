@@ -109,7 +109,7 @@ describe('AddRepoHostSelector', () => {
           {
             id: 'runtime:old-server',
             label: 'Old server',
-            detail: 'BuildEx server',
+            detail: 'Orca server',
             kind: 'runtime',
             health: 'blocked',
             presence: 'active',
@@ -130,8 +130,8 @@ describe('AddRepoHostSelector', () => {
     )
 
     expect(html).toContain('Update needed')
-    expect(html).toContain('The selected BuildEx server is too old for this client.')
-    expect(html).toContain('Update BuildEx on the server.')
+    expect(html).toContain('The selected Orca server is too old for this client.')
+    expect(html).toContain('Update Orca on the server.')
     expect(html).toContain('aria-disabled="true"')
   })
 })

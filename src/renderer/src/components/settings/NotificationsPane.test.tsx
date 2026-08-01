@@ -211,7 +211,7 @@ describe('NotificationsPane', () => {
     expect(toastError).toHaveBeenCalledWith(
       'Windows did not show the notification',
       expect.objectContaining({
-        description: 'Enable notifications for BuildEx in Windows Settings.',
+        description: 'Enable notifications for Orca in Windows Settings.',
         action: expect.objectContaining({ label: 'Open Settings' })
       })
     )

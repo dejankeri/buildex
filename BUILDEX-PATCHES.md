@@ -317,11 +317,14 @@ trap as syncing with no plugin rules at all, through a different door; it bit
 once via `initializeCompanyRepo` reading a repo-less catalogue, and once via the
 Store fanning one company's rules out to all of them.
 
-### Branding the visible copy — Phase 6
+### Branding the visible copy — Phase 6, cut back by WP-7
 
-The app calls *itself* BuildEx everywhere; it still names Orca's own products
-accurately. The rule: **"Orca" survives only when it names Stably-operated
-infrastructure or a literal `orca` identifier.**
+**Branding is the interceptor and nothing else.** The app brands what the
+*catalog* renders, plus the five identity surfaces below. Every other upstream
+string — unlocalized literals, shared/runtime error messages, agent prompt text
+— is left at upstream wording, because rewriting it delivered nothing to an
+operator who already knows this is a fork of Orca and was the fork's single
+largest rebase tax. WP-7 reverted ~110 upstream files' worth of it.
 
 | File | Change |
 |---|---|
@@ -332,8 +335,21 @@ infrastructure or a literal `orca` identifier.**
 | `src/renderer/src/components/Landing.tsx` | import + replaces the `ORCA` `<h1>` |
 | `src/renderer/src/components/settings/BuildExAttributionSection.tsx`, `buildex-attribution-search.ts` | **BuildEx-owned.** Replaces upstream's "Support Orca" star prompt |
 | `src/renderer/src/components/settings/GeneralPane.tsx` | 2 import lines + 1 render line |
-| 17 renderer component files | 33 **unlocalized** literals, 1 line each (see below) |
-| 8 upstream settings tests | expectations realigned to the branded copy |
+| `src/main/window/createMainWindow.ts`, `dashboard-popout-window.ts` | window titles |
+| `src/main/tray/system-tray.ts` | tray label |
+| `src/shared/orca-attribution.ts`, `src/main/attribution/terminal-attribution.ts` | commit trailer + PR/issue footers, written into *other people's* repos |
+| 46 upstream test files | expectations that read **catalog** output through the live interceptor. Not editable by hand: the interceptor brands them at runtime with no source diff to mirror |
+
+**No unlocalized literal is branded.** The 33 direct edits Phase 6 made
+(`notification-settings-copy.ts`, `delete-worktree-dialog-copy.ts`,
+`CrashReportDialogSurface.tsx`, terminal hints, …) are reverted. So are the
+shared/runtime error strings (`remote-runtime-*`, `protocol-compat.ts`,
+`runtime-environment-store.ts`, the web client) — those are plumbing, and
+touching them broke the fork's own "plumbing untouched" rule.
+
+**The dispatch preamble is upstream's again.** `orca-dispatch-status-prompt.ts`
+and `orchestration/preamble.ts` both say "You are working inside Orca" because
+the prefix is a **protocol handshake** between them, not display copy.
 
 **Why an interceptor and not a find-and-replace.** `en.json` is *generated*:
 `verify-localization-catalog.mjs` parses the source with the TypeScript API and
@@ -352,13 +368,15 @@ the raw template with `skipInterpolation`, brands it, then interpolates.
 without the exemption the credit line "built on Orca" rebrands to "built on
 BuildEx".
 
-### Traps found while branding
+### Traps found while branding — and while reverting it
 
-**Not every visible string is localized.** 33 user-facing literals never reach
+**Not every visible string is localized.** ~33 user-facing literals never reach
 `translate()`, so the interceptor cannot see them (`notification-settings-copy.ts`,
 `delete-worktree-dialog-copy.ts`, `CrashReportDialogSurface.tsx`, terminal
-hints, …). These needed direct edits. Find them with: every `Orca` string
-literal in source whose exact text is **absent** from `en.json`.
+hints, …). Branding them means direct edits to upstream files — which is exactly
+why WP-7 stopped. **Do not add them back.** If you ever need the list again:
+every `Orca` string literal in source whose exact text is **absent** from
+`en.json`.
 
 **Do not rebrand a `translate()` fallback.** It is catalog-managed and its
 value is dead text at runtime — and upstream's catalog has already *drifted*
@@ -367,26 +385,30 @@ source says "notify you"). Editing one changes nothing and costs a rebase
 conflict. The filter that distinguishes them is "is this exact string a value
 in `en.json`".
 
-**Three literals look rebrandable and are not.** `Orca Nerd Font Symbols` is a
-font family; `pr-comments-resolution-prompt.ts` is agent prompt text, not UI;
+**Some `Orca` literals are not copy at all.** `Orca Nerd Font Symbols` is a font
+family; `pr-comments-resolution-prompt.ts` is agent prompt text, not UI;
 `displayName: 'Orca'` in `RepositoryHostSetupsSection.test.tsx` is host fixture
-data.
+data. A pattern sweep cannot see the difference.
 
-**~380 `Orca` literals remain in `src/main/**`** — internal errors, logs, and
-IPC messages. Deliberately untouched: they are plumbing, not branding, and
-editing them would multiply the rebase surface.
+**Every `Orca` literal in `src/main/**` and `src/shared/**` stays** — internal
+errors, logs, IPC and remote-runtime messages. They are plumbing, not branding,
+and editing them multiplies the rebase surface for no operator-visible gain.
 
 **The dangerous class: code that string-matches its own copy.** Four places
 keyed behaviour off the exact wording, so renaming the copy silently broke a
-feature with no type error and no obvious test name. Each now accepts **both**
-brands, which also survives upstream wording returning through a rebase:
+feature with no type error and no obvious test name. **All four are back to
+upstream single-brand matching**, because the copy they match is upstream's
+again — the dual-brand workaround only existed to survive the rebrand:
 
-| File | What broke |
+| File | What broke when the copy moved |
 |---|---|
 | `src/shared/remote-runtime-tailscale-hint.ts` | regex gate; the Tailscale remedy stopped being offered |
 | `src/shared/remote-runtime-client-error-classification.ts` | recoverable-drop fragments; reconnects would reclassify as fatal |
 | `src/shared/orca-dispatch-status-prompt.ts` | preamble prefix is a **protocol handshake** with `src/main/runtime/orchestration/preamble.ts`, not display copy |
 | `src/renderer/src/lib/agent-row-primary-text.ts` | second dispatch detector; agent rows lost their task labels |
+
+This is the standing argument against branding a runtime string at all: none of
+these four failures has a type error or an obviously-named test behind it.
 
 Before renaming any copy, grep for code that matches it:
 `grep -rnE "(includes|startsWith|indexOf|test)\(\s*['\"\`][^'\"\`]*[Oo]rca"` and
@@ -416,6 +438,28 @@ the mock before changing any expectation in a test file.
 rewrote every bare `'BuildEx'` back to `'Orca'` also clobbered a Phase 0
 expectation (`model-manager-windows-path.test.ts`) that had been correct since
 identity was renamed. Scope reverts to lines that actually differ from HEAD.
+
+**A branded test expectation is one of two things, and only a test run can tell
+them apart.** WP-7 classified all 88 modified test files by *trying* the revert:
+restore the file to upstream, run it, and read the result.
+
+- **Fails** ⇒ the expectation reads **catalog** output through the live
+  interceptor. It must stay branded — there is no source edit to mirror. 46
+  files.
+- **Passes** ⇒ the expectation was a **free-standing fixture** (a host
+  `displayName`, an error message the test constructs itself, a test name). Once
+  the source says "Orca" again, a branded fixture is *stale* and stops
+  exercising the real string. Revert it.
+
+Two shapes hide inside "passes", and both were live in this repo. A negative
+assertion goes vacuous in whichever direction is wrong:
+`not.toContain('fork of an existing BuildEx agent session')` passed against
+Orca-worded source while testing nothing, and `not.toContain('Explore Orca')`
+does the same against a catalog string the interceptor renders as "Explore
+BuildEx". Read every `not.` assertion by hand; the pass/fail rule alone cannot
+see them. And `workspace-tab-agent-metadata.test.ts` fed a **BuildEx** dispatch
+preamble to a detector that only knows the upstream prefix — green, and
+detecting nothing.
 
 **The snapshot is the rebase gate.** `src/renderer/src/i18n/buildex-brand-catalog.test.ts`
 pins every branded catalog string. Upstream copy changes surface as one
@@ -585,8 +629,14 @@ pnpm exec vitest run --config config/vitest.config.ts \
   src/renderer/src/i18n/buildex-brand-catalog.test.ts   # read the snapshot diff
 ```
 
-Rebase **weekly**. At ~20 touch points of 1-3 lines each it is a 10-minute job;
-let it slide a month and the renderer will have moved underneath you.
+Rebase **weekly**. Let it slide a month and the renderer will have moved
+underneath you.
+
+**Current surface: 102 modified upstream files** (`git diff --name-only
+--diff-filter=M $(git merge-base HEAD upstream/main) HEAD | wc -l`), down from
+213 before WP-7 reverted the visible-copy rebrand. 56 carry structural or
+identity diffs; the other 46 are test files whose expectations read branded
+catalog output through the interceptor.
 
 Drill result 2026-07-26: rebased 2 commits across 1 upstream commit — **clean, zero conflicts**.
 

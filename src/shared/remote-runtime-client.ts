@@ -60,8 +60,8 @@ function formatRemoteRuntimeCloseMessage(code: number, reason: Buffer): string {
     suffixParts.push(reasonText)
   }
   return suffixParts.length > 0
-    ? `Remote BuildEx runtime closed the connection (${suffixParts.join(': ')}).`
-    : 'Remote BuildEx runtime closed the connection.'
+    ? `Remote Orca runtime closed the connection (${suffixParts.join(': ')}).`
+    : 'Remote Orca runtime closed the connection.'
 }
 
 export type RemoteRuntimeSubscription = {
@@ -136,7 +136,7 @@ export async function sendRemoteRuntimeRequest<TResult>(
         ok: false,
         error: new RemoteRuntimeClientError(
           'runtime_timeout',
-          'Timed out waiting for the remote BuildEx runtime to respond.'
+          'Timed out waiting for the remote Orca runtime to respond.'
         )
       })
     }
@@ -201,7 +201,7 @@ export async function sendRemoteRuntimeRequest<TResult>(
         ok: false,
         error: new RemoteRuntimeClientError(
           'remote_runtime_unavailable',
-          'Could not connect to the remote BuildEx runtime.'
+          'Could not connect to the remote Orca runtime.'
         )
       })
     }
@@ -227,7 +227,7 @@ export async function sendRemoteRuntimeRequest<TResult>(
           ok: false,
           error: new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned an unexpected binary frame.'
+            'Remote Orca runtime returned an unexpected binary frame.'
           )
         })
         return
@@ -245,7 +245,7 @@ export async function sendRemoteRuntimeRequest<TResult>(
           ok: false,
           error: new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned an undecryptable frame.'
+            'Remote Orca runtime returned an undecryptable frame.'
           )
         })
         return
@@ -273,7 +273,7 @@ export async function sendRemoteRuntimeRequest<TResult>(
           ok: false,
           error: new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned an invalid E2EE handshake frame.'
+            'Remote Orca runtime returned an invalid E2EE handshake frame.'
           )
         })
         return
@@ -287,7 +287,7 @@ export async function sendRemoteRuntimeRequest<TResult>(
           ok: false,
           error: new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned an unexpected E2EE handshake frame.'
+            'Remote Orca runtime returned an unexpected E2EE handshake frame.'
           )
         })
         return
@@ -305,7 +305,7 @@ export async function sendRemoteRuntimeRequest<TResult>(
           ok: false,
           error: new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned an invalid E2EE auth frame.'
+            'Remote Orca runtime returned an invalid E2EE auth frame.'
           )
         })
         return
@@ -322,7 +322,7 @@ export async function sendRemoteRuntimeRequest<TResult>(
           ok: false,
           error: new RemoteRuntimeClientError(
             code,
-            'Remote BuildEx runtime rejected the pairing token.'
+            'Remote Orca runtime rejected the pairing token.'
           )
         })
         return
@@ -335,7 +335,7 @@ export async function sendRemoteRuntimeRequest<TResult>(
           ok: false,
           error: new RemoteRuntimeClientError(
             'remote_runtime_unavailable',
-            'Remote BuildEx runtime request was released before it could be sent.'
+            'Remote Orca runtime request was released before it could be sent.'
           )
         })
         return
@@ -352,7 +352,7 @@ export async function sendRemoteRuntimeRequest<TResult>(
           ok: false,
           error: new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned an invalid response frame.'
+            'Remote Orca runtime returned an invalid response frame.'
           )
         })
         return
@@ -367,7 +367,7 @@ export async function sendRemoteRuntimeRequest<TResult>(
           ok: false,
           error: new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned an invalid response frame.'
+            'Remote Orca runtime returned an invalid response frame.'
           )
         })
         return
@@ -378,7 +378,7 @@ export async function sendRemoteRuntimeRequest<TResult>(
           ok: false,
           error: new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned a mismatched response id.'
+            'Remote Orca runtime returned a mismatched response id.'
           )
         })
         return
@@ -453,7 +453,7 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
       fail(
         new RemoteRuntimeClientError(
           'runtime_timeout',
-          'Timed out waiting for the remote BuildEx runtime subscription to start.'
+          'Timed out waiting for the remote Orca runtime subscription to start.'
         )
       )
     }, timeoutMs)
@@ -484,7 +484,7 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
             fail(
               new RemoteRuntimeClientError(
                 'remote_runtime_unavailable',
-                'Remote BuildEx runtime send buffer overflow; reconnecting.'
+                'Remote Orca runtime send buffer overflow; reconnecting.'
               )
             )
         })
@@ -551,7 +551,7 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
       fail(
         new RemoteRuntimeClientError(
           'remote_runtime_unavailable',
-          'Could not connect to the remote BuildEx runtime.'
+          'Could not connect to the remote Orca runtime.'
         )
       )
     }
@@ -590,7 +590,7 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
         fail(
           new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned an undecryptable frame.'
+            'Remote Orca runtime returned an undecryptable frame.'
           )
         )
         return
@@ -632,7 +632,7 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
         fail(
           new RemoteRuntimeClientError(
             'remote_runtime_unavailable',
-            'Remote BuildEx runtime stopped responding; the stream connection was reset.'
+            'Remote Orca runtime stopped responding; the stream connection was reset.'
           )
         )
         try {
@@ -653,7 +653,7 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
         fail(
           new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned an invalid E2EE handshake frame.'
+            'Remote Orca runtime returned an invalid E2EE handshake frame.'
           )
         )
         return
@@ -666,7 +666,7 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
         fail(
           new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned an unexpected E2EE handshake frame.'
+            'Remote Orca runtime returned an unexpected E2EE handshake frame.'
           )
         )
         return
@@ -683,7 +683,7 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
         fail(
           new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned an invalid E2EE auth frame.'
+            'Remote Orca runtime returned an invalid E2EE auth frame.'
           )
         )
         return
@@ -696,9 +696,7 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
           (authenticated as { error?: { code?: unknown } }).error?.code === 'unauthorized'
             ? 'unauthorized'
             : 'invalid_runtime_response'
-        fail(
-          new RemoteRuntimeClientError(code, 'Remote BuildEx runtime rejected the pairing token.')
-        )
+        fail(new RemoteRuntimeClientError(code, 'Remote Orca runtime rejected the pairing token.'))
         return
       }
       state = 'ready'
@@ -714,7 +712,7 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
         fail(
           new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned an invalid response frame.'
+            'Remote Orca runtime returned an invalid response frame.'
           )
         )
         return
@@ -728,7 +726,7 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
         fail(
           new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned a mismatched response id.'
+            'Remote Orca runtime returned a mismatched response id.'
           )
         )
         return
@@ -741,7 +739,7 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
         fail(
           new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned binary data before authentication.'
+            'Remote Orca runtime returned binary data before authentication.'
           )
         )
         return
@@ -751,7 +749,7 @@ export async function subscribeRemoteRuntimeRequest<TResult>(
         fail(
           new RemoteRuntimeClientError(
             'invalid_runtime_response',
-            'Remote BuildEx runtime returned an undecryptable binary frame.'
+            'Remote Orca runtime returned an undecryptable binary frame.'
           )
         )
         return

@@ -17,7 +17,7 @@ describe('browser notice formatting', () => {
         permission: 'media',
         origin: 'https://example.com'
       })
-    ).toBe('https://example.com asked for camera or microphone access, and BuildEx denied it.')
+    ).toBe('https://example.com asked for camera or microphone access, and Orca denied it.')
   })
 
   it('formats popup outcomes', () => {
@@ -27,7 +27,7 @@ describe('browser notice formatting', () => {
         origin: 'https://example.com',
         action: 'opened-in-orca'
       })
-    ).toBe('https://example.com opened a new page in BuildEx.')
+    ).toBe('https://example.com opened a new page in Orca.')
 
     expect(
       formatPopupNotice({
@@ -43,7 +43,7 @@ describe('browser notice formatting', () => {
         origin: 'unknown',
         action: 'blocked'
       })
-    ).toBe('A site tried to open a popup BuildEx does not support here.')
+    ).toBe('A site tried to open a popup Orca does not support here.')
   })
 
   it('formats download completion and byte counts', () => {

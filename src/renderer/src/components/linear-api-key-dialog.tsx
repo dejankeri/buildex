@@ -113,8 +113,8 @@ export function LinearApiKeyDialog({
   const resolvedDescription =
     description ??
     (workspace
-      ? `Paste a Personal API key for ${workspace.organizationName}. If this workspace is already connected, BuildEx replaces its stored key.`
-      : 'Paste a Personal API key for the Linear workspace you want BuildEx to use. If that workspace is already connected, BuildEx replaces its stored key.')
+      ? `Paste a Personal API key for ${workspace.organizationName}. If this workspace is already connected, Orca replaces its stored key.`
+      : 'Paste a Personal API key for the Linear workspace you want Orca to use. If that workspace is already connected, Orca replaces its stored key.')
   const storageCopy =
     runtimeTarget.kind === 'environment'
       ? 'This key is stored by the active remote runtime.'

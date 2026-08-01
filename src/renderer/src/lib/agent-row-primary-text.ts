@@ -1,6 +1,5 @@
 import type { AgentStatusEntry } from '../../../shared/agent-status-types'
 import {
-  DISPATCH_STATUS_PREAMBLE_PREFIXES,
   findOrcaDispatchTaskMarkerIndex,
   ORCA_DISPATCH_STATUS_PREAMBLE_PREFIX,
   ORCA_DISPATCH_STATUS_TASK_MARKER
@@ -18,11 +17,9 @@ const ORCA_DISPATCH_TASK_ID_SCAN_LIMIT = 1024
 // malformed multi-MB prompt without a marker never full-scans the task body.
 const ORCA_DISPATCH_TASK_MARKER_SCAN_LIMIT = 32_768
 
-/** True when the live prompt is still a dispatch turn (not sticky metadata alone). */
+/** True when the live prompt is still an Orca dispatch turn (not sticky metadata alone). */
 export function isOrcaDispatchPrompt(prompt: string): boolean {
-  const trimmed = prompt.trimStart()
-  // Both brands: a dispatch can originate from an Orca server driving this client.
-  return DISPATCH_STATUS_PREAMBLE_PREFIXES.some((prefix) => trimmed.startsWith(prefix))
+  return prompt.trimStart().startsWith(ORCA_DISPATCH_PREAMBLE_PREFIX)
 }
 
 /**

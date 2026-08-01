@@ -547,14 +547,14 @@ describe('addHostSectionRows', () => {
           id: 'runtime:env-1',
           kind: 'runtime',
           label: 'env-1',
-          detail: 'BuildEx server',
+          detail: 'Orca server',
           health: 'available'
         },
         {
           id: 'runtime:env-2',
           kind: 'runtime',
           label: 'env-2',
-          detail: 'BuildEx server',
+          detail: 'Orca server',
           health: 'available'
         }
       ],
@@ -662,7 +662,7 @@ describe('addHostSectionRows', () => {
           id: 'runtime:env-1',
           kind: 'runtime',
           label: 'env-1',
-          detail: 'BuildEx server',
+          detail: 'Orca server',
           health: 'available'
         }
       ],
@@ -702,7 +702,7 @@ describe('addHostSectionRows', () => {
           id: 'runtime:env-1',
           kind: 'runtime',
           label: 'env-1',
-          detail: 'BuildEx server',
+          detail: 'Orca server',
           health: 'blocked',
           compatibility: {
             kind: 'blocked',
@@ -745,7 +745,7 @@ describe('addHostSectionRows', () => {
           id: 'runtime:env-1',
           kind: 'runtime',
           label: 'env-1',
-          detail: 'BuildEx server',
+          detail: 'Orca server',
           health: 'available'
         }
       ],

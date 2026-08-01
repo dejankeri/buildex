@@ -26,9 +26,7 @@ export function parseSharedControlFrame(
   if (!sharedKey) {
     return {
       type: 'error',
-      error: invalidRemoteRuntimeResponseError(
-        'Remote BuildEx runtime returned a frame before E2EE.'
-      )
+      error: invalidRemoteRuntimeResponseError('Remote Orca runtime returned a frame before E2EE.')
     }
   }
   const plaintext = decrypt(frame, sharedKey)
@@ -36,7 +34,7 @@ export function parseSharedControlFrame(
     return {
       type: 'error',
       error: invalidRemoteRuntimeResponseError(
-        'Remote BuildEx runtime returned an undecryptable frame.'
+        'Remote Orca runtime returned an undecryptable frame.'
       )
     }
   }
@@ -104,12 +102,12 @@ export function getCleanupRequest(
 export function formatSharedControlCloseMessage(code: number, reason: Buffer): string {
   const reasonText = reason.toString().trim()
   if (code !== 1005 && code !== 1006 && reasonText) {
-    return `Remote BuildEx runtime closed the connection (${code}: ${reasonText}).`
+    return `Remote Orca runtime closed the connection (${code}: ${reasonText}).`
   }
   if (code !== 1005 && code !== 1006) {
-    return `Remote BuildEx runtime closed the connection (${code}).`
+    return `Remote Orca runtime closed the connection (${code}).`
   }
-  return 'Remote BuildEx runtime closed the connection.'
+  return 'Remote Orca runtime closed the connection.'
 }
 
 export function sendSharedControlEncrypted(args: {
