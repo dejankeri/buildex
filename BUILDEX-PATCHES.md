@@ -182,9 +182,12 @@ filesystem's path — and a local directory that happens to share it is a differ
 directory. Writing there would gate something unrelated and still leave the real
 checkout ungated, so `beginPtySpawnForWorktree`'s `connectionId` (non-null ⇒ SSH,
 the same signal `pty.ts:1023` already keys host-loopback injection off) turns the
-call into a no-op. A remote checkout's gate still lands when a BuildEx surface
-touches the repo. **Gating remote worktrees needs a writer on the far side that
-BuildEx does not have yet — a known gap, not an oversight.**
+call into a no-op. **And no other path reaches them either** — `createManagedWorktree`
+returns through `createManagedRemoteWorktree` long before its `prepareCompanyWorktree`
+call, and `initializeCompanyRepo` takes a path with no `connectionId`, so a BuildEx
+surface cannot gate a remote checkout on the far side however hard it tries.
+Nothing gates an SSH checkout from this machine. **That needs a writer on the far
+side BuildEx does not have — a known gap, not an oversight.**
 
 **A credential is keyed by company, and a worktree path is not one.** Both call
 sites hand over a *worktree* path, so keying storage on it would give one
