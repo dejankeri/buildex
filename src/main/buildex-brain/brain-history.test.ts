@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { externalLocation } from './brain-location'
-import { commitBrain, readBrainHistory, readUnsavedBrainPaths } from './brain-history'
+import { readChangedBrainPaths } from './brain-git-paths'
+import { commitBrain, readBrainHistory } from './brain-history'
 
 let brain = ''
 
@@ -28,7 +29,7 @@ describe('an external brain repo', () => {
     mkdirSync(path.join(brain, 'decisions'), { recursive: true })
     writeFileSync(path.join(brain, 'decisions', 'pricing.md'), '# Pricing\n', 'utf8')
 
-    expect(await readUnsavedBrainPaths(externalLocation(brain))).toEqual(['decisions/pricing.md'])
+    expect(await readChangedBrainPaths(externalLocation(brain))).toEqual(['decisions/pricing.md'])
   })
 
   it('commits and then reads its own history back', async () => {

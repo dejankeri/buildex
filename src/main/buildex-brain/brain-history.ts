@@ -5,6 +5,7 @@ import type {
   BrainSave,
   BrainSaveResult
 } from '../../shared/buildex-brain-types'
+import { readChangedBrainPaths, toBrainRelative } from './brain-git-paths'
 import { pushBrain, reportPush } from './brain-sync'
 
 // The brain's history, and the one action that adds to it.
@@ -24,16 +25,6 @@ import { pushBrain, reportPush } from './brain-sync'
 // what they are for.
 const FIELD = '\x1f'
 const RECORD = '\x1e'
-
-// Embedded mode's pathspec is a prefix to strip; external's `.` already yields
-// brain-relative paths, and stripping there would eat the first path segment.
-export function toBrainRelative(location: BrainLocation, repoRelative: string): string {
-  if (location.pathspec === '.') {
-    return repoRelative
-  }
-  const prefix = `${location.pathspec}/`
-  return repoRelative.startsWith(prefix) ? repoRelative.slice(prefix.length) : repoRelative
-}
 
 export function parseBrainLog(location: BrainLocation, stdout: string): BrainSave[] {
   const saves: BrainSave[] = []
@@ -66,23 +57,6 @@ export function parseBrainLog(location: BrainLocation, stdout: string): BrainSav
   return saves
 }
 
-/** Brain-relative paths with uncommitted changes. */
-export async function readUnsavedBrainPaths(location: BrainLocation): Promise<string[]> {
-  try {
-    const { stdout } = await gitExecFileAsync(
-      ['status', '--porcelain', '-z', '--untracked-files=all', '--', location.pathspec],
-      { cwd: location.gitRoot }
-    )
-    return stdout
-      .split('\0')
-      .filter((entry) => entry.length > 3)
-      .map((entry) => toBrainRelative(location, entry.slice(3)))
-      .sort()
-  } catch {
-    return []
-  }
-}
-
 export async function readBrainHistory(
   location: BrainLocation,
   limit = 50
@@ -102,7 +76,7 @@ export async function readBrainHistory(
     return {
       saves: parseBrainLog(location, stdout),
       unavailable: false,
-      unsavedPaths: await readUnsavedBrainPaths(location)
+      unsavedPaths: await readChangedBrainPaths(location)
     }
   } catch {
     // No git, or a repo with no commits yet. Saying so beats an empty list that
@@ -119,7 +93,7 @@ export async function commitBrain(
   if (!subject) {
     return { ok: false, savedPaths: [], error: 'Give this save a name' }
   }
-  const savedPaths = await readUnsavedBrainPaths(location)
+  const savedPaths = await readChangedBrainPaths(location)
   if (savedPaths.length === 0) {
     return { ok: false, savedPaths: [], error: 'Nothing has changed since the last save' }
   }

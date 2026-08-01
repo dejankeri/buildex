@@ -6,7 +6,7 @@ import type {
   BrainSaveDiffFile,
   BrainSaveDiffResult
 } from '../../shared/buildex-brain-types'
-import { toBrainRelative } from './brain-history'
+import { toBrainRelative } from './brain-git-paths'
 
 // What one save changed, read straight out of git.
 //

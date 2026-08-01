@@ -99,7 +99,7 @@ function renderApps(apps: InstalledAppSummary[], location: BrainLocation): strin
 /**
  * What this file is allowed to spend, enforced here rather than trusted to the
  * data. `DESCRIPTION_LIMIT` is 160 because that is what a Brain tree row and an
- * entity card can afford; this file is read *in full* at the start of every
+ * folder row can afford; this file is read *in full* at the start of every
  * agent session, so it takes half. A brain of two hundred entities is the
  * difference between 25 kB of prompt and 12 kB.
  *

@@ -5,7 +5,7 @@ import type {
   BrainSkill,
   BrainSkillCreateResult
 } from '../../shared/buildex-brain-types'
-import { linkSkillIntoAgentDir, skillsRoot } from './skill-link'
+import { serveSkillInAgentDir, skillsRoot } from './skill-link'
 import { toDocumentFileName } from './brain-document-create'
 
 // The company's skills — what its agent knows how to do here.
@@ -134,7 +134,8 @@ that two people would carry it out the same way.
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 
-  // Without the link the skill exists but the agent never sees it.
-  linkSkillIntoAgentDir(repoPath, location, name)
+  // Without this the skill exists but the agent never sees it — and on a machine
+  // that cannot symlink, a link alone would have left it that way.
+  serveSkillInAgentDir(repoPath, location, name)
   return { ok: true, name, absolutePath: manifestPath }
 }

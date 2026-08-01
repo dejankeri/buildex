@@ -17,7 +17,7 @@
 import { collapseWhitespace, truncateAtWord } from './brain-text-budget'
 
 /**
- * Longest a description gets as *data*. The Brain tree and the entity card can
+ * Longest a description gets as *data*. The Brain tree and its folder rows can
  * afford this; the context map cuts it again to its own tighter budget, because
  * that file is read in full at the start of every agent session.
  */

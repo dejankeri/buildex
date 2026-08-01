@@ -119,6 +119,29 @@ describe('renderCompanyContext', () => {
     expect(rendered).not.toContain('2026-03-11')
   })
 
+  it('spends exactly one line per entity, however many there are', async () => {
+    // The one job entity detection has. The Brain used to build a whole parallel
+    // taxonomy on it — a page, a card, its own Add branch — and all of that is
+    // gone; this is what had to survive it, so it is asserted against the count
+    // rather than against a fixture that happens to be right.
+    const entityLine = /^ *- \*\*Client \d+\*\* `clients\/client-\d+\/`/
+    const linesFor = async (count: number): Promise<string[]> => {
+      for (let index = 0; index < count; index += 1) {
+        write(`clients/client-${index}/index.md`, `# Client ${index}\n\nRenewal is Q3.\n`)
+        write(`clients/client-${index}/notes.md`, '# Notes\n')
+        write(`clients/client-${index}/calls/first.md`, '# Call\n')
+      }
+      const rendered = renderCompanyContext(await scan(), [], embeddedLocation(repo))
+      return rendered.split('\n').filter((line) => entityLine.test(line))
+    }
+
+    expect(await linesFor(3)).toHaveLength(3)
+    // Doubling the company doubles the lines and nothing else: the three files
+    // inside each client still cost nothing.
+    expect(await linesFor(6)).toHaveLength(6)
+    expect((await linesFor(6))[0]).toBe('  - **Client 0** `clients/client-0/` — Renewal is Q3.')
+  })
+
   it('renders a description beside the filename, and nothing extra without one', async () => {
     write('decisions/pricing.md', '---\ndescription: Why we price per seat.\n---\n\n# Pricing\n')
     write('decisions/plain.md', '# Plain\n')
@@ -247,7 +270,7 @@ describe('renderCompanyContext', () => {
   })
 
   it('cuts a description harder for the map than for the tree', async () => {
-    // 160 is what a Brain row and an entity card can afford. This file is read in
+    // 160 is what a Brain row can afford. This file is read in
     // full every session and takes half, so the same document reads longer in the
     // app than it does in the agent's prompt — on purpose.
     const long = `${'situation '.repeat(30)}end`

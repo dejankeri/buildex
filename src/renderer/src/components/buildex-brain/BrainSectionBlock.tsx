@@ -1,11 +1,5 @@
 import React from 'react'
-import { ChevronDown, ChevronRight, FileText, Paperclip, Plus } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
+import { ChevronDown, ChevronRight, FileText, Folder, Paperclip, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import type {
@@ -13,15 +7,17 @@ import type {
   BrainDocument,
   BrainNode
 } from '../../../../shared/buildex-brain-types'
-import BrainEntityCard from './BrainEntityCard'
 
 // One section, and — through itself — every subsection under it.
 //
 // Recursive because the brain is: `clients/enterprise/acme` is a section holding
-// a subsection holding an entity, and each level draws the same three things
-// (its documents, its attachments, its children) at a smaller weight.
-
-export type BrainAddKind = 'document' | 'entity'
+// a subsection holding a client, and each level draws the same three things (its
+// documents, its attachments, its children) at a smaller weight.
+//
+// A folder with a main file — what the context render counts as an entity — is
+// drawn as a folder whose title opens that file. One taxonomy on screen: the
+// operator learns folders and documents, and the main-file convention shows up
+// as a folder that opens, not as a second kind of thing with its own page.
 
 export default function BrainSectionBlock({
   node,
@@ -30,9 +26,9 @@ export default function BrainSectionBlock({
   collapsed,
   onToggleCollapsed,
   onOpenDocument,
-  onOpenEntity,
   onOpenAttachment,
-  onAdd
+  onAdd,
+  renderAdding
 }: {
   node: BrainNode
   depth?: number
@@ -40,12 +36,11 @@ export default function BrainSectionBlock({
   collapsed?: boolean
   onToggleCollapsed?: (folder: string) => void
   onOpenDocument: (documentId: string) => void
-  onOpenEntity: (entityPath: string) => void
   onOpenAttachment: (attachmentId: string) => void
-  onAdd: (folder: string, kind: BrainAddKind) => void
+  onAdd: (folder: string) => void
+  /** The name-it field, drawn by the owner of the state, beside the folder it will write into. */
+  renderAdding?: (folder: string) => React.ReactNode
 }): React.JSX.Element {
-  const entities = node.children.filter((child) => child.kind === 'entity')
-  const subsections = node.children.filter((child) => child.kind !== 'entity')
   const isTop = depth === 0
   const Chevron = collapsed ? ChevronRight : ChevronDown
 
@@ -62,6 +57,7 @@ export default function BrainSectionBlock({
           </span>
         ) : null}
         <AddControl node={node} onAdd={onAdd} />
+        {renderAdding?.(node.path)}
       </section>
     )
   }
@@ -79,6 +75,8 @@ export default function BrainSectionBlock({
             <Chevron size={13} className="shrink-0" />
             <SectionLabel node={node} isTop={isTop} />
           </button>
+        ) : node.main ? (
+          <MainFileLabel node={node} main={node.main} onOpenDocument={onOpenDocument} />
         ) : (
           <SectionLabel node={node} isTop={isTop} />
         )}
@@ -96,32 +94,65 @@ export default function BrainSectionBlock({
             <p className="text-[11px] leading-snug text-muted-foreground/80">{purpose}</p>
           ) : null}
 
+          {renderAdding?.(node.path)}
+
           <BrainDocumentRow documents={node.documents} onOpen={onOpenDocument} />
 
           <BrainAttachmentRow attachments={node.attachments} onOpen={onOpenAttachment} />
 
-          {entities.length > 0 ? (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2 pt-0.5">
-              {entities.map((entity) => (
-                <BrainEntityCard key={entity.path} node={entity} onOpen={onOpenEntity} />
-              ))}
-            </div>
-          ) : null}
-
-          {subsections.map((child) => (
+          {node.children.map((child) => (
             <BrainSectionBlock
               key={child.path}
               node={child}
               depth={depth + 1}
               onOpenDocument={onOpenDocument}
-              onOpenEntity={onOpenEntity}
               onOpenAttachment={onOpenAttachment}
               onAdd={onAdd}
+              renderAdding={renderAdding}
             />
           ))}
         </>
       )}
     </section>
+  )
+}
+
+/**
+ * A folder whose main file is what clicking it opens.
+ *
+ * The summary rides the same line rather than taking one of its own — the same
+ * bound the agent-facing render is held to, for the same reason: twenty clients
+ * must read as twenty lines.
+ */
+function MainFileLabel({
+  node,
+  main,
+  onOpenDocument
+}: {
+  node: BrainNode
+  main: NonNullable<BrainNode['main']>
+  onOpenDocument: (documentId: string) => void
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenDocument(main.documentId)}
+      className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left hover:bg-accent"
+    >
+      <Folder size={11} className="shrink-0 text-muted-foreground/50" />
+      <SectionLabel node={node} isTop={false} />
+      {main.summary ? (
+        <span className="min-w-0 truncate text-[11px] text-muted-foreground/70">
+          {main.summary}
+        </span>
+      ) : null}
+      {node.changed ? (
+        <span
+          className="size-1.5 shrink-0 rounded-full bg-amber-500"
+          aria-label={translate('buildex.brain.entity.unsaved', 'Unsaved')}
+        />
+      ) : null}
+    </button>
   )
 }
 
@@ -143,9 +174,9 @@ function SectionLabel({ node, isTop }: { node: BrainNode; isTop: boolean }): Rea
 /**
  * A row of documents, each as a chip.
  *
- * Shared with the entity page rather than copied into it: the description is the
- * reason to click one, and a document that reads differently depending on which
- * screen lists it is a document nobody trusts.
+ * The description is the reason to click one, so it travels with the title at
+ * every depth: a document that reads differently depending on where it is listed
+ * is a document nobody trusts.
  */
 export function BrainDocumentRow({
   documents,
@@ -217,35 +248,25 @@ export function BrainAttachmentRow({
   )
 }
 
+// One action, not a menu of kinds: a document is the only thing the brain is
+// made of, and a folder that holds one is a folder — not a second taxonomy the
+// operator has to choose between before they can write anything down.
 function AddControl({
   node,
   onAdd
 }: {
   node: BrainNode
-  onAdd: (folder: string, kind: BrainAddKind) => void
+  onAdd: (folder: string) => void
 }): React.JSX.Element {
-  const className =
-    'ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-accent'
-
-  // Why: both choices everywhere, including a section that holds no entity yet.
-  // Offering "New entity" only where one already exists made the first one
-  // uncreatable — an empty Clients could never become a Clients with a client
-  // in it. No folder is barred from holding an entity, so none hides the option.
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger className={className}>
-        <Plus size={11} />
-        {translate('buildex.brain.sections.add', 'Add')}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => onAdd(node.path, 'entity')}>
-          {translate('buildex.brain.sections.newEntity', 'New entity')}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onAdd(node.path, 'document')}>
-          {translate('buildex.brain.sections.newDocument', 'New document')}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <button
+      type="button"
+      onClick={() => onAdd(node.path)}
+      className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-accent"
+    >
+      <Plus size={11} />
+      {translate('buildex.brain.sections.add', 'Add')}
+    </button>
   )
 }
 

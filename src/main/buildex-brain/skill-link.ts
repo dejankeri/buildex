@@ -1,4 +1,5 @@
 import {
+  cpSync,
   lstatSync,
   mkdirSync,
   readdirSync,
@@ -20,9 +21,18 @@ import type { BrainLocation } from '../../shared/buildex-brain-types'
 // delete, or exclude wholesale, rather than scattered through a directory the
 // agent runtime also owns.
 //
-// A symlink keeps one copy of the truth. Where symlinks are not available
-// (Windows without developer mode), the caller falls back to copying, which
-// costs a duplicate but never costs the operator a working skill.
+// A symlink keeps one copy of the truth. Where symlinks are not available —
+// Windows without developer mode, where an unprivileged process gets EPERM from
+// every symlink call — `relinkBrainSkills` falls back to copying, which costs a
+// duplicate but never costs the operator a working skill. Nothing here reads
+// `process.platform`: the fallback triggers on the symlink actually failing, so
+// a locked-down account on any OS gets the same treatment.
+//
+// Known gap of the copy: a copy is an ordinary directory, so it is not refreshed
+// when the brain's skill changes, and neither pruning nor disconnecting removes
+// it — both only ever touch a symlink they can prove is ours. Telling a copy of
+// ours from a skill the operator wrote by hand needs a receipt this deliberately
+// does not keep.
 
 export const AGENT_SKILLS_DIR = path.join('.claude', 'skills')
 
@@ -101,6 +111,65 @@ export function linkSkillIntoAgentDir(
   } catch {
     return 'needs-copy'
   }
+}
+
+export type CopyOutcome = 'copied' | 'occupied' | 'failed'
+
+/**
+ * Put the pack's files where a symlink could not go.
+ *
+ * Only ever writes into a free path. A directory already at that name is either
+ * the operator's own skill or a copy an earlier sync made — in both cases the
+ * agent already loads something there, and replacing it would either destroy
+ * their work or silently rewrite files they may have edited.
+ */
+export function copySkillIntoAgentDir(
+  repoPath: string,
+  location: BrainLocation,
+  skillName: string
+): CopyOutcome {
+  const source = path.join(skillsRoot(location), skillName)
+  const destination = path.join(repoPath, AGENT_SKILLS_DIR, skillName)
+
+  try {
+    const existing = lstatSync(destination)
+    // A symlink here is one we could neither reuse nor remove; copying onto it
+    // writes through to whatever it points at, which may be the brain itself.
+    return existing.isSymbolicLink() ? 'failed' : 'occupied'
+  } catch {
+    // Nothing there — the only case this may write.
+  }
+
+  try {
+    mkdirSync(path.dirname(destination), { recursive: true })
+    cpSync(source, destination, { recursive: true })
+    return 'copied'
+  } catch {
+    return 'failed'
+  }
+}
+
+export type ServeOutcome = LinkOutcome | 'copied' | 'unavailable'
+
+/**
+ * Make a skill loadable, whatever this machine can do.
+ *
+ * The single place the fallback policy lives, because both callers — the sync
+ * that walks the brain and the one that has just written a new skill — fail the
+ * same silent way without it.
+ */
+export function serveSkillInAgentDir(
+  repoPath: string,
+  location: BrainLocation,
+  skillName: string
+): ServeOutcome {
+  const outcome = linkSkillIntoAgentDir(repoPath, location, skillName)
+  if (outcome !== 'needs-copy') {
+    return outcome
+  }
+  return copySkillIntoAgentDir(repoPath, location, skillName) === 'copied'
+    ? 'copied'
+    : 'unavailable'
 }
 
 /** Drop our link (never a real directory) when a pack goes away. */
@@ -185,8 +254,10 @@ export function unlinkBrainSkills(repoPath: string, location: BrainLocation): st
 
 export type RelinkResult = {
   linked: string[]
-  /** Skills a symlink could not serve — the caller's copy fallback, if it has one. */
-  needsCopy: string[]
+  /** Skills a symlink could not serve and a copy did. */
+  copied: string[]
+  /** Skills neither could serve: the name is taken by something not ours, or the copy failed. */
+  unavailable: string[]
   pruned: string[]
 }
 
@@ -205,10 +276,11 @@ export function relinkBrainSkills(repoPath: string, location: BrainLocation): Re
   try {
     entries = readdirSync(root).sort()
   } catch {
-    return { linked: [], needsCopy: [], pruned }
+    return { linked: [], copied: [], unavailable: [], pruned }
   }
   const linked: string[] = []
-  const needsCopy: string[] = []
+  const copied: string[] = []
+  const unavailable: string[] = []
   for (const entry of entries) {
     if (entry.startsWith('.')) {
       continue
@@ -220,12 +292,18 @@ export function relinkBrainSkills(repoPath: string, location: BrainLocation): Re
     } catch {
       continue
     }
-    const outcome = linkSkillIntoAgentDir(repoPath, location, entry)
-    if (outcome === 'needs-copy') {
-      needsCopy.push(entry)
+    // Why the fallback runs here rather than being reported to a caller: no
+    // caller had one, so on Windows without developer mode every company skill
+    // was silently absent — no error, no empty state, just an agent that had
+    // never heard of the company's packs.
+    const outcome = serveSkillInAgentDir(repoPath, location, entry)
+    if (outcome === 'copied') {
+      copied.push(entry)
+    } else if (outcome === 'unavailable') {
+      unavailable.push(entry)
     } else {
       linked.push(entry)
     }
   }
-  return { linked, needsCopy, pruned }
+  return { linked, copied, unavailable, pruned }
 }

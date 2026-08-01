@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
-import type { BrainNode, BrainScan, BrainSectionInfo } from '../../../../shared/buildex-brain-types'
-import BrainEntityPage from './BrainEntityPage'
-import BrainSectionBlock, { type BrainAddKind } from './BrainSectionBlock'
+import type { BrainScan, BrainSectionInfo } from '../../../../shared/buildex-brain-types'
+import BrainSectionBlock from './BrainSectionBlock'
 import BrainWantedPages from './BrainWantedPages'
 import { filterBrainTree } from './brain-tree-filter'
 
@@ -35,8 +34,7 @@ export default function BrainSections({
   onCreated: () => void | Promise<void>
 }): React.JSX.Element {
   const [query, setQuery] = useState('')
-  const [openEntity, setOpenEntity] = useState<string | null>(null)
-  const [creatingIn, setCreatingIn] = useState<{ folder: string; kind: BrainAddKind } | null>(null)
+  const [creatingIn, setCreatingIn] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [current, setCurrent] = useState<string | null>(null)
@@ -51,18 +49,6 @@ export default function BrainSections({
     [sections]
   )
   const tree = useMemo(() => filterBrainTree(scan.tree, query), [scan.tree, query])
-  const entity = useMemo(
-    () => (openEntity ? findNode(scan.tree, openEntity) : null),
-    [openEntity, scan.tree]
-  )
-
-  // Why: an entity opened and then renamed or deleted outside BuildEx would
-  // otherwise leave this screen showing nothing at all.
-  useEffect(() => {
-    if (openEntity && !entity) {
-      setOpenEntity(null)
-    }
-  }, [entity, openEntity])
 
   const isCollapsed = useCallback(
     (folder: string): boolean =>
@@ -84,31 +70,13 @@ export default function BrainSections({
 
   const create = async (): Promise<void> => {
     const name = title.trim()
-    if (!repoPath || !creatingIn || !name) {
+    const folder = creatingIn
+    if (!repoPath || folder === null || !name) {
       setCreatingIn(null)
       return
     }
-    const { folder, kind } = creatingIn
     setCreatingIn(null)
     setTitle('')
-
-    if (kind === 'entity') {
-      const result = await window.api.buildexBrainSections.createEntity({
-        repoPath,
-        parentFolder: folder,
-        title: name
-      })
-      if (!result.ok) {
-        setError(result.error ?? CREATE_FAILED())
-        return
-      }
-      setError(null)
-      await onCreated()
-      // Straight into the entity that was just made: the next thing anyone wants
-      // is to put something in it.
-      setOpenEntity(result.entityPath ?? null)
-      return
-    }
 
     const result = await window.api.buildexBrainSections.createDocument({
       repoPath,
@@ -124,18 +92,6 @@ export default function BrainSections({
     if (result.documentId) {
       onOpenDocument(result.documentId)
     }
-  }
-
-  if (entity) {
-    return (
-      <BrainEntityPage
-        node={entity}
-        breadcrumb={breadcrumbFor(scan.tree, entity.path)}
-        onBack={() => setOpenEntity(null)}
-        onOpenDocument={onOpenDocument}
-        onOpenAttachment={openAttachment}
-      />
-    )
   }
 
   return (
@@ -208,36 +164,35 @@ export default function BrainSections({
               collapsed={isCollapsed(node.path)}
               onToggleCollapsed={(folder) => toggleCollapsed(`${repoPath ?? ''}::${folder}`)}
               onOpenDocument={onOpenDocument}
-              onOpenEntity={setOpenEntity}
               onOpenAttachment={openAttachment}
-              onAdd={(folder, kind) => {
+              onAdd={(folder) => {
                 setTitle('')
-                setCreatingIn({ folder, kind })
+                setCreatingIn(folder)
               }}
+              // Why a render prop: Add sits on every folder, so the field has to
+              // appear beside the one that was clicked. Held here because the
+              // draft title belongs to the page, not to whichever block drew it.
+              renderAdding={(folder) =>
+                creatingIn === folder ? (
+                  <input
+                    autoFocus
+                    value={title}
+                    onChange={(event) => setTitle(event.target.value)}
+                    onBlur={() => setCreatingIn(null)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        void create()
+                      }
+                      if (event.key === 'Escape') {
+                        setCreatingIn(null)
+                      }
+                    }}
+                    placeholder={translate('buildex.brain.sections.nameIt', 'Name it, then Enter')}
+                    className="h-7 w-full max-w-sm rounded-md border border-input bg-background px-2 text-[12px] outline-none focus:ring-[3px] focus:ring-ring/50"
+                  />
+                ) : null
+              }
             />
-
-            {creatingIn?.folder === node.path ? (
-              <input
-                autoFocus
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                onBlur={() => setCreatingIn(null)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    void create()
-                  }
-                  if (event.key === 'Escape') {
-                    setCreatingIn(null)
-                  }
-                }}
-                placeholder={
-                  creatingIn.kind === 'entity'
-                    ? translate('buildex.brain.sections.nameEntity', 'Name it, then Enter')
-                    : translate('buildex.brain.sections.nameIt', 'Name it, then Enter')
-                }
-                className="mb-4 h-7 w-full max-w-sm rounded-md border border-input bg-background px-2 text-[12px] outline-none focus:ring-[3px] focus:ring-ring/50"
-              />
-            ) : null}
           </div>
         ))}
 
@@ -254,43 +209,6 @@ export default function BrainSections({
       </div>
     </div>
   )
-}
-
-function findNode(nodes: BrainNode[], path: string): BrainNode | null {
-  for (const node of nodes) {
-    if (node.path === path) {
-      return node
-    }
-    const nested = findNode(node.children, path)
-    if (nested) {
-      return nested
-    }
-  }
-  return null
-}
-
-/** Titles of everything above `path`, outermost first, ending in the entity. */
-function breadcrumbFor(nodes: BrainNode[], path: string): string[] {
-  const walk = (node: BrainNode, trail: string[]): string[] | null => {
-    const next = [...trail, node.title]
-    if (node.path === path) {
-      return next
-    }
-    for (const child of node.children) {
-      const found = walk(child, next)
-      if (found) {
-        return found
-      }
-    }
-    return null
-  }
-  for (const node of nodes) {
-    const found = walk(node, [])
-    if (found) {
-      return found
-    }
-  }
-  return []
 }
 
 /** Which section the reader is actually looking at, for the rail's highlight. */

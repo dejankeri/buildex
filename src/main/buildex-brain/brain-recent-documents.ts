@@ -1,6 +1,6 @@
 import { gitExecFileAsync } from '../git/runner'
 import type { BrainLocation } from '../../shared/buildex-brain-types'
-import { toBrainRelative } from './brain-history'
+import { toBrainRelative } from './brain-git-paths'
 
 // Which brain documents changed most recently, read out of git.
 //
