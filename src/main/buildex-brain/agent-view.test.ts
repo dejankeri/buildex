@@ -50,20 +50,49 @@ describe('findImports', () => {
 describe('buildAgentView', () => {
   it('shows project instructions verbatim and does not follow their imports', () => {
     // Why: what an import resolves to is Claude Code's business. This view says
-    // what the file says, and offers to open it — nothing about its contents.
+    // what the file says, and offers to reveal it — nothing about its contents.
+    write('.claude/CLAUDE.md', '# House rules\n\n@./house-rules.md\n')
+    write('.claude/house-rules.md', '# House rules\n\nSecret sauce.\n')
+
+    const view = buildAgentView(repo, EMPTY_BRAIN_SCAN)
+
+    expect(view.alwaysLoaded.map((file) => file.path)).toEqual(['.claude/CLAUDE.md'])
+    expect(view.alwaysLoaded[0].body).toBe('# House rules\n\n@./house-rules.md\n')
+    expect(view.alwaysLoaded[0].imports).toEqual([
+      { target: './house-rules.md', absolutePath: path.join(repo, '.claude', 'house-rules.md') }
+    ])
+    expect(JSON.stringify(view)).not.toContain('Secret sauce.')
+  })
+
+  it("lists BuildEx's own generated context, because BuildEx wrote the line too", () => {
+    // Why: leaving it out reported a character count well under what the agent
+    // loads, and hid the one thing this dialog exists to show. Listing it costs
+    // no parser — BuildEx writes both the file and the `@` line naming it.
     write('.claude/CLAUDE.md', '# House rules\n\n@./company-context.md\n')
     write('.claude/company-context.md', '# Company context\n\nOne document.\n')
 
     const view = buildAgentView(repo, EMPTY_BRAIN_SCAN)
 
-    expect(view.alwaysLoaded.map((file) => file.path)).toEqual(['.claude/CLAUDE.md'])
-    expect(view.alwaysLoaded[0].body).toBe('# House rules\n\n@./company-context.md\n')
-    expect(view.alwaysLoaded[0].imports).toEqual([
-      {
-        target: './company-context.md',
-        absolutePath: path.join(repo, '.claude', 'company-context.md')
-      }
+    expect(view.alwaysLoaded.map((file) => file.path)).toEqual([
+      '.claude/CLAUDE.md',
+      '.claude/company-context.md'
     ])
+    expect(view.alwaysLoaded[1].body).toBe('# Company context\n\nOne document.\n')
+    expect(view.loadedCharacters).toBe(
+      '# House rules\n\n@./company-context.md\n'.length +
+        '# Company context\n\nOne document.\n'.length
+    )
+  })
+
+  it('drops the generated context when nothing imports it any more', () => {
+    // Why: the operator can delete the marker block. Listing the file as loaded
+    // after that is the exact class of claim this dialog must never make.
+    write('.claude/CLAUDE.md', '# House rules\n')
+    write('.claude/company-context.md', '# Company context\n\nOne document.\n')
+
+    const view = buildAgentView(repo, EMPTY_BRAIN_SCAN)
+
+    expect(view.alwaysLoaded.map((file) => file.path)).toEqual(['.claude/CLAUDE.md'])
     expect(JSON.stringify(view)).not.toContain('One document.')
   })
 
@@ -107,14 +136,15 @@ describe('buildAgentView', () => {
     ])
   })
 
-  it('does not offer to open something that is not a file', () => {
-    // Why: on macOS an application is a directory, and a one-click launcher is
-    // not what "open the import" should ever mean.
-    write('.claude/CLAUDE.md', '@./Thing.app\n')
-    mkdirSync(path.join(repo, '.claude', 'Thing.app'), { recursive: true })
+  it('offers no link for a target that is not a file', () => {
+    // Why: the link reveals a file in the file manager, which says nothing
+    // useful about a directory — a control that appears to do something and
+    // does not is worse than plain text.
+    write('.claude/CLAUDE.md', '@./notes\n')
+    mkdirSync(path.join(repo, '.claude', 'notes'), { recursive: true })
 
     expect(buildAgentView(repo, EMPTY_BRAIN_SCAN).alwaysLoaded[0].imports).toEqual([
-      { target: './Thing.app' }
+      { target: './notes' }
     ])
   })
 

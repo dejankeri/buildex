@@ -10,6 +10,7 @@ import type {
   BrainScan
 } from '../../shared/buildex-brain-types'
 import { listBrainSkills } from './brain-skills'
+import { CONTEXT_RELATIVE_PATH } from './company-context'
 
 // What the agent is actually looking at when a chat starts.
 //
@@ -26,7 +27,11 @@ import { listBrainSkills } from './brain-skills'
 // would sooner or later state something false. Rendered from files on disk with
 // no model in the loop (invariant 9).
 
-/** Project memory, in the order the agent picks it up. */
+/**
+ * Project memory, in the order the agent picks it up. BuildEx's generated
+ * context file is appended by `collectMemory`, which knows what it takes to say
+ * so honestly.
+ */
 const MEMORY_FILES = ['CLAUDE.md', '.claude/CLAUDE.md']
 
 const MCP_CONFIG_FILE = '.mcp.json'
@@ -65,12 +70,13 @@ function readFileIfPresent(absolute: string): string | null {
 }
 
 /**
- * Where an `@` line points, when this machine can open it.
+ * Where an `@` line points, when the operator can be shown it.
  *
- * The plain reading of the text — a path relative to the file holding the line —
- * and only when it turns out to be a file, so the dialog never offers a link
- * that opens nothing or launches an application bundle. Absent is a fine answer:
- * the line is still shown, just not as a link.
+ * The plain reading of the text — a path relative to the file holding the line.
+ * The renderer's link reveals the file in the operator's file manager, which
+ * only means anything for a path that exists, so a target that is not a file
+ * gets no link rather than a control that silently does nothing. Absent is a
+ * fine answer: the line is still shown, just not as a link.
  */
 function resolveImportTarget(fromFile: string, target: string): string | undefined {
   const expanded = /^~[/\\]/.test(target) ? path.join(homedir(), target.slice(2)) : target
@@ -82,19 +88,41 @@ function resolveImportTarget(fromFile: string, target: string): string | undefin
   }
 }
 
+function readMemoryFile(absolute: string, relative: string): AgentContextFile | null {
+  const body = readFileIfPresent(absolute)
+  if (body === null) {
+    return null
+  }
+  const imports: AgentContextImport[] = findImports(body).map((target) => {
+    const absolutePath = resolveImportTarget(absolute, target)
+    return absolutePath ? { target, absolutePath } : { target }
+  })
+  return { path: relative, body, imports }
+}
+
 function collectMemory(repoPath: string): AgentContextFile[] {
   const files: AgentContextFile[] = []
   for (const relative of MEMORY_FILES) {
-    const absolute = path.join(repoPath, ...relative.split('/'))
-    const body = readFileIfPresent(absolute)
-    if (body === null) {
-      continue
+    const file = readMemoryFile(path.resolve(repoPath, ...relative.split('/')), relative)
+    if (file) {
+      files.push(file)
     }
-    const imports: AgentContextImport[] = findImports(body).map((target) => {
-      const absolutePath = resolveImportTarget(absolute, target)
-      return absolutePath ? { target, absolutePath } : { target }
-    })
-    files.push({ path: relative, body, imports })
+  }
+
+  // BuildEx's own generated context is listed too, and this is not the parser
+  // coming back. BuildEx writes that file *and* the `@` line that pulls it in,
+  // so the only open question is whether the line is still there — answered by
+  // comparing against a path already resolved for the link, not by working out
+  // what Claude Code does with an import. Leaving it out put the number under
+  // "Loaded before you type" well below what the agent loads, and hid the one
+  // thing an operator opens this dialog to see.
+  const contextAbsolute = path.resolve(repoPath, ...CONTEXT_RELATIVE_PATH.split('/'))
+  const stillImported = files.some((file) =>
+    file.imports.some((entry) => entry.absolutePath === contextAbsolute)
+  )
+  const context = stillImported ? readMemoryFile(contextAbsolute, CONTEXT_RELATIVE_PATH) : null
+  if (context) {
+    files.push(context)
   }
   return files
 }

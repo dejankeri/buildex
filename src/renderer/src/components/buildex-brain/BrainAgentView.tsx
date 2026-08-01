@@ -100,7 +100,7 @@ export default function BrainAgentView({
               <p className="mt-1 text-[11px] text-muted-foreground">
                 {translate(
                   'buildex.brain.agentView.loadedHint',
-                  'Read in full at the start of every new chat — {{value0}} characters in the files below. An @ line is listed exactly as written; open it to read it yourself.',
+                  'Read in full at the start of every new chat — {{value0}} characters in the files below. An @ line is listed exactly as written; select one to reveal it in your file manager.',
                   { value0: view.loadedCharacters.toLocaleString() }
                 )}
               </p>

@@ -178,11 +178,12 @@ test('the brain shows what the agent will actually see', async ({ orcaPage, test
     const dialog = orcaPage.getByRole('dialog')
     await expect(dialog.getByText('Loaded before you type')).toBeVisible()
     await expect(dialog.getByText('.claude/CLAUDE.md', { exact: true })).toBeVisible()
-    // The context file is reached through the import line the memory file
-    // writes, listed as written and openable — not restated as loaded content.
+    // BuildEx writes the context file and the `@` line that pulls it in, so both
+    // show: the line as written, and the file itself under what is loaded.
     await expect(
       dialog.getByRole('button', { name: '@./company-context.md', exact: true })
     ).toBeVisible()
+    await expect(dialog.getByText('.claude/company-context.md', { exact: true })).toBeVisible()
     await expect(dialog.getByText('Named, and opened only if needed')).toBeVisible()
     await expect(dialog.getByText('handbook.md', { exact: true })).toBeVisible()
 

@@ -54,7 +54,7 @@ describe('BrainAgentView', () => {
     expect(screen.getByText('strategy/pricing.md')).toBeInTheDocument()
   })
 
-  it('opens the file an import names, and never says what is in it', async () => {
+  it('reveals the file an import names, and never says what is in it', async () => {
     mountWith(
       view({
         alwaysLoaded: [
@@ -78,7 +78,7 @@ describe('BrainAgentView', () => {
     expect(openPath).toHaveBeenCalledWith('/repo/.claude/company-context.md')
   })
 
-  it('shows an import this machine cannot open as text, not as a dead link', async () => {
+  it('shows an import this machine cannot reveal as text, not as a dead link', async () => {
     mountWith(
       view({
         alwaysLoaded: [
